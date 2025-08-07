@@ -1,3 +1,3 @@
-# Lumen Core
+# lumen-core
 
 Tensor implement.

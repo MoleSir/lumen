@@ -1,5 +1,5 @@
 [package]
-name = "lumen-core"
+name = "lumen-nn"
 version = { workspace = true }
 edition = { workspace = true }
 description = { workspace = true }
@@ -10,6 +10,4 @@ license = { workspace = true }
 [dependencies]
 anyhow = "1.0.98"
 approx = "0.5.1"
-rand = "0.9.2"
-rand_distr = "0.5.1"
-thiserror = "2.0.12"
+lumen-core = { workspace = true }

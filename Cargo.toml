@@ -1,4 +1,19 @@
 [workspace]
 members = [
-    "lumen-core",
+    "lumen-core", 
+    "lumen-dataset",
+    "lumen-nn",
 ]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+description = "Lumen: a tiny ML inference framework"
+keywords = ["machine-learning", "inference"]
+categories = ["science", "machine-learning"]
+license = "MIT"
+
+[workspace.dependencies]
+lumen-core = { path = "./lumen-core", package = "lumen-core", version = "0.1.0" }
+lumen-nn = { path = "./lumen-nn", package = "lumen-nn", version = "0.1.0" }
+lumen-dataset = { path = "./lumen-dataset", package = "lumen-dataset", version = "0.1.0" }
