@@ -21,15 +21,19 @@ let row_t = t.reshape([4, 1]).unwrap();
 Build a network use `lumen_nn` just like PyTroch：
 
 ````rust
+use lumen_core::*;
 use lumen_dataset::{IrisDataSet, DataLoader};
 use lumen_nn::{Criterion, Model, Optim};
+use lumen_nn::criterion::MSELoss;
+use lumen_nn::optim::SDG;
+use lumen_nn::model::MLP;
 
 let dataset = IrisDataSet::new();
 let dataloader = DataLoader::new(dataset, 16, true);
 
-let model = nn::model::MLP::from_archs(vec![4, 10, 3]).unwrap();
-let criterion = nn::criterion::MSELoss::new();
-let mut optimizer = nn::optim::SDG::new(model.parameters(), 0.01);
+let model = MLP::from_archs(vec![4, 10, 3]).unwrap();
+let criterion = MSELoss::new();
+let mut optimizer = SDG::new(model.parameters(), 0.01);
 
 const EPOCHS: usize = 100;
 for epoch in 0..EPOCHS {
