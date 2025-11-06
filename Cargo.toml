@@ -11,7 +11,6 @@ edition = "2024"
 repository = "https://github.com/MoleSir/lumen.git"
 description = "Lumen: A tiny ML framework"
 keywords = ["machine-learning", "auto-grad"]
-categories = ["science", "artificial-intelligence"]
 license = "MIT"
 
 [workspace.dependencies]
