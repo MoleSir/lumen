@@ -1,0 +1,11 @@
+[package]
+name = "lumen-io"
+version = { workspace = true }
+edition = { workspace = true }
+description = { workspace = true }
+keywords = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+lumen-core = { workspace = true }
+

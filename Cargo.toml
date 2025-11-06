@@ -3,6 +3,7 @@ members = [
     "lumen-core", 
     "lumen-dataset",
     "lumen-nn",
+    "lumen-io"
 ]
 
 [workspace.package]
@@ -17,6 +18,7 @@ license = "MIT"
 lumen-core = { path = "./lumen-core", package = "lumen-core", version = "0.1.0" }
 lumen-nn = { path = "./lumen-nn", package = "lumen-nn", version = "0.1.0" }
 lumen-dataset = { path = "./lumen-dataset", package = "lumen-dataset", version = "0.1.0" }
+lumen-io = { path = "./lumen-io", package = "lumen-io", version = "0.1.0" }
 
 anyhow = "1.0.98"
 approx = "0.5.1"
