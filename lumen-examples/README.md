@@ -10,3 +10,6 @@ Use a simple RNN + Linear net to fit a given function(`fn(f64) -> f64`). There i
 
 ![](./function_fitting/image/plot.svg)
 
+## [Xor Gate](./xor_gate)
+
+Use MLP to fit a xot gate logic experssion.

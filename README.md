@@ -1,6 +1,7 @@
 # Lumen
 
-Tensor library for machine learning like [PyTorch](https://pytorch.org/).
+Tensor library for machine learning just for learning.
+
 
 
 ## Usages
@@ -50,3 +51,33 @@ for epoch in 0..EPOCHS {
     }
 }
 ````
+
+
+
+## Features
+
+- Auto grad `Tensor`（only support cpu and f64 dtype）
+- nn: 
+    - `MLP`
+    - `Linear`
+    - `RNN`
+- Dataset trait and Dataloader
+
+
+
+## Examples
+
+See [lumen-examples](./lumen-examples/README.md)
+
+
+
+## LICENSE
+
+MIT
+
+
+
+## References
+
+- https://pytorch.org/
+- https://github.com/huggingface/candle

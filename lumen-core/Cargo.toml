@@ -8,8 +8,8 @@ categories = { workspace = true }
 license = { workspace = true }
 
 [dependencies]
-anyhow = "1.0.98"
-approx = "0.5.1"
-rand = "0.9.2"
-rand_distr = "0.5.1"
-thiserror = "2.0.12"
+anyhow = { workspace = true }
+approx = { workspace = true }
+rand = { workspace = true }
+rand_distr = { workspace = true }
+thiserror = { workspace = true }
