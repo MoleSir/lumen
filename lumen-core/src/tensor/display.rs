@@ -1,0 +1,61 @@
+use std::fmt;
+use crate::WithDType;
+use super::Tensor;
+
+impl<T: WithDType> fmt::Debug for Tensor<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Tensor<shape: {}, dtype: {}>", self.shape(), self.dtype())
+    }
+}
+
+impl<T: WithDType> fmt::Display for Tensor<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_scalar() {
+            return write!(f, "{}", self.to_scalar().unwrap());
+        }
+
+        let shape = self.dims();
+        assert!(!shape.is_empty());
+
+        let storage = self.0.storage.read();
+
+        fmt_tensor(f, storage.data(), shape)
+    }
+}
+
+fn fmt_tensor<T: fmt::Display>(
+    f: &mut fmt::Formatter<'_>,
+    data: &[T],
+    shape: &[usize],
+) -> fmt::Result {
+    fn fmt_recursive<T: fmt::Display>(
+        f: &mut fmt::Formatter<'_>,
+        data: &[T],
+        shape: &[usize],
+        dim: usize,
+        offset: usize,
+    ) -> fmt::Result {
+        if dim == shape.len() - 1 {
+            write!(f, "[")?;
+            for i in 0..shape[dim] {
+                if i > 0 {
+                    write!(f, " ")?;
+                }
+                write!(f, "{}", data[offset + i])?;
+            }
+            write!(f, "]")
+        } else {
+            write!(f, "[")?;
+            let stride = shape[dim + 1..].iter().product::<usize>();
+            for i in 0..shape[dim] {
+                if i > 0 {
+                    write!(f, "\n ")?; 
+                }
+                fmt_recursive(f, data, shape, dim + 1, offset + i * stride)?;
+            }
+            write!(f, "]")
+        }
+    }
+
+    fmt_recursive(f, data, shape, 0, 0)
+}
