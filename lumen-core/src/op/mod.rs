@@ -11,10 +11,15 @@ pub enum Op<T: FloatDType> {
     Binary(Tensor<T>, Tensor<T>, BinaryOp),
     BinaryScalar(Tensor<T>, T, BinaryOp),
     Unary(Tensor<T>, UnaryOp),
+    Pow(Tensor<T>, T),
     Reduce(Tensor<T>, ReduceOp, Vec<usize>),
     ReduceAll(Tensor<T>, ReduceOp),
     Matmul(Tensor<T>, Tensor<T>),
     Broadcast(Tensor<T>),
+    Narrow(Tensor<T>, usize, usize, usize),
+    Reshape(Tensor<T>),
+    Transpose(Tensor<T>, usize, usize),
+    Cat(Vec<Tensor<T>>, usize),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

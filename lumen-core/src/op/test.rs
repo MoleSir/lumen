@@ -414,4 +414,150 @@ mod test {
         let expected_x_grad = Tensor::new(&[[4.0], [6.0]]).unwrap();
         assert!(grads[&x].allclose(&expected_x_grad, 1e-5, 1e-8));
     }
+
+    #[test]
+    fn test_reshape_backward() {
+        // A: (2, 3)
+        let a = Var::<f64>::new(&[
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0]
+        ]).unwrap();
+
+        // Reshape to (3, 2)
+        let b = a.reshape(&[3, 2]).unwrap();
+        
+        let loss = b.sum_keepdim(0).unwrap().sum_keepdim(1).unwrap();
+        let grads = loss.backward().unwrap();
+
+        let expected_grad = Tensor::new(&[
+            [1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0]
+        ]).unwrap();
+        
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+        assert_eq!(grads[&a].dims(), &[2, 3]);
+    }
+
+    #[test]
+    fn test_transpose_backward() {
+        // A: (2, 3)
+        let a = Var::<f64>::new(&[
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0]
+        ]).unwrap();
+
+        // Transpose (0, 1) -> (3, 2)
+        // [[1, 4],
+        //  [2, 5],
+        //  [3, 6]]
+        let b = a.transpose(0, 1).unwrap();
+
+        let w = Tensor::new(&[
+            [1.0, 10.0],
+            [100.0, 1000.0],
+            [10000.0, 100000.0]
+        ]).unwrap();
+        
+        let loss = (b.mul(&w).unwrap()).sum_keepdim(0).unwrap().sum_keepdim(1).unwrap();
+        let grads = loss.backward().unwrap();
+
+        let expected_grad = Tensor::new(&[
+            [1.0, 100.0, 10000.0],
+            [10.0, 1000.0, 100000.0]
+        ]).unwrap();
+
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_narrow_backward() {
+        // A: (3, 3)
+        let a = Var::<f64>::new(&[
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0],
+            [7.0, 8.0, 9.0]
+        ]).unwrap();
+
+        // Narrow: dim 0, start 1, len 1 (取中间一行: [4.0, 5.0, 6.0])
+        let b = a.narrow(0, 1, 1).unwrap();
+        
+        let loss = b.sum_keepdim(0).unwrap().sum_keepdim(1).unwrap();
+        let grads = loss.backward().unwrap();
+
+        let expected_grad = Tensor::new(&[
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0]
+        ]).unwrap();
+
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+
+        let c = a.narrow(1, 2, 1).unwrap(); // 取最后一列
+        let grads_c = c.sum_keepdim(0).unwrap().sum_keepdim(1).unwrap().backward().unwrap();
+        let expected_grad_c = Tensor::new(&[
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0]
+        ]).unwrap();
+        assert!(grads_c[&a].allclose(&expected_grad_c, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_cat_backward() {
+        // A: (2, 2), B: (2, 1)
+        let a = Var::<f64>::new(&[
+            [1.0, 2.0],
+            [3.0, 4.0]
+        ]).unwrap();
+        let b = Var::<f64>::new(&[
+            [5.0],
+            [6.0]
+        ]).unwrap();
+
+        // Cat along dim 1 -> Result: (2, 3)
+        // [[1, 2, 5],
+        //  [3, 4, 6]]
+        let c = Tensor::cat(&[&a, &b], 1).unwrap();
+        
+        let w = Tensor::new(&[
+            [1.0, 2.0, 3.0],
+            [1.0, 2.0, 3.0]
+        ]).unwrap();
+        
+        let loss = c.mul(&w).unwrap().sum_keepdim(0).unwrap().sum_keepdim(1).unwrap();
+        let grads = loss.backward().unwrap();
+
+        let expected_grad_a = Tensor::new(&[
+            [1.0, 2.0],
+            [1.0, 2.0]
+        ]).unwrap();
+        let expected_grad_b = Tensor::new(&[
+            [3.0],
+            [3.0]
+        ]).unwrap();
+
+        assert!(grads[&a].allclose(&expected_grad_a, 1e-5, 1e-8));
+        assert!(grads[&b].allclose(&expected_grad_b, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_complex_combined_ops() {
+        // Reshape -> Transpose -> Narrow
+        let a = Var::<f64>::new(&[1.0, 2.0, 3.0, 4.0]).unwrap(); // (4,)
+        
+        let b = a.reshape(&[2, 2]).unwrap(); // [[1,2],[3,4]]
+        let c = b.transpose(0, 1).unwrap();  // [[1,3],[2,4]]
+        let d = c.narrow(0, 1, 1).unwrap();  // [[2,4]] (取第二行)
+        
+        let loss = d.sum_keepdim(0).unwrap().sum_keepdim(1).unwrap();
+        let grads = loss.backward().unwrap();
+
+        // d = [[2, 4]] -> grad_d = [[1, 1]]
+        // c = [[1, 3], [2, 4]] -> grad_c = [[0, 0], [1, 1]]
+        // b = [[1, 2], [3, 4]] -> grad_b = grad_c.T = [[0, 1], [0, 1]]
+        // a = [1, 2, 3, 4] -> grad_a = [0, 1, 0, 1]
+        
+        let expected_grad_a = Tensor::new(&[0.0, 1.0, 0.0, 1.0]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad_a, 1e-5, 1e-8));
+    }
 }

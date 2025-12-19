@@ -1,7 +1,5 @@
 use std::sync::Arc;
-
-use crate::{Dim, Error, Layout, Result, Shape, Storage, WithDType, D};
-
+use crate::{AutogradMetaT, Dim, Error, Layout, Result, Shape, Storage, WithDType, D};
 use super::{Tensor, TensorId, TensorImpl, Range};
 
 impl<T: WithDType> Tensor<T> {
@@ -100,12 +98,13 @@ impl<T: WithDType> Tensor<T> {
         if start == 0 && dims[dim] == len {
             Ok(self.clone())
         } else {
+            let meta = T::AutogradMeta::on_narrow_op(self, dim, start, len);
             let layout = self.layout().narrow(dim, start, len)?;
             let tensor_ = TensorImpl {
                 id: TensorId::new(),
                 storage: self.0.storage.clone(),
                 layout,
-                meta: Default::default(),
+                meta
             };
             Ok(Self(Arc::new(tensor_)))
         }
@@ -196,17 +195,18 @@ impl<T: WithDType> Tensor<T> {
             });
         }
 
+        let meta = T::AutogradMeta::on_reshape_op(self);
         if self.is_contiguous() {
             let tensor_ = TensorImpl {
                 id: TensorId::new(),
                 storage: self.0.storage.clone(),
                 layout: Layout::contiguous_with_offset(shape, self.layout().start_offset()),
-                meta: Default::default(),
+                meta
             };
             Ok(Tensor(Arc::new(tensor_)))
         } else {
             let storage = self.storage().copy(self.layout());
-            Ok(Self::from_storage(storage, shape))
+            Ok(Self::build(storage, shape, meta))
         }
     }
     
@@ -217,11 +217,13 @@ impl<T: WithDType> Tensor<T> {
         if dim1 == dim2 {
             return Ok(self.clone());
         }
+
+        let meta = T::AutogradMeta::on_transpose_op(self, dim1, dim2);
         let tensor_ = TensorImpl {
             id: TensorId::new(),
             storage: self.0.storage.clone(),
             layout: self.layout().transpose(dim1, dim2)?,
-            meta: Default::default(),
+            meta,
         };
         Ok(Tensor(Arc::new(tensor_)))
     }
@@ -305,7 +307,9 @@ impl<T: WithDType> Tensor<T> {
         // Create a new storgae and copy
         let mut dst: Vec<T> = Vec::with_capacity(target_shape.element_count());
         unsafe { dst.set_len(target_shape.element_count()) };
-        let res_arr = Self::from_storage(Storage::new(dst), target_shape);
+        
+        let meta = T::AutogradMeta::on_cat_op(arrs, cat_dim);
+        let res_arr = Self::build(Storage::new(dst), target_shape, meta);
 
         for (arr_index, arr) in arrs.iter().enumerate() {
             // Take sub Tensor 

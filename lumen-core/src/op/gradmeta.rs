@@ -5,10 +5,15 @@ pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_binary_op(lhs: &Tensor<T>, rhs: &Tensor<T>, op: BinaryOp) -> Self;
     fn on_binary_scalar_op(lhs: &Tensor<T>, rhs: T, op: BinaryOp) -> Self;
     fn on_unray_op(t: &Tensor<T>, op: UnaryOp) -> Self; 
+    fn on_pow_op(t: &Tensor<T>, e: T) -> Self;
     fn on_broadcast_op(t: &Tensor<T>) -> Self;
     fn on_reduce_op(t: &Tensor<T>, dims: &[usize], op: ReduceOp) -> Self;
     fn on_reduce_all_op(t: &Tensor<T>, op: ReduceOp) -> Self;
     fn on_matmul_op(lhs: &Tensor<T>, rhs: &Tensor<T>) -> Self;
+    fn on_narrow_op(t: &Tensor<T>, dim: usize, start: usize, len: usize) -> Self;
+    fn on_reshape_op(t: &Tensor<T>) -> Self;
+    fn on_transpose_op(t: &Tensor<T>, dim1: usize, dim2: usize) -> Self;
+    fn on_cat_op<A: AsRef<Tensor<T>>>(args: &[A], dim: usize) -> Self;
 }
 
 // pub struct AutogradInfo<T: FloatDType> {
@@ -87,6 +92,14 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
         }
     }
 
+    fn on_pow_op(t: &Tensor<T>, e: T) -> Self {
+        if t.requires_grad() {
+            Self::var_from_op(Op::Pow(t.clone(), e))
+        } else {
+            Self::val()
+        }
+    }
+
     fn on_broadcast_op(t: &Tensor<T>) -> Self {
         if t.requires_grad() {
             Self::var_from_op(Op::Broadcast(t.clone()))
@@ -118,6 +131,39 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
             Self::val()
         } 
     }
+
+    fn on_narrow_op(t: &Tensor<T>, dim: usize, start: usize, len: usize) -> Self {
+        if t.requires_grad() {
+            Self::var_from_op(Op::Narrow(t.clone(), dim, start, len))
+        } else {
+            Self::val()
+        } 
+    }
+
+    fn on_reshape_op(t: &Tensor<T>) -> Self {
+        if t.requires_grad() {
+            Self::var_from_op(Op::Reshape(t.clone()))
+        } else {
+            Self::val()
+        } 
+    }
+
+    fn on_transpose_op(t: &Tensor<T>, dim1: usize, dim2: usize) -> Self {
+        if t.requires_grad() {
+            Self::var_from_op(Op::Transpose(t.clone(), dim1, dim2))
+        } else {
+            Self::val()
+        } 
+    }
+
+    fn on_cat_op<A: AsRef<Tensor<T>>>(args: &[A], dim: usize) -> Self {
+        if args.iter().any(|t| t.as_ref().requires_grad()) {
+            let vec = args.iter().map(|a| a.as_ref().clone()).collect();
+            Self::var_from_op(Op::Cat(vec, dim))
+        } else {
+            Self::val()
+        }
+    }
 }
 
 #[derive(Default)]
@@ -146,6 +192,11 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
     }
 
     #[inline]
+    fn on_pow_op(t: &Tensor<T>, e: T) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
     fn on_reduce_op(t: &Tensor<T>, _: &[usize], _: ReduceOp) -> Self {
         NoAutograd
     }
@@ -157,6 +208,26 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
 
     #[inline]
     fn on_matmul_op(lhs: &Tensor<T>, rhs: &Tensor<T>) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_narrow_op(t: &Tensor<T>, dim: usize, start: usize, len: usize) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_reshape_op(t: &Tensor<T>) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_transpose_op(t: &Tensor<T>, dim1: usize, dim2: usize) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_cat_op<A: AsRef<Tensor<T>>>(args: &[A], dim: usize) -> Self {
         NoAutograd
     }
 }

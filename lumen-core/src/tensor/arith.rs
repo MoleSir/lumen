@@ -353,6 +353,18 @@ impl<F: FloatDType> Tensor<F> {
     float_unary_op_impl!(silu);
 }
 
+impl<F: FloatDType> Tensor<F> {
+    pub fn pow(&self, e: F) -> Self {
+        if self.element_count() == 0 {
+            return self.clone();
+        }
+        let f = |v: F| v.powf(e); 
+        let storage = self.compute_unary_op(f);
+        let meta = F::AutogradMeta::on_pow_op(self, e);
+        Self::from_op(storage, self.shape(), meta)
+    }
+}
+
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Sub};
 
 //////////////////////////////////////////////////////////////////////////////

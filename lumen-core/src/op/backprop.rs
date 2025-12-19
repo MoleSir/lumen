@@ -133,13 +133,14 @@ impl<T: FloatDType> Tensor<T> {
                             *sum_grad = sum_grad.sub(&grad)?
                         }
                         Op::Unary(arg, UnaryOp::Gelu) => {
-                            // let sum_grad = grads.or_insert(arg)?;
-                            // let cube = arg.powf(3.)?;
-                            // let tanh = (0.0356774 * &cube + (0.797885 * arg)?)?.tanh()?;
-                            // let gelu_grad = (((0.5 * &tanh)?
-                            //     + (0.0535161 * cube + (0.398942 * arg)?)? * (1. - tanh.powf(2.)?))?
-                            //     + 0.5)?;
-                            // *sum_grad = sum_grad.add(&(&grad * gelu_grad)?)?
+                            let sum_grad = grads.or_insert(arg)?;
+                            let cube = arg.pow(T::from_f64(3.));
+                            let tanh = (&cube * T::from_f64(0.0356774) + (arg * T::from_f64(0.797885))).tanh();
+                            let gelu_grad = 
+                                &tanh / T::two()
+                                + (cube * T::from_f64(0.0535161) + arg * T::from_f64(0.398942)) * (tanh.pow(T::two()).neg() + T::one())
+                                + T::half();
+                            *sum_grad = sum_grad.add(&(&grad * gelu_grad))?
                         }
                         Op::Unary(arg, UnaryOp::Erf) => {
                             let sum_grad = grads.or_insert(arg)?;
@@ -236,7 +237,69 @@ impl<T: FloatDType> Tensor<T> {
                             let sum_grad = grads.or_insert(arg)?;
                             *sum_grad = sum_grad.add(&arg_grad.broadcast_as(sum_grad.dims())?)?;
                         }
+
+                        //=========================================================================================//
+                        //           Narrow
+                        //=========================================================================================//
+                        &Op::Narrow(ref arg, dim, start_idx, len) => {
+                            let arg_dims = arg.dims();
+                            let left_pad = if start_idx == 0 {
+                                None
+                            } else {
+                                let mut dims = arg_dims.to_vec();
+                                dims[dim] = start_idx;
+                                Some(Tensor::zeros(dims)?)
+                            };
+                            let right_pad = arg_dims[dim] - start_idx - len;
+                            let right_pad = if right_pad == 0 {
+                                None
+                            } else {
+                                let mut dims = arg_dims.to_vec();
+                                dims[dim] = right_pad;
+                                Some(Tensor::zeros(dims)?)
+                            };
+                            let arg_grad = match (left_pad, right_pad) {
+                                (None, None) => grad,
+                                (Some(l), None) => Tensor::cat(&[&l, &grad], dim)?,
+                                (None, Some(r)) => Tensor::cat(&[&grad, &r], dim)?,
+                                (Some(l), Some(r)) => Tensor::cat(&[&l, &grad, &r], dim)?,
+                            };
+                            let sum_grad = grads.or_insert(arg)?;
+                            *sum_grad = sum_grad.add(&arg_grad)?
+                        }
                         
+                        //=========================================================================================//
+                        //           Reshape
+                        //=========================================================================================//
+                        Op::Reshape(arg) => {
+                            let arg_grad = grad.reshape(arg.dims())?;
+                            let sum_grad = grads.or_insert(arg)?;
+                            *sum_grad = sum_grad.add(&arg_grad)?
+                        }
+
+                        //=========================================================================================//
+                        //           Transpose
+                        //=========================================================================================//
+                        Op::Transpose(arg, dim1, dim2) => {
+                            let arg_grad = grad.transpose(*dim1, *dim2)?;
+                            let sum_grad = grads.or_insert(arg)?;
+                            *sum_grad = sum_grad.add(&arg_grad)?
+                        }
+
+                        //=========================================================================================//
+                        //           Cat
+                        //=========================================================================================//
+                        Op::Cat(args, dim) => {
+                            let mut start_idx = 0;
+                            for arg in args {
+                                let len = arg.dims()[*dim];
+                                let arg_grad = grad.narrow(*dim, start_idx, len)?;
+                                let sum_grad = grads.or_insert(arg)?;
+                                *sum_grad = sum_grad.add(&arg_grad)?;
+                                start_idx += len;
+                            }
+                        }
+
                         _ => unimplemented!(),
                     }
                 }
@@ -282,12 +345,22 @@ impl<T: FloatDType> Tensor<T> {
                     | Op::BinaryScalar(node, _, _)
                     | Op::Broadcast(node)
                     | Op::Unary(node, _)
+                    | Op::Pow(node, _)
                     | Op::Reduce(node, _, _)
+                    | Op::Narrow(node, _, _, _)
+                    | Op::Reshape(node)
+                    | Op::Transpose(node, _, _)
                     | Op::ReduceAll(node, _) => {
                         let (tg, nodes) = walk(node, nodes, already_seen);
                         track_grad |= tg;
                         nodes
                     }
+
+                    | Op::Cat(args, _) => args.iter().fold(nodes, |nodes, arg| {
+                        let (tg, nodes) = walk(arg, nodes, already_seen);
+                        track_grad |= tg;
+                        nodes
+                    }),
                 }
             } else {
                 nodes
