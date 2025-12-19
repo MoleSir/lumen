@@ -8,8 +8,9 @@ license = { workspace = true }
 
 [dependencies]
 approx = { workspace = true }
+libm = { workspace = true }
 num-traits = { workspace = true }
-paste = "1.0.15"
+paste = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
 thiserror = { workspace = true }

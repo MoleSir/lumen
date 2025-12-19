@@ -138,6 +138,13 @@ pub trait FloatDType:
     + num_traits::Float
 {
     fn sqr(self) -> Self;
+    fn gelu(self) -> Self;
+    fn gelu_erf(self) -> Self;
+    fn erf(self) -> Self;
+    fn relu(self) -> Self;
+    fn silu(self) -> Self;
+
+
     fn two() -> Self;
     fn pi() -> Self;
     fn half() -> Self;

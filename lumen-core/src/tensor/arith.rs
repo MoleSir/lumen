@@ -334,15 +334,23 @@ impl<F: FloatDType> Tensor<F> {
     float_unary_op_impl!(round);
 
     float_unary_op_impl!(exp);
+    float_unary_op_impl!(ln);
+
     float_unary_op_impl!(sin);
     float_unary_op_impl!(cos);
     float_unary_op_impl!(tanh);
+
     float_unary_op_impl!(sqrt);
     float_unary_op_impl!(sqr);
     float_unary_op_impl!(abs);
     float_unary_op_impl!(neg);
-    float_unary_op_impl!(ln);
+
     float_unary_op_impl!(recip);
+    float_unary_op_impl!(gelu);
+    float_unary_op_impl!(gelu_erf);
+    float_unary_op_impl!(erf);
+    float_unary_op_impl!(relu);
+    float_unary_op_impl!(silu);
 }
 
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Sub};

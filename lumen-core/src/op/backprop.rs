@@ -90,6 +90,10 @@ impl<T: FloatDType> Tensor<T> {
                             let sum_grad = grads.or_insert(arg)?;
                             *sum_grad = sum_grad.add(&(&grad * *node))?
                         }
+                        Op::Unary(arg, UnaryOp::Ln) => {
+                            let sum_grad = grads.or_insert(arg)?;
+                            *sum_grad = sum_grad.add(&(grad / arg))?
+                        }
                         Op::Unary(arg, UnaryOp::Sin) => {
                             let sum_grad = grads.or_insert(arg)?;
                             *sum_grad = sum_grad.add(&(&grad * arg.cos()))?
@@ -123,14 +127,48 @@ impl<T: FloatDType> Tensor<T> {
                             let sum_grad = grads.or_insert(arg)?;
                             *sum_grad = sum_grad.sub(&grad)?
                         }
-                        Op::Unary(arg, UnaryOp::Ln) => {
-                            let sum_grad = grads.or_insert(arg)?;
-                            *sum_grad = sum_grad.add(&(grad / arg))?
-                        }
                         Op::Unary(arg, UnaryOp::Recip) => {
                             let sum_grad = grads.or_insert(arg)?;
                             let grad = grad / arg.sqr();
                             *sum_grad = sum_grad.sub(&grad)?
+                        }
+                        Op::Unary(arg, UnaryOp::Gelu) => {
+                            // let sum_grad = grads.or_insert(arg)?;
+                            // let cube = arg.powf(3.)?;
+                            // let tanh = (0.0356774 * &cube + (0.797885 * arg)?)?.tanh()?;
+                            // let gelu_grad = (((0.5 * &tanh)?
+                            //     + (0.0535161 * cube + (0.398942 * arg)?)? * (1. - tanh.powf(2.)?))?
+                            //     + 0.5)?;
+                            // *sum_grad = sum_grad.add(&(&grad * gelu_grad)?)?
+                        }
+                        Op::Unary(arg, UnaryOp::Erf) => {
+                            let sum_grad = grads.or_insert(arg)?;
+                            // d/dx erf(x) = 2/sqrt(pi) * e^(-x^2)
+                            let erf_grad = arg.sqr().neg().exp() * (T::two() / T::pi().sqrt());
+                            *sum_grad = sum_grad.add(&(&grad * erf_grad))?
+                        }
+                        Op::Unary(arg, UnaryOp::GeluErf) => {
+                            let sum_grad = grads.or_insert(arg)?;
+                            // d/dx gelu_erf(x) = 0.5 + 0.398942 e^(-x^2/2) x + 0.5 erf(x/sqrt(2))
+                            let neg_half_square = arg.sqr().neg() / T::two();
+                            let scaled_exp_arg = neg_half_square.exp() * arg * T::from_f64(0.398942);
+                            let arg_scaled_sqrt = arg / T::two().sqrt();
+                            let erf_scaled_sqrt = arg_scaled_sqrt.erf() / T::two();
+                            let gelu_erf_grad = scaled_exp_arg + erf_scaled_sqrt + T::half();
+                            *sum_grad = sum_grad.add(&(&grad * gelu_erf_grad))?;
+                        }
+                        Op::Unary(arg, UnaryOp::Relu) => {
+                            let sum_grad = grads.or_insert(arg)?;
+                            let relu_grad = arg.ge(&arg.zeros_like()?)?.to_dtype::<T>();
+                            *sum_grad = sum_grad.add(&(&grad * relu_grad))?
+                        }
+                        Op::Unary(arg, UnaryOp::Silu) => {
+                            let sum_grad = grads.or_insert(arg)?;
+                            // d/dx silu = sigmoid(x) * (1 + x * (1 - sigmoid(x))) = sigmoid(x) * (1 - node) + node
+                            let sigmoid_arg = (arg.neg().exp() + T::one()).recip();
+                            // TODO: 1 - Tensor
+                            let silu_grad = &sigmoid_arg * (node.neg() + T::one()) + *node;
+                            *sum_grad = sum_grad.add(&(&grad * silu_grad))?
                         }
 
                         //=========================================================================================//

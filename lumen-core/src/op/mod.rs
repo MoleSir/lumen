@@ -47,22 +47,26 @@ pub enum BinaryOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
     Exp,
+    Ln,
+
     Sin,
     Cos,
+    Tanh,
+
     Abs,
     Neg,
-    Recip,
     Sqr,
     Sqrt,
+
+    Recip,
     Gelu,
     GeluErf,
     Erf,
     Relu,
     Silu,
-    Tanh,
+
     Floor,
     Ceil,
     Round,
     Sign,
-    Ln,
 }
