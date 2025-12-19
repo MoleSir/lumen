@@ -177,24 +177,14 @@ impl_dtype_convert_from!(f32, { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
 impl_dtype_convert_from!(f64, { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
 impl_dtype_convert_from!(usize, { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
 
-macro_rules! impl_with_bool {
-    ($($dtype:ty),*) => {
-        $(
-            impl DTypeConvert<bool> for $dtype {
-                #[inline]
-                fn convert(self) -> bool {
-                    self != 0 as $dtype
-                }
-            }
-            
-            impl DTypeConvert<$dtype> for bool {
-                #[inline]
-                fn convert(self) -> $dtype {
-                    if self { 1 as $dtype } else { 0 as $dtype }
-                }
-            }
-        )*
-    };
+impl<T: NumDType> DTypeConvert<T> for bool {
+    fn convert(self) -> T {
+        if self { T::one() } else { T::zero() }
+    }
 }
 
-impl_with_bool!(f32, f64, i8, u8, i16, u16, i32, u32, usize);
+impl<T: NumDType> DTypeConvert<bool> for T {
+    fn convert(self) -> bool {
+        self == T::zero() 
+    }
+}

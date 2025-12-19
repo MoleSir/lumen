@@ -1,12 +1,14 @@
 use crate::{FloatDType, Tensor, WithDType};
-use super::{BinaryOp, BinaryScalarOp, Op, ReduceOp, UnaryOp};
+use super::{BinaryOp, Op, ReduceOp, UnaryOp};
 
 pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_binary_op(lhs: &Tensor<T>, rhs: &Tensor<T>, op: BinaryOp) -> Self;
-    fn on_binary_scalar_op(lhs: &Tensor<T>, rhs: T, op: BinaryScalarOp) -> Self;
+    fn on_binary_scalar_op(lhs: &Tensor<T>, rhs: T, op: BinaryOp) -> Self;
     fn on_unray_op(t: &Tensor<T>, op: UnaryOp) -> Self; 
     fn on_broadcast_op(t: &Tensor<T>) -> Self;
     fn on_reduce_op(t: &Tensor<T>, dims: &[usize], op: ReduceOp) -> Self;
+    fn on_reduce_all_op(t: &Tensor<T>, op: ReduceOp) -> Self;
+    fn on_matmul_op(lhs: &Tensor<T>, rhs: &Tensor<T>) -> Self;
 }
 
 // pub struct AutogradInfo<T: FloatDType> {
@@ -69,7 +71,7 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
         }
     }
 
-    fn on_binary_scalar_op(lhs: &Tensor<T>, rhs: T, op: BinaryScalarOp) -> Self {
+    fn on_binary_scalar_op(lhs: &Tensor<T>, rhs: T, op: BinaryOp) -> Self {
         if lhs.requires_grad() {
             Self::var_from_op(Op::BinaryScalar(lhs.clone(), rhs, op))
         } else {
@@ -100,6 +102,22 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
             Self::val()
         }
     }
+
+    fn on_reduce_all_op(t: &Tensor<T>, op: ReduceOp) -> Self {
+        if t.requires_grad() {
+            Self::var_from_op(Op::ReduceAll(t.clone(), op))
+        } else {
+            Self::val()
+        }
+    }
+
+    fn on_matmul_op(lhs: &Tensor<T>, rhs: &Tensor<T>) -> Self {
+        if lhs.requires_grad() || rhs.requires_grad() {
+            Self::var_from_op(Op::Matmul(lhs.clone(), rhs.clone()))
+        } else {
+            Self::val()
+        } 
+    }
 }
 
 #[derive(Default)]
@@ -113,7 +131,7 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
     }
 
     #[inline]
-    fn on_binary_scalar_op(_: &Tensor<T>, _: T, _: BinaryScalarOp) -> Self {
+    fn on_binary_scalar_op(_: &Tensor<T>, _: T, _: BinaryOp) -> Self {
         NoAutograd
     }
     
@@ -129,6 +147,16 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
 
     #[inline]
     fn on_reduce_op(t: &Tensor<T>, _: &[usize], _: ReduceOp) -> Self {
+        NoAutograd
+    }
+    
+    #[inline]
+    fn on_reduce_all_op(t: &Tensor<T>, op: ReduceOp) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_matmul_op(lhs: &Tensor<T>, rhs: &Tensor<T>) -> Self {
         NoAutograd
     }
 }

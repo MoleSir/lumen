@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use crate::{BinaryOp, FloatDType, Op, ReduceOp, Tensor, TensorId, UnaryOp};
-use super::{BinaryScalarOp, GradStore};
+use super::GradStore;
 
 impl<T: FloatDType> Tensor<T> {
 
@@ -21,6 +21,9 @@ impl<T: FloatDType> Tensor<T> {
                         .expect("grad not populated");
 
                     match op {
+                        //=========================================================================================//
+                        //           Binary
+                        //=========================================================================================//
                         Op::Binary(lhs, rhs, BinaryOp::Add) => {
                             let lhs_sum_grad = grads.or_insert(lhs)?;
                             *lhs_sum_grad = lhs_sum_grad.add(&grad)?;
@@ -49,35 +52,40 @@ impl<T: FloatDType> Tensor<T> {
                             let rhs_sum_grad = grads.or_insert(rhs)?;
                             *rhs_sum_grad = rhs_sum_grad.sub(&rhs_grad)?;
                         }
-    
-                        Op::BinaryScalar(lhs, _, BinaryScalarOp::Add) => {
+                        
+                        //=========================================================================================//
+                        //           BinaryScalar
+                        //=========================================================================================//
+                        Op::BinaryScalar(lhs, _, BinaryOp::Add) => {
                             // y = x + c => dy/dx = 1
                             let lhs_sum_grad = grads.or_insert(lhs)?;
                             *lhs_sum_grad = lhs_sum_grad.add(&grad)?;
                         }
-                        Op::BinaryScalar(lhs, _, BinaryScalarOp::Sub) => {
+                        Op::BinaryScalar(lhs, _, BinaryOp::Sub) => {
                             // y = x - c => dy/dx = 1
                             let lhs_sum_grad = grads.or_insert(lhs)?;
                             *lhs_sum_grad = lhs_sum_grad.add(&grad)?;
                         }
-                        Op::BinaryScalar(lhs, rhs, BinaryScalarOp::Mul) => {
+                        Op::BinaryScalar(lhs, rhs, BinaryOp::Mul) => {
                             // y = x * c => dy/dx = c
                             let lhs_grad = grad.mul_scalar(*rhs)?;
                             let lhs_sum_grad = grads.or_insert(lhs)?;
                             *lhs_sum_grad = lhs_sum_grad.add(&lhs_grad)?;
                         }
-                        Op::BinaryScalar(lhs, rhs, BinaryScalarOp::Div) => {
+                        Op::BinaryScalar(lhs, rhs, BinaryOp::Div) => {
                             // y = x / c => dy/dx = 1/c
                             let lhs_grad = grad.div_scalar(*rhs)?;
                             let lhs_sum_grad = grads.or_insert(lhs)?;
                             *lhs_sum_grad = lhs_sum_grad.add(&lhs_grad)?;
                         }
 
+                        //=========================================================================================//
+                        //           Unary
+                        //=========================================================================================//
                         Op::Unary(_, UnaryOp::Ceil) => Err(crate::Error::BackwardNotSupported("ceil"))?,
                         Op::Unary(_, UnaryOp::Floor) => Err(crate::Error::BackwardNotSupported("floor"))?,
                         Op::Unary(_, UnaryOp::Round) => Err(crate::Error::BackwardNotSupported("round"))?,                        
                         Op::Unary(_, UnaryOp::Sign) => Err(crate::Error::BackwardNotSupported("sign"))?,
-
                         Op::Unary(arg, UnaryOp::Exp) => {
                             let sum_grad = grads.or_insert(arg)?;
                             *sum_grad = sum_grad.add(&(&grad * *node))?
@@ -125,6 +133,45 @@ impl<T: FloatDType> Tensor<T> {
                             *sum_grad = sum_grad.sub(&grad)?
                         }
 
+                        //=========================================================================================//
+                        //           Matmul
+                        //=========================================================================================//
+                        Op::Matmul(lhs, rhs) => {    
+                            let lhs_grad = grad.matmul(&rhs.transpose_last()?)?;
+                            let lhs_sum_grad = grads.or_insert(lhs)?;
+                            *lhs_sum_grad = lhs_sum_grad.add(&lhs_grad)?;
+    
+                            let rhs_grad = lhs.transpose_last()?.matmul(&grad)?;
+                            let rhs_sum_grad = grads.or_insert(rhs)?;
+                            *rhs_sum_grad = rhs_sum_grad.add(&rhs_grad)?;
+                        }
+
+                        //=========================================================================================//
+                        //           Reduce
+                        //=========================================================================================//
+                        Op::Reduce(arg, ReduceOp::Sum, reduced_dims) => {
+                            let grad = Self::broadcast_back(arg, &grad, reduced_dims)?;
+                            let sum_grad = grads.or_insert(arg)?;
+                            *sum_grad = sum_grad.add(&grad)?;
+                        }
+                        Op::Reduce(arg, ReduceOp::Max, reduced_dims) => {
+                            let node = Self::broadcast_back(arg, node, reduced_dims)?;
+                            let grad = Self::broadcast_back(arg, &grad, reduced_dims)?;
+                            let grad = node.eq(arg)?.to_dtype().mul(&grad)?;
+                            let sum_grad = grads.or_insert(arg)?;
+                            *sum_grad = sum_grad.add(&grad.broadcast_as(sum_grad.dims())?)?;
+                        }
+                        Op::Reduce(arg, ReduceOp::Min, reduced_dims) => {
+                            let node = Self::broadcast_back(arg, node, reduced_dims)?;
+                            let grad = Self::broadcast_back(arg, &grad, reduced_dims)?;
+                            let grad = node.eq(arg)?.to_dtype().mul(&grad)?;
+                            let sum_grad = grads.or_insert(arg)?;
+                            *sum_grad = sum_grad.add(&grad.broadcast_as(sum_grad.dims())?)?;
+                        }
+
+                        //=========================================================================================//
+                        //           Broadcast
+                        //=========================================================================================//
                         Op::Broadcast(arg) => {
                             let arg_dims = arg.dims();
                             let node_dims = node.dims();
@@ -174,7 +221,6 @@ impl<T: FloatDType> Tensor<T> {
             }
             let mut track_grad = false;
             let mut nodes = if node.is_leaf() {
-                // Do not call recursively on the "leaf" nodes.
                 track_grad = true;
                 nodes
             } else if node.dtype().is_int() {
@@ -197,8 +243,9 @@ impl<T: FloatDType> Tensor<T> {
 
                     | Op::BinaryScalar(node, _, _)
                     | Op::Broadcast(node)
-                    | Op::Reduce(node, ReduceOp::Min | ReduceOp::Sum | ReduceOp::Max, _)
-                    | Op::Unary(node, _) => {
+                    | Op::Unary(node, _)
+                    | Op::Reduce(node, _, _)
+                    | Op::ReduceAll(node, _) => {
                         let (tg, nodes) = walk(node, nodes, already_seen);
                         track_grad |= tg;
                         nodes
@@ -218,4 +265,11 @@ impl<T: FloatDType> Tensor<T> {
         nodes
     }
 
+    fn broadcast_back(arg: &Tensor<T>, node: &Tensor<T>, reduced_dims: &[usize]) -> crate::Result<Tensor<T>> {
+        if arg.rank() == node.rank() {
+            node.broadcast_as(arg.shape())
+        } else {
+            node.reshape(reduced_dims)?.broadcast_as(arg.shape())
+        }
+    }    
 }

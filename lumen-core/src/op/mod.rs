@@ -9,9 +9,10 @@ mod test;
 #[derive(Clone)]
 pub enum Op<T: FloatDType> {
     Binary(Tensor<T>, Tensor<T>, BinaryOp),
-    BinaryScalar(Tensor<T>, T, BinaryScalarOp),
+    BinaryScalar(Tensor<T>, T, BinaryOp),
     Unary(Tensor<T>, UnaryOp),
     Reduce(Tensor<T>, ReduceOp, Vec<usize>),
+    ReduceAll(Tensor<T>, ReduceOp),
     Matmul(Tensor<T>, Tensor<T>),
     Broadcast(Tensor<T>),
 }
@@ -35,16 +36,6 @@ pub enum ReduceOp {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
-    Add,
-    Mul,
-    Sub,
-    Div,
-    Maximum,
-    Minimum,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BinaryScalarOp {
     Add,
     Mul,
     Sub,

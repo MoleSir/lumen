@@ -1,4 +1,4 @@
-use crate::{op::BinaryOp, AutogradMetaT, BinaryScalarOp, CmpOp, Error, FloatDType, NumDType, Result, Shape, Storage, UnaryOp, WithDType};
+use crate::{op::BinaryOp, AutogradMetaT, CmpOp, Error, FloatDType, NumDType, Result, Shape, Storage, UnaryOp, WithDType};
 use super::Tensor;
 use paste::paste;
 
@@ -123,7 +123,7 @@ macro_rules! binary_op_impl {
         
             pub fn [< $fn_name _scalar >](&self, rhs: T) -> Result<Self> {
                 let (storage, shape) = Self::compute_binary_scalar_op(self, rhs, T::$fn_name, stringify!([< $fn_name _scalar >]))?;
-                let meta = T::AutogradMeta::on_binary_scalar_op(self, rhs, BinaryScalarOp::  [< $fn_name:camel >]);
+                let meta = T::AutogradMeta::on_binary_scalar_op(self, rhs, BinaryOp::  [< $fn_name:camel >]);
                 Ok(Self::from_op(storage, shape, meta))
             } 
         

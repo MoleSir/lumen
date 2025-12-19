@@ -208,4 +208,210 @@ mod test {
         
         assert!(grads[&x].allclose(&expected_grad, 1e-5, 1e-8));
     }
+
+    #[test]
+    fn test_matmul_basic_2d() {
+        // A: (2, 3), B: (3, 2)
+        let a = Var::<f64>::new(&[
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0]
+        ]).unwrap();
+        let b = Var::<f64>::new(&[
+            [7.0, 8.0],
+            [9.0, 10.0],
+            [11.0, 12.0]
+        ]).unwrap();
+
+        let c = a.matmul(&b).unwrap(); // (2, 2)
+        let grads = c.backward().unwrap();
+
+        // c = [[1*7+2*9+3*11, 1*8+2*10+3*12], [4*7+5*9+6*11, 4*8+5*10+6*12]]
+        // c = [[58, 64], [139, 154]]
+        
+        // dc/da = grad(2,2) * b^T(2,3) = [[1,1],[1,1]] * [[7,9,11],[8,10,12]]
+        // dc/da = [[15, 19, 23], [15, 19, 23]]
+        let expected_a_grad = Tensor::new(&[
+            [15.0, 19.0, 23.0],
+            [15.0, 19.0, 23.0]
+        ]).unwrap();
+        assert!(grads[&a].allclose(&expected_a_grad, 1e-5, 1e-8));
+
+        // dc/db = a^T(3,2) * grad(2,2) = [[1,4],[2,5],[3,6]] * [[1,1],[1,1]]
+        // dc/db = [[5, 5], [7, 7], [9, 9]]
+        let expected_b_grad = Tensor::new(&[
+            [5.0, 5.0],
+            [7.0, 7.0],
+            [9.0, 9.0]
+        ]).unwrap();
+        assert!(grads[&b].allclose(&expected_b_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_matmul_vector() {
+        let w = Var::<f64>::new(&[
+            [0.5, -0.5],
+            [0.1, 0.8]
+        ]).unwrap();
+        let x = Var::<f64>::new(&[
+            [1.0],
+            [2.0]
+        ]).unwrap();
+
+        let y = w.matmul(&x).unwrap();
+        let grads = y.backward().unwrap();
+
+        // dy/dw = grad * x^T = [[1],[1]] * [[1, 2]] = [[1, 2], [1, 2]]
+        let expected_w_grad = Tensor::new(&[
+            [1.0, 2.0],
+            [1.0, 2.0]
+        ]).unwrap();
+        assert!(grads[&w].allclose(&expected_w_grad, 1e-5, 1e-8));
+
+        // dy/dx = w^T * grad = [[0.5, 0.1], [-0.5, 0.8]] * [[1], [1]] = [[0.6], [0.3]]
+        let expected_x_grad = Tensor::new(&[
+            [0.6],
+            [0.3]
+        ]).unwrap();
+        assert!(grads[&x].allclose(&expected_x_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_batched_matmul() {
+        // A: (2, 2, 2), B: (2, 2, 2)
+        let a = Var::<f64>::new(&[
+            [[1.0, 2.0], [3.0, 4.0]],
+            [[0.5, 0.5], [0.5, 0.5]]
+        ]).unwrap();
+        let b = Var::<f64>::new(&[
+            [[1.0, 0.0], [0.0, 1.0]], 
+            [[2.0, 2.0], [2.0, 2.0]]   
+        ]).unwrap();
+
+        let c = a.matmul(&b).unwrap();
+        let grads = c.backward().unwrap();
+
+        let expected_a_grad = Tensor::new(&[
+            [[1.0, 1.0], [1.0, 1.0]],
+            [[4.0, 4.0], [4.0, 4.0]]
+        ]).unwrap();
+        
+        assert!(grads[&a].allclose(&expected_a_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_matmul_chain_with_add() {
+        let w = Var::<f64>::new(&[[2.0, 3.0]]).unwrap(); // (1, 2)
+        let x = Var::<f64>::new(&[[4.0], [5.0]]).unwrap(); // (2, 1)
+        let b = Var::<f64>::new(&[[10.0]]).unwrap(); // (1, 1)
+
+        let y = w.matmul(&x).unwrap().add(&b).unwrap();
+        let grads = y.backward().unwrap();
+
+        // dy/dw = x^T = [[4, 5]]
+        assert!(grads[&w].allclose(&Tensor::new(&[[4.0, 5.0]]).unwrap(), 1e-5, 1e-8));
+        // dy/dx = w^T = [[2], [3]]
+        assert!(grads[&x].allclose(&Tensor::new(&[[2.0], [3.0]]).unwrap(), 1e-5, 1e-8));
+        // dy/db = 1
+        assert!(grads[&b].allclose(&Tensor::new(&[[1.0]]).unwrap(), 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_sum_dim_0() {
+        // A: (2, 2)
+        // [ [1.0, 2.0],
+        //   [3.0, 4.0] ]
+        let a = Var::<f64>::new(&[[1.0, 2.0], [3.0, 4.0]]).unwrap();
+
+        let s = a.sum_keepdim(0).unwrap(); 
+        let grads = s.backward().unwrap();
+
+        let expected_grad = Tensor::new(&[[1.0, 1.0], [1.0, 1.0]]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_sum_dim_1() {
+        // A: (2, 3)
+        let a = Var::<f64>::new(&[
+            [1.0, 1.0, 1.0],
+            [2.0, 2.0, 2.0]
+        ]).unwrap();
+        
+        let s = a.sum_keepdim(1).unwrap(); 
+        let grads = s.backward().unwrap();
+
+        let expected_grad = Tensor::ones_like(&a).unwrap();
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_max_dim_0() {
+        // A: (2, 2)
+        // [ [10.0, 2.0],
+        //   [5.0,  8.0] ]
+        let a = Var::<f64>::new(&[[10.0, 2.0], [5.0, 8.0]]).unwrap();
+        
+        // m = a.max(0) => [10.0, 8.0]
+        let m = a.max_keepdim(0).unwrap();
+        let grads = m.backward().unwrap();
+
+        let expected_grad = Tensor::new(&[
+            [1.0, 0.0],
+            [0.0, 1.0]
+        ]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_min_dim_1() {
+        // A: (2, 3)
+        // [ [1.0, 5.0, 0.0],
+        //   [4.0, 2.0, 6.0] ]
+        let a = Var::<f64>::new(&[
+            [1.0, 5.0, 0.0],
+            [4.0, 2.0, 6.0]
+        ]).unwrap();
+        
+        // m = a.min(1) => [0.0, 2.0]
+        let m = a.min_keepdim(1).unwrap();
+        let grads = m.backward().unwrap();
+
+        let expected_grad = Tensor::new(&[
+            [0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0]
+        ]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_max_with_ties() {
+        // A: [5.0, 5.0, 2.0]
+        let a = Var::<f64>::new(&[5.0, 5.0, 2.0]).unwrap();
+        
+        // max(0) => 5.0
+        let m = a.max_keepdim(0).unwrap();
+        let grads = m.backward().unwrap();
+
+        let expected_grad = Tensor::new(&[1.0, 1.0, 0.0]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_reduce_with_matmul() {
+        // y = sum( A(2,2) @ x(2,1) )
+        let a = Var::<f64>::new(&[[1.0, 2.0], [3.0, 4.0]]).unwrap();
+        let x = Var::<f64>::new(&[[10.0], [100.0]]).unwrap();
+        
+        // res = [[210], [430]]
+        let res = a.matmul(&x).unwrap();
+        // y = 210 + 430 = 640
+        let y = res.sum_keepdim(0).unwrap(); 
+        
+        let grads = y.backward().unwrap();
+
+        // dy/dres = [1, 1]
+        // dy/dx = A^T @ [1, 1]^T = [[1, 3], [2, 4]] @ [[1], [1]] = [[4], [6]]
+        let expected_x_grad = Tensor::new(&[[4.0], [6.0]]).unwrap();
+        assert!(grads[&x].allclose(&expected_x_grad, 1e-5, 1e-8));
+    }
 }

@@ -56,10 +56,6 @@ impl<T: NumDType> Tensor<T> {
         self.iter().sum::<T>()
     }
 
-    pub fn product_all(&self) -> T {
-        self.iter().product::<T>()
-    }
-
     pub fn min_all(&self) -> T {
         self.iter().reduce(|acc, e| T::minimum(acc, e)).unwrap()
     }
@@ -378,12 +374,6 @@ mod tests {
     }
 
     #[test]
-    fn test_product_all() {
-        let arr = Tensor::new(&[1, 2, 3, 4]).unwrap();
-        assert_eq!(arr.product_all(), 24);
-    }
-
-    #[test]
     fn test_min_max_1d() {
         let arr = Tensor::new(&[5, 2, 9, -1, 0]).unwrap();
         assert_eq!(arr.min_all(), -1);
@@ -395,15 +385,6 @@ mod tests {
         let arr = Tensor::new(&[[3, 7, 1], [9, -2, 5]]).unwrap();
         assert_eq!(arr.min_all(), -2);
         assert_eq!(arr.max_all(), 9);
-    }
-
-    #[test]
-    fn test_all_same() {
-        let arr = Tensor::full((3, 3), 7).unwrap();
-        assert_eq!(arr.sum_all(), 7 * 9);
-        assert_eq!(arr.product_all(), 7_i32.pow(9));
-        assert_eq!(arr.min_all(), 7);
-        assert_eq!(arr.max_all(), 7);
     }
 
     #[test]
