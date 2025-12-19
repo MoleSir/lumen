@@ -26,6 +26,7 @@ impl<T: WithDType> Tensor<T> {
                 id: TensorId::new(),
                 storage: self.0.storage.clone(),
                 layout: Layout::new(dims, strides, self.layout().start_offset()),
+                meta: Default::default(),
             };
             Ok(Self(Arc::new(tensor_)))
         } else {
@@ -56,6 +57,7 @@ impl<T: WithDType> Tensor<T> {
             id: TensorId::new(),
             storage: self.0.storage.clone(),
             layout: Layout::new(dims, strides, self.layout().start_offset()),
+            meta: Default::default(),
         };
         Ok(Self(Arc::new(tensor_)))
     }
@@ -103,6 +105,7 @@ impl<T: WithDType> Tensor<T> {
                 id: TensorId::new(),
                 storage: self.0.storage.clone(),
                 layout,
+                meta: Default::default(),
             };
             Ok(Self(Arc::new(tensor_)))
         }
@@ -161,6 +164,7 @@ impl<T: WithDType> Tensor<T> {
                 id: TensorId::new(),
                 storage: self.0.storage.clone(),
                 layout,
+                meta: Default::default(),
             };
             Ok(Self(Arc::new(tensor_)))
         }
@@ -197,6 +201,7 @@ impl<T: WithDType> Tensor<T> {
                 id: TensorId::new(),
                 storage: self.0.storage.clone(),
                 layout: Layout::contiguous_with_offset(shape, self.layout().start_offset()),
+                meta: Default::default(),
             };
             Ok(Tensor(Arc::new(tensor_)))
         } else {
@@ -216,6 +221,7 @@ impl<T: WithDType> Tensor<T> {
             id: TensorId::new(),
             storage: self.0.storage.clone(),
             layout: self.layout().transpose(dim1, dim2)?,
+            meta: Default::default(),
         };
         Ok(Tensor(Arc::new(tensor_)))
     }

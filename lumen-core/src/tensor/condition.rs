@@ -244,19 +244,19 @@ mod test {
         assert_eq!(result.to_vec(), [1, 20, 30, 1, 1, 1, 70, 80]);
     }
     
-    #[test]
-    fn test_select() {
-        let scores = Tensor::new(&[
-            [45., 12., 34., 90.],
-            [31., 19., 84., 60.],
-            [55., 34., 44., 82.],
-            [85., 89., 54., 67.],
-        ]).unwrap();
+    // #[test]
+    // fn test_select() {
+    //     let scores = Tensor::new(&[
+    //         [45., 12., 34., 90.],
+    //         [31., 19., 84., 60.],
+    //         [55., 34., 44., 82.],
+    //         [85., 89., 54., 67.],
+    //     ]).unwrap();
 
-        // scores > 60 & scores < 85
-        let mask = scores.ge(60.).unwrap().and(&scores.le(85.).unwrap()).unwrap();
+    //     // scores > 60 & scores < 85
+    //     let mask = scores.ge(60.).unwrap().and(&scores.le(85.).unwrap()).unwrap();
 
-        let selected_scores = Tensor::select(&mask, &scores, -1.).unwrap();
-        println!("{}", selected_scores);
-    }
+    //     let selected_scores = Tensor::select(&mask, &scores, -1.).unwrap();
+    //     println!("{}", selected_scores);
+    // }
 }

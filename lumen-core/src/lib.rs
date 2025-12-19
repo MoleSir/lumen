@@ -6,6 +6,8 @@ mod dtype;
 mod storage;
 mod tensor;
 mod error;
+mod op;
+mod variable;
 
 pub use shape::*;
 pub use layout::*;
@@ -13,3 +15,5 @@ pub use dtype::*;
 pub use storage::*;
 pub use tensor::*;
 pub use error::*;
+pub use op::*;
+pub use variable::*;

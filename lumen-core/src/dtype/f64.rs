@@ -2,10 +2,11 @@ use approx::relative_eq;
 
 use crate::{Result, Storage};
 
-use super::{DType, FloatCategory, FloatDType, NumDType, WithDType};
+use super::{AutogradInfo, DType, FloatCategory, FloatDType, NumDType, WithDType};
 
 impl WithDType for f64 {
     const DTYPE: DType = DType::F64;
+    type AutogradMeta = AutogradInfo<f64>;
 }
 
 impl NumDType for f64 {

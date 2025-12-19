@@ -9,8 +9,23 @@ mod i8;
 mod u16;
 mod i16;
 
-use crate::Result;
+
+use crate::{op::{AutogradInfo, AutogradMetaT, NoAutograd}, Result};
 use super::Storage;
+
+pub trait WithDType:
+    Sized
+    + Copy
+    + std::cmp::PartialOrd
+    + std::cmp::PartialEq
+    + std::fmt::Display
+    + 'static
+    + Send
+    + Sync
+{
+    const DTYPE: DType;
+    type AutogradMeta: AutogradMetaT<Self>;
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum DType {
@@ -68,19 +83,6 @@ impl std::fmt::Display for DType {
     }
 }
 
-pub trait WithDType:
-    Sized
-    + Copy
-    + std::cmp::PartialOrd
-    + std::cmp::PartialEq
-    + std::fmt::Display
-    + 'static
-    + Send
-    + Sync
-{
-    const DTYPE: DType;
-}
-
 pub trait NumDType : 
     WithDType 
   + num_traits::Num    
@@ -132,7 +134,7 @@ pub trait UnsignedIntDType :
 }
 
 pub trait FloatDType: 
-    NumDType<Category = FloatCategory>
+    NumDType<Category = FloatCategory, AutogradMeta = AutogradInfo<Self>>
     + num_traits::Float
 {
 }

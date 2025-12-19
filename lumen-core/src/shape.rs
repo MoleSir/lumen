@@ -317,6 +317,7 @@ impl_from_tuple!((usize, usize, usize, usize), 0, 1, 2, 3);
 impl_from_tuple!((usize, usize, usize, usize, usize), 0, 1, 2, 3, 4);
 impl_from_tuple!((usize, usize, usize, usize, usize, usize), 0, 1, 2, 3, 4, 5);
 
+#[derive(Debug, Clone, Copy)]
 pub enum D {
     Minus1,
     Minus2,
@@ -399,7 +400,7 @@ extract_dims!(
 );
 
 
-pub trait Dim {
+pub trait Dim : Copy {
     fn to_index(&self, shape: &Shape, op: &'static str) -> Result<usize>;
     fn to_index_plus_one(&self, shape: &Shape, op: &'static str) -> Result<usize>;
 }

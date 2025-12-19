@@ -1,0 +1,64 @@
+use crate::{FloatDType, Tensor};
+mod grad;
+pub use grad::*;
+mod backprop;
+
+#[derive(Clone)]
+pub enum Op<T: FloatDType> {
+    Binary(Tensor<T>, Tensor<T>, BinaryOp),
+    Unary(Tensor<T>, UnaryOp),
+    Reduce(Tensor<T>, ReduceOp, Vec<usize>),
+    Matmul(Tensor<T>, Tensor<T>),
+    Broadcast(Tensor<T>),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CmpOp {
+    Eq,
+    Ne,
+    Le,
+    Ge,
+    Lt,
+    Gt,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReduceOp {
+    Sum,
+    Min,
+    Max,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryOp {
+    Add,
+    Mul,
+    Sub,
+    Div,
+    Maximum,
+    Minimum,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOp {
+    Exp,
+    Log,
+    Sin,
+    Cos,
+    Abs,
+    Neg,
+    Recip,
+    Sqr,
+    Sqrt,
+    Gelu,
+    GeluErf,
+    Erf,
+    Relu,
+    Silu,
+    Tanh,
+    Floor,
+    Ceil,
+    Round,
+    Sign,
+    Ln,
+}

@@ -10,23 +10,26 @@ mod broadcast;
 mod convert;
 mod condition;
 
+pub use construct::ToTensor;
 use std::{hash::Hash, sync::Arc};
 pub use indexer::{Range, IndexOp};
-use crate::{Error, Result};
+use crate::{Error, FloatDType, Result};
 use super::{DType, Dim, DimCoordinates, DimNCoordinates, Layout, NumDType, Shape, Storage, StorageArc, StorageIndices, StorageMut, StorageRef, WithDType};
 pub use iter::*;
 pub use indexer::*;
 
 #[derive(Clone)]
-pub struct Tensor<D>(pub(crate) Arc<TensorImpl<D>>);
+pub struct Tensor<T: WithDType>(pub(crate) Arc<TensorImpl<T>>);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TensorId(usize);
 
-pub struct TensorImpl<T> {
+pub struct TensorImpl<T: WithDType> {
     pub(crate) id: TensorId,
     pub(crate) storage: StorageArc<T>,
     pub(crate) layout: Layout,
+
+    pub(crate) meta: T::AutogradMeta,
 }
 
 impl TensorId {
@@ -189,5 +192,11 @@ impl<T: NumDType> Tensor<T> {
             return false;
         }
         self.iter().zip(other.iter()).all(|(a, b)| a.close(b, rtol, atol))
+    }
+}
+
+impl<T: FloatDType> Tensor<T> {
+    pub fn requires_grad(&self) -> bool {
+        self.0.meta.requires_grad
     }
 }

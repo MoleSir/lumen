@@ -1,9 +1,10 @@
 use crate::{Result, Storage};
 
-use super::{DType, IntCategory, IntDType, NumDType, WithDType};
+use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, WithDType};
 
 impl WithDType for i8 {
     const DTYPE: DType = DType::I8;
+    type AutogradMeta = NoAutograd;
 }
 
 impl NumDType for i8 {

@@ -183,7 +183,7 @@ impl From<std::ops::RangeFull> for Indexer {
     }
 }
 
-pub trait IndexOp<T, D> {
+pub trait IndexOp<T, D: WithDType> {
     fn index(&self, index: T) -> Result<Tensor<D>>;
 }
 

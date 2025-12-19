@@ -1,5 +1,6 @@
-use crate::{Error, FloatDType, NumDType, Result, Shape, Storage, WithDType};
+use crate::{op::BinaryOp, AutogradMetaT, CmpOp, Error, FloatDType, NumDType, Result, Shape, Storage, UnaryOp, WithDType};
 use super::Tensor;
+use paste::paste;
 
 //////////////////////////////////////////////////////////////////////////////
 ///        Binary(Assign) Op with Tensor and Tensor / scalar
@@ -21,66 +22,8 @@ impl<T: WithDType> Tensor<T> {
     }
 }
 
-pub trait TensorBinaryOpRhs<T: WithDType> {
-    fn op<U, F>(lhs: &Tensor<T>, rhs: Self, f: F, op_name: &'static str) -> Result<Tensor<U>>
-    where 
-        U: WithDType, 
-        F: FnMut(T, T) -> U;
-
-    fn assign_op<F>(lhs: &Tensor<T>, rhs: Self, f: F, op_name: &'static str) -> Result<()>
-    where 
-        F: FnMut(T, T) -> T;
-}
-
-impl<T: WithDType> TensorBinaryOpRhs<T> for T {
-    fn op<U, F>(lhs: &Tensor<T>, rhs: T, mut f: F, _op_name: &'static str) -> Result<Tensor<U>>
-        where 
-            U: WithDType, 
-            F: FnMut(T, T) -> U 
-    {
-        let storage = lhs.storage();
-        let vec = storage.data();
-        let output: Vec<_> = lhs.layout().storage_indices()
-            .map(|i| f(vec[i], rhs))
-            .collect();
-    
-        let storage = Storage::<U>::new(output);
-        Ok(Tensor::<U>::from_storage(storage, lhs.shape()))
-    }
-
-    fn assign_op<F>(lhs: &Tensor<T>, rhs: T, mut f: F, _op_name: &'static str) -> Result<()>
-        where 
-            F: FnMut(T, T) -> T
-    {
-        let mut storage = lhs.0.storage.write();
-        let data = storage.data_mut();
-
-        lhs.layout().storage_indices()
-            .for_each(|i| data[i] = f(data[i], rhs));
-
-        Ok(())
-    }
-} 
-
-impl<T: WithDType> TensorBinaryOpRhs<T> for Tensor<T> {
-    fn op<U, F>(lhs: &Tensor<T>, rhs: Tensor<T>, f: F, op_name: &'static str) -> Result<Tensor<U>>
-        where 
-            U: WithDType, 
-            F: FnMut(T, T) -> U 
-    {
-        <&Tensor<T> as TensorBinaryOpRhs<T>>::op(lhs, &rhs, f, op_name)
-    }
-
-    fn assign_op<F>(lhs: &Tensor<T>, rhs: Self, f: F, op_name: &'static str) -> Result<()>
-        where 
-            F: FnMut(T, T) -> T 
-    {
-        <&Tensor<T> as TensorBinaryOpRhs<T>>::assign_op(lhs, &rhs, f, op_name)
-    }
-}
-
-impl<T: WithDType> TensorBinaryOpRhs<T> for &Tensor<T> {
-    fn op<U, F>(lhs: &Tensor<T>, rhs: &Tensor<T>, mut f: F, op_name: &'static str) -> Result<Tensor<U>>
+impl<T: WithDType> Tensor<T> {
+    fn compute_binary_op<U, F>(lhs: &Tensor<T>, rhs: &Tensor<T>, mut f: F, op_name: &'static str) -> Result<(Storage<U>, Shape)>
         where 
             U: WithDType, 
             F: FnMut(T, T) -> U 
@@ -101,6 +44,15 @@ impl<T: WithDType> TensorBinaryOpRhs<T> for &Tensor<T> {
             .collect();
         
         let storage = Storage::<U>::new(output);
+        Ok((storage, shape.clone()))
+    }
+
+    fn binary_op<U, F>(lhs: &Tensor<T>, rhs: &Tensor<T>, f: F, op_name: &'static str) -> Result<Tensor<U>>
+    where 
+        U: WithDType, 
+        F: FnMut(T, T) -> U 
+    {
+        let (storage, shape) = Self::compute_binary_op(lhs, rhs, f, op_name)?;
         Ok(Tensor::<U>::from_storage(storage, shape))
     }
 
@@ -129,8 +81,12 @@ impl<T: WithDType> TensorBinaryOpRhs<T> for &Tensor<T> {
 
 macro_rules! binary_op_impl {
     ($fn_name:ident) => {
-        pub fn $fn_name(&self, rhs: impl TensorBinaryOpRhs<T>) -> Result<Self> {
-            TensorBinaryOpRhs::<T>::op(self, rhs, T::$fn_name, stringify!(fn_name))
+        paste! {
+            pub fn $fn_name(&self, rhs: &Self) -> Result<Self> {
+                let (storage, shape) = Self::compute_binary_op(self, rhs, T::$fn_name, stringify!(fn_name))?;
+                let meta = T::AutogradMeta::on_binary_op(self, rhs, BinaryOp:: [< $fn_name:camel >]);
+                Ok(Self::from_op(storage, shape, meta))
+            }
         }
     };
 }
@@ -146,8 +102,8 @@ impl<T: NumDType> Tensor<T> {
 
 macro_rules! assign_op_impl {
     ($fn_name:ident, $op:ident) => {
-        pub fn $fn_name(&self, rhs: impl TensorBinaryOpRhs<T>) -> Result<()> {
-            TensorBinaryOpRhs::<T>::assign_op(self, rhs, T::$op, stringify!(fn_name))
+        pub fn $fn_name(&self, rhs: &Self) -> Result<()> {
+            Self::assign_op(self, rhs, T::$op, stringify!(fn_name))
         }
     };
 }
@@ -161,78 +117,68 @@ impl<T: NumDType> Tensor<T> {
     assign_op_impl!(maximum_assign, maximum);
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum CmpOp {
-    Eq,
-    Ne,
-    Le,
-    Ge,
-    Lt,
-    Gt,
-}
-
 impl<T: NumDType> Tensor<T> {
-    pub fn eq(&self, rhs: impl TensorBinaryOpRhs<T>) -> Result<Tensor<bool>> {
+    pub fn eq(&self, rhs: &Self) -> Result<Tensor<bool>> {
         self.cmp(rhs, CmpOp::Eq)
     }
 
-    pub fn ne(&self, rhs: impl TensorBinaryOpRhs<T>) -> Result<Tensor<bool>> {
+    pub fn ne(&self, rhs: &Self) -> Result<Tensor<bool>> {
         self.cmp(rhs, CmpOp::Ne)
     }
 
-    pub fn le(&self, rhs: impl TensorBinaryOpRhs<T>) -> Result<Tensor<bool>> {
+    pub fn le(&self, rhs: &Self) -> Result<Tensor<bool>> {
         self.cmp(rhs, CmpOp::Le)
     }
 
-    pub fn ge(&self, rhs: impl TensorBinaryOpRhs<T>) -> Result<Tensor<bool>> {
+    pub fn ge(&self, rhs: &Self) -> Result<Tensor<bool>> {
         self.cmp(rhs, CmpOp::Ge)
     }
 
-    pub fn lt(&self, rhs: impl TensorBinaryOpRhs<T>) -> Result<Tensor<bool>> {
+    pub fn lt(&self, rhs: &Self) -> Result<Tensor<bool>> {
         self.cmp(rhs, CmpOp::Lt)
     }
 
-    pub fn gt(&self, rhs: impl TensorBinaryOpRhs<T>) -> Result<Tensor<bool>> {
+    pub fn gt(&self, rhs: &Self) -> Result<Tensor<bool>> {
         self.cmp(rhs, CmpOp::Gt)
     }
 
-    pub fn cmp(&self, rhs: impl TensorBinaryOpRhs<T>, op: CmpOp) -> Result<Tensor<bool>> {
+    pub fn cmp(&self, rhs: &Self, op: CmpOp) -> Result<Tensor<bool>> {
         match op {
-            CmpOp::Eq => TensorBinaryOpRhs::<T>::op(self, rhs, |a, b| a == b, "eq"),
-            CmpOp::Ne => TensorBinaryOpRhs::<T>::op(self, rhs, |a, b| a != b, "nq"),
-            CmpOp::Le => TensorBinaryOpRhs::<T>::op(self, rhs, |a, b| a <= b, "le"),
-            CmpOp::Ge => TensorBinaryOpRhs::<T>::op(self, rhs, |a, b| a >= b, "ge"),
-            CmpOp::Lt => TensorBinaryOpRhs::<T>::op(self, rhs, |a, b| a <  b, "lt"),
-            CmpOp::Gt => TensorBinaryOpRhs::<T>::op(self, rhs, |a, b| a >  b, "gt"),
+            CmpOp::Eq => Self::binary_op(self, rhs, |a, b| a == b, "eq"),
+            CmpOp::Ne => Self::binary_op(self, rhs, |a, b| a != b, "nq"),
+            CmpOp::Le => Self::binary_op(self, rhs, |a, b| a <= b, "le"),
+            CmpOp::Ge => Self::binary_op(self, rhs, |a, b| a >= b, "ge"),
+            CmpOp::Lt => Self::binary_op(self, rhs, |a, b| a <  b, "lt"),
+            CmpOp::Gt => Self::binary_op(self, rhs, |a, b| a >  b, "gt"),
         }
     } 
 }
 
 impl Tensor<bool> {
-    pub fn and(&self, rhs: impl TensorBinaryOpRhs<bool>) -> Result<Tensor<bool>> {
-        TensorBinaryOpRhs::<bool>::op(self, rhs, |a, b| a & b, "and")
+    pub fn and(&self, rhs: &Self) -> Result<Tensor<bool>> {
+        Self::binary_op(self, rhs, |a, b| a & b, "and")
     }
 
-    pub fn or(&self, rhs: impl TensorBinaryOpRhs<bool>) -> Result<Tensor<bool>> {
-        TensorBinaryOpRhs::<bool>::op(self, rhs, |a, b| a | b, "or")
+    pub fn or(&self, rhs: &Self) -> Result<Tensor<bool>> {
+        Self::binary_op(self, rhs, |a, b| a | b, "or")
     }
 
-    pub fn xor(&self, rhs: impl TensorBinaryOpRhs<bool>) -> Result<Tensor<bool>> {
-        TensorBinaryOpRhs::<bool>::op(self, rhs, |a, b| a ^ b, "xor")
+    pub fn xor(&self, rhs: &Self) -> Result<Tensor<bool>> {
+        Self::binary_op(self, rhs, |a, b| a ^ b, "xor")
     }
 
-    pub fn and_assign(&self, rhs: impl TensorBinaryOpRhs<bool>) -> Result<()> {
-        TensorBinaryOpRhs::<bool>::assign_op(self, rhs, |a, b| a & b, "and_assign")?;
+    pub fn and_assign(&self, rhs: &Self) -> Result<()> {
+        Self::assign_op(self, rhs, |a, b| a & b, "and_assign")?;
         Ok(())
     }
 
-    pub fn or_assign(&self, rhs: impl TensorBinaryOpRhs<bool>) -> Result<()> {
-        TensorBinaryOpRhs::<bool>::assign_op(self, rhs, |a, b| a | b, "or_assign")?;
+    pub fn or_assign(&self, rhs: &Self) -> Result<()> {
+        Self::assign_op(self, rhs, |a, b| a | b, "or_assign")?;
         Ok(())
     }
 
-    pub fn xor_assign(&self, rhs: impl TensorBinaryOpRhs<bool>) -> Result<()> {
-        TensorBinaryOpRhs::<bool>::assign_op(self, rhs, |a, b| a ^ b, "xor_assign")?;
+    pub fn xor_assign(&self, rhs: &Self) -> Result<()> {
+        Self::assign_op(self, rhs, |a, b| a ^ b, "xor_assign")?;
         Ok(())
     }
 
@@ -240,7 +186,7 @@ impl Tensor<bool> {
         if self.element_count() == 0 {
             return self.clone();
         }
-        let storage = self.unary_op(|v| !v);
+        let storage = self.compute_unary_op(|v| !v);
         Self::from_storage(storage, self.shape())
     }
 }
@@ -250,7 +196,7 @@ impl Tensor<bool> {
 //////////////////////////////////////////////////////////////////////////////
 
 impl<T: WithDType> Tensor<T> {
-    fn unary_op<U, F>(&self, mut f: F) -> Storage<U> 
+    fn compute_unary_op<U, F>(&self, mut f: F) -> Storage<U> 
     where
         U: WithDType,
         F: FnMut(T) -> U
@@ -282,7 +228,7 @@ impl<T: NumDType> Tensor<T> {
         if self.element_count() == 0 {
             return Ok(self.clone());
         }
-        let storage = self.unary_op(|v| v * mul + add);
+        let storage = self.compute_unary_op(|v| v * mul + add);
         Ok(Self::from_storage(storage, self.shape()))
     }
 
@@ -297,12 +243,15 @@ impl<T: NumDType> Tensor<T> {
 
 macro_rules! float_unary_op_impl {
     ($fn_name:ident) => {
-        pub fn $fn_name(&self) -> Self {
-            if self.element_count() == 0 {
-                return self.clone();
+        paste! {
+            pub fn $fn_name(&self) -> Self {
+                if self.element_count() == 0 {
+                    return self.clone();
+                }
+                let storage = self.compute_unary_op(F::$fn_name);
+                let meta = F::AutogradMeta::on_unray_op(self, UnaryOp:: [< $fn_name:camel >]);
+                Self::from_op(storage, self.shape(), meta)
             }
-            let storage = self.unary_op(F::$fn_name);
-            Self::from_storage(storage, self.shape())
         }
     };
 }
@@ -324,7 +273,7 @@ impl<T: WithDType> Tensor<T> {
         O: WithDType,
         F: Fn(T) -> O,
     {
-        let storage = self.unary_op(f);
+        let storage = self.compute_unary_op(f);
         Tensor::from_storage(storage, self.shape())
     }
 
@@ -367,173 +316,173 @@ impl<F: FloatDType> Tensor<F> {
     float_unary_assign_op_impl!(recip_assign, recip);
 }
 
-use std::ops::{Add, AddAssign, BitAnd, BitOr, BitXor, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
+// use std::ops::{Add, AddAssign, BitAnd, BitOr, BitXor, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
-//////////////////////////////////////////////////////////////////////////////
-///        Add
-//////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
+// ///        Add
+// //////////////////////////////////////////////////////////////////////////////
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> Add<R> for &Tensor<T> {
-    type Output = Tensor<T>;
-    fn add(self, rhs: R) -> Self::Output {
-        Tensor::add(self, rhs).unwrap()
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> Add<R> for &Tensor<T> {
+//     type Output = Tensor<T>;
+//     fn add(self, rhs: R) -> Self::Output {
+//         Tensor::add(self, rhs).unwrap()
+//     }
+// }
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> Add<R> for Tensor<T> {
-    type Output = Tensor<T>;
-    fn add(self, rhs: R) -> Self::Output {
-        Tensor::add(&self, rhs).unwrap()
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> Add<R> for Tensor<T> {
+//     type Output = Tensor<T>;
+//     fn add(self, rhs: R) -> Self::Output {
+//         Tensor::add(&self, rhs).unwrap()
+//     }
+// }
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> AddAssign<R> for Tensor<T> {
-    fn add_assign(&mut self, rhs: R) {
-        Tensor::add_assign(self, rhs).unwrap();
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> AddAssign<R> for Tensor<T> {
+//     fn add_assign(&mut self, rhs: R) {
+//         Tensor::add_assign(self, rhs).unwrap();
+//     }
+// }
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> AddAssign<R> for &Tensor<T> {
-    fn add_assign(&mut self, rhs: R) {
-        Tensor::add_assign(self, rhs).unwrap();
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> AddAssign<R> for &Tensor<T> {
+//     fn add_assign(&mut self, rhs: R) {
+//         Tensor::add_assign(self, rhs).unwrap();
+//     }
+// }
 
-//////////////////////////////////////////////////////////////////////////////
-///        Sub
-//////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
+// ///        Sub
+// //////////////////////////////////////////////////////////////////////////////
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> Sub<R> for &Tensor<T> {
-    type Output = Tensor<T>;
-    fn sub(self, rhs: R) -> Self::Output {
-        Tensor::sub(self, rhs).unwrap()
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> Sub<R> for &Tensor<T> {
+//     type Output = Tensor<T>;
+//     fn sub(self, rhs: R) -> Self::Output {
+//         Tensor::sub(self, rhs).unwrap()
+//     }
+// }
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> Sub<R> for Tensor<T> {
-    type Output = Tensor<T>;
-    fn sub(self, rhs: R) -> Self::Output {
-        Tensor::sub(&self, rhs).unwrap()
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> Sub<R> for Tensor<T> {
+//     type Output = Tensor<T>;
+//     fn sub(self, rhs: R) -> Self::Output {
+//         Tensor::sub(&self, rhs).unwrap()
+//     }
+// }
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> SubAssign<R> for Tensor<T> {
-    fn sub_assign(&mut self, rhs: R) {
-        Tensor::sub_assign(self, rhs).unwrap();
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> SubAssign<R> for Tensor<T> {
+//     fn sub_assign(&mut self, rhs: R) {
+//         Tensor::sub_assign(self, rhs).unwrap();
+//     }
+// }
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> SubAssign<R> for &Tensor<T> {
-    fn sub_assign(&mut self, rhs: R) {
-        Tensor::sub_assign(self, rhs).unwrap();
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> SubAssign<R> for &Tensor<T> {
+//     fn sub_assign(&mut self, rhs: R) {
+//         Tensor::sub_assign(self, rhs).unwrap();
+//     }
+// }
 
-//////////////////////////////////////////////////////////////////////////////
-///        Mul
-//////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
+// ///        Mul
+// //////////////////////////////////////////////////////////////////////////////
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> Mul<R> for &Tensor<T> {
-    type Output = Tensor<T>;
-    fn mul(self, rhs: R) -> Self::Output {
-        Tensor::mul(self, rhs).unwrap()
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> Mul<R> for &Tensor<T> {
+//     type Output = Tensor<T>;
+//     fn mul(self, rhs: R) -> Self::Output {
+//         Tensor::mul(self, rhs).unwrap()
+//     }
+// }
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> Mul<R> for Tensor<T> {
-    type Output = Tensor<T>;
-    fn mul(self, rhs: R) -> Self::Output {
-        Tensor::mul(&self, rhs).unwrap()
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> Mul<R> for Tensor<T> {
+//     type Output = Tensor<T>;
+//     fn mul(self, rhs: R) -> Self::Output {
+//         Tensor::mul(&self, rhs).unwrap()
+//     }
+// }
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> MulAssign<R> for Tensor<T> {
-    fn mul_assign(&mut self, rhs: R) {
-        Tensor::mul_assign(self, rhs).unwrap();
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> MulAssign<R> for Tensor<T> {
+//     fn mul_assign(&mut self, rhs: R) {
+//         Tensor::mul_assign(self, rhs).unwrap();
+//     }
+// }
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> MulAssign<R> for &Tensor<T> {
-    fn mul_assign(&mut self, rhs: R) {
-        Tensor::mul_assign(self, rhs).unwrap();
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> MulAssign<R> for &Tensor<T> {
+//     fn mul_assign(&mut self, rhs: R) {
+//         Tensor::mul_assign(self, rhs).unwrap();
+//     }
+// }
 
-//////////////////////////////////////////////////////////////////////////////
-///        Div
-//////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
+// ///        Div
+// //////////////////////////////////////////////////////////////////////////////
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> Div<R> for &Tensor<T> {
-    type Output = Tensor<T>;
-    fn div(self, rhs: R) -> Self::Output {
-        Tensor::div(self, rhs).unwrap()
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> Div<R> for &Tensor<T> {
+//     type Output = Tensor<T>;
+//     fn div(self, rhs: R) -> Self::Output {
+//         Tensor::div(self, rhs).unwrap()
+//     }
+// }
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> Div<R> for Tensor<T> {
-    type Output = Tensor<T>;
-    fn div(self, rhs: R) -> Self::Output {
-        Tensor::div(&self, rhs).unwrap()
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> Div<R> for Tensor<T> {
+//     type Output = Tensor<T>;
+//     fn div(self, rhs: R) -> Self::Output {
+//         Tensor::div(&self, rhs).unwrap()
+//     }
+// }
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> DivAssign<R> for Tensor<T> {
-    fn div_assign(&mut self, rhs: R) {
-        Tensor::div_assign(self, rhs).unwrap();
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> DivAssign<R> for Tensor<T> {
+//     fn div_assign(&mut self, rhs: R) {
+//         Tensor::div_assign(self, rhs).unwrap();
+//     }
+// }
 
-impl<T: NumDType, R: TensorBinaryOpRhs<T>> DivAssign<R> for &Tensor<T> {
-    fn div_assign(&mut self, rhs: R) {
-        Tensor::div_assign(self, rhs).unwrap();
-    }
-}
+// impl<T: NumDType, R: TensorBinaryOpRhs<T>> DivAssign<R> for &Tensor<T> {
+//     fn div_assign(&mut self, rhs: R) {
+//         Tensor::div_assign(self, rhs).unwrap();
+//     }
+// }
 
-//////////////////////////////////////////////////////////////////////////////
-///        Bool
-//////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////
+// ///        Bool
+// //////////////////////////////////////////////////////////////////////////////
 
-impl<R: TensorBinaryOpRhs<bool>> BitAnd<R> for &Tensor<bool> {
-    type Output = Tensor<bool>;
-    fn bitand(self, rhs: R) -> Self::Output {
-        self.and(rhs).unwrap()
-    }
-}
+// impl<R: TensorBinaryOpRhs<bool>> BitAnd<R> for &Tensor<bool> {
+//     type Output = Tensor<bool>;
+//     fn bitand(self, rhs: R) -> Self::Output {
+//         self.and(rhs).unwrap()
+//     }
+// }
 
-impl<R: TensorBinaryOpRhs<bool>> BitAnd<R> for Tensor<bool> {
-    type Output = Tensor<bool>;
-    fn bitand(self, rhs: R) -> Self::Output {
-        self.and(rhs).unwrap()
-    }
-}
+// impl<R: TensorBinaryOpRhs<bool>> BitAnd<R> for Tensor<bool> {
+//     type Output = Tensor<bool>;
+//     fn bitand(self, rhs: R) -> Self::Output {
+//         self.and(rhs).unwrap()
+//     }
+// }
 
-impl<R: TensorBinaryOpRhs<bool>> BitOr<R> for &Tensor<bool> {
-    type Output = Tensor<bool>;
-    fn bitor(self, rhs: R) -> Self::Output {
-        self.or(rhs).unwrap()
-    }
-}
+// impl<R: TensorBinaryOpRhs<bool>> BitOr<R> for &Tensor<bool> {
+//     type Output = Tensor<bool>;
+//     fn bitor(self, rhs: R) -> Self::Output {
+//         self.or(rhs).unwrap()
+//     }
+// }
 
-impl<R: TensorBinaryOpRhs<bool>> BitOr<R> for Tensor<bool> {
-    type Output = Tensor<bool>;
-    fn bitor(self, rhs: R) -> Self::Output {
-        self.or(rhs).unwrap()
-    }
-}
+// impl<R: TensorBinaryOpRhs<bool>> BitOr<R> for Tensor<bool> {
+//     type Output = Tensor<bool>;
+//     fn bitor(self, rhs: R) -> Self::Output {
+//         self.or(rhs).unwrap()
+//     }
+// }
 
-impl<R: TensorBinaryOpRhs<bool>> BitXor<R> for &Tensor<bool> {
-    type Output = Tensor<bool>;
-    fn bitxor(self, rhs: R) -> Self::Output {
-        self.xor(rhs).unwrap()
-    }
-}
+// impl<R: TensorBinaryOpRhs<bool>> BitXor<R> for &Tensor<bool> {
+//     type Output = Tensor<bool>;
+//     fn bitxor(self, rhs: R) -> Self::Output {
+//         self.xor(rhs).unwrap()
+//     }
+// }
 
-impl<R: TensorBinaryOpRhs<bool>> BitXor<R> for Tensor<bool> {
-    type Output = Tensor<bool>;
-    fn bitxor(self, rhs: R) -> Self::Output {
-        self.xor(rhs).unwrap()
-    }
-}
+// impl<R: TensorBinaryOpRhs<bool>> BitXor<R> for Tensor<bool> {
+//     type Output = Tensor<bool>;
+//     fn bitxor(self, rhs: R) -> Self::Output {
+//         self.xor(rhs).unwrap()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
@@ -607,6 +556,16 @@ mod tests {
         let c = Tensor::add(&a, &b).unwrap();
         let expected = Tensor::new(&[5.0f32, 7.0, 9.0]).unwrap();
         assert!(c.allclose(&expected, 1e-6, 1e-6));
+    }
+
+    #[test]
+    fn test_add_basic_variable() {
+        let a = Tensor::new_var(&[1.0f32, 2.0, 3.0]).unwrap();
+        let b = Tensor::new_var(&[4.0f32, 5.0, 6.0]).unwrap();
+        let c = Tensor::add(&a, &b).unwrap();
+        let expected = Tensor::new(&[5.0f32, 7.0, 9.0]).unwrap();
+        assert!(c.allclose(&expected, 1e-6, 1e-6));
+        assert!(c.requires_grad());
     }
 
     #[test]
@@ -737,146 +696,146 @@ mod tests {
         assert!(a2.allclose(&expected, 1e-6, 1e-6));
     }
 
-    #[test]
-    fn test_add_scalar() {
-        let a = Tensor::new(&[1.0f32, 2.0, 3.0]).unwrap();
-        let b = 10.0f32;
-        let c = Tensor::add(&a, b).unwrap();
-        let expected = Tensor::new(&[11.0f32, 12.0, 13.0]).unwrap();
-        assert!(c.allclose(&expected, 1e-6, 1e-6));
-    }
+    // #[test]
+    // fn test_add_scalar() {
+    //     let a = Tensor::new(&[1.0f32, 2.0, 3.0]).unwrap();
+    //     let b = 10.0f32;
+    //     let c = Tensor::add(&a, &b).unwrap();
+    //     let expected = Tensor::new(&[11.0f32, 12.0, 13.0]).unwrap();
+    //     assert!(c.allclose(&expected, 1e-6, 1e-6));
+    // }
 
-    #[test]
-    fn test_sub_scalar() {
-        let a = Tensor::new(&[10.0f32, 20.0, 30.0]).unwrap();
-        let b = 5.0f32;
-        let c = Tensor::sub(&a, b).unwrap();
-        let expected = Tensor::new(&[5.0f32, 15.0, 25.0]).unwrap();
-        assert!(c.allclose(&expected, 1e-6, 1e-6));
-    }
+    // #[test]
+    // fn test_sub_scalar() {
+    //     let a = Tensor::new(&[10.0f32, 20.0, 30.0]).unwrap();
+    //     let b = 5.0f32;
+    //     let c = Tensor::sub(&a, &b).unwrap();
+    //     let expected = Tensor::new(&[5.0f32, 15.0, 25.0]).unwrap();
+    //     assert!(c.allclose(&expected, 1e-6, 1e-6));
+    // }
 
-    #[test]
-    fn test_mul_scalar() {
-        let a = Tensor::new(&[1.0f32, 2.0, 3.0]).unwrap();
-        let b = 2.0f32;
-        let c = Tensor::mul(&a, b).unwrap();
-        let expected = Tensor::new(&[2.0f32, 4.0, 6.0]).unwrap();
-        assert!(c.allclose(&expected, 1e-6, 1e-6));
-    }
+    // #[test]
+    // fn test_mul_scalar() {
+    //     let a = Tensor::new(&[1.0f32, 2.0, 3.0]).unwrap();
+    //     let b = 2.0f32;
+    //     let c = Tensor::mul(&a, &b).unwrap();
+    //     let expected = Tensor::new(&[2.0f32, 4.0, 6.0]).unwrap();
+    //     assert!(c.allclose(&expected, 1e-6, 1e-6));
+    // }
 
-    #[test]
-    fn test_div_scalar() {
-        let a = Tensor::new(&[4.0f32, 9.0, 16.0]).unwrap();
-        let b = 2.0f32;
-        let c = Tensor::div(&a, b).unwrap();
-        let expected = Tensor::new(&[2.0f32, 4.5, 8.0]).unwrap();
-        assert!(c.allclose(&expected, 1e-6, 1e-6));
-    }
+    // #[test]
+    // fn test_div_scalar() {
+    //     let a = Tensor::new(&[4.0f32, 9.0, 16.0]).unwrap();
+    //     let b = 2.0f32;
+    //     let c = Tensor::div(&a, &b).unwrap();
+    //     let expected = Tensor::new(&[2.0f32, 4.5, 8.0]).unwrap();
+    //     assert!(c.allclose(&expected, 1e-6, 1e-6));
+    // }
 
-    #[test]
-    fn test_minimum_scalar() {
-        let a = Tensor::new(&[1.0f32, 5.0, 3.0]).unwrap();
-        let b = 4.0f32;
-        let c = Tensor::minimum(&a, b).unwrap();
-        let expected = Tensor::new(&[1.0f32, 4.0, 3.0]).unwrap();
-        assert!(c.allclose(&expected, 1e-6, 1e-6));
-    }
+    // #[test]
+    // fn test_minimum_scalar() {
+    //     let a = Tensor::new(&[1.0f32, 5.0, 3.0]).unwrap();
+    //     let b = 4.0f32;
+    //     let c = Tensor::minimum(&a, &b).unwrap();
+    //     let expected = Tensor::new(&[1.0f32, 4.0, 3.0]).unwrap();
+    //     assert!(c.allclose(&expected, 1e-6, 1e-6));
+    // }
 
-    #[test]
-    fn test_maximum_scalar() {
-        let a = Tensor::new(&[1.0f32, 5.0, 3.0]).unwrap();
-        let b = 4.0f32;
-        let c = Tensor::maximum(&a, b).unwrap();
-        let expected = Tensor::new(&[4.0f32, 5.0, 4.0]).unwrap();
-        assert!(c.allclose(&expected, 1e-6, 1e-6));
-    }
+    // #[test]
+    // fn test_maximum_scalar() {
+    //     let a = Tensor::new(&[1.0f32, 5.0, 3.0]).unwrap();
+    //     let b = 4.0f32;
+    //     let c = Tensor::maximum(&a, &b).unwrap();
+    //     let expected = Tensor::new(&[4.0f32, 5.0, 4.0]).unwrap();
+    //     assert!(c.allclose(&expected, 1e-6, 1e-6));
+    // }
 
-    #[test]
-    fn test_add_assign_scalar() {
-        let a = Tensor::new(&[1.0f32, 2.0, 3.0]).unwrap();
-        let b = 5.0f32;
-        a.add_assign(b).unwrap();
-        let expected = Tensor::new(&[6.0f32, 7.0, 8.0]).unwrap();
-        assert!(a.allclose(&expected, 1e-6, 1e-6));
-    }
+    // #[test]
+    // fn test_add_assign_scalar() {
+    //     let a = Tensor::new(&[1.0f32, 2.0, 3.0]).unwrap();
+    //     let b = 5.0f32;
+    //     a.add_assign(&b).unwrap();
+    //     let expected = Tensor::new(&[6.0f32, 7.0, 8.0]).unwrap();
+    //     assert!(a.allclose(&expected, 1e-6, 1e-6));
+    // }
 
-    #[test]
-    fn test_sub_assign_scalar() {
-        let a = Tensor::new(&[10.0f32, 20.0, 30.0]).unwrap();
-        let b = 5.0f32;
-        a.sub_assign(b).unwrap();
-        let expected = Tensor::new(&[5.0f32, 15.0, 25.0]).unwrap();
-        assert!(a.allclose(&expected, 1e-6, 1e-6));
-    }
+    // #[test]
+    // fn test_sub_assign_scalar() {
+    //     let a = Tensor::new(&[10.0f32, 20.0, 30.0]).unwrap();
+    //     let b = 5.0f32;
+    //     a.sub_assign(&b).unwrap();
+    //     let expected = Tensor::new(&[5.0f32, 15.0, 25.0]).unwrap();
+    //     assert!(a.allclose(&expected, 1e-6, 1e-6));
+    // }
 
-    #[test]
-    fn test_mul_assign_scalar() {
-        let a = Tensor::new(&[1.0f32, 2.0, 3.0]).unwrap();
-        let b = 3.0f32;
-        a.mul_assign(b).unwrap();
-        let expected = Tensor::new(&[3.0f32, 6.0, 9.0]).unwrap();
-        assert!(a.allclose(&expected, 1e-6, 1e-6));
-    }
+    // #[test]
+    // fn test_mul_assign_scalar() {
+    //     let a = Tensor::new(&[1.0f32, 2.0, 3.0]).unwrap();
+    //     let b = 3.0f32;
+    //     a.mul_assign(&b).unwrap();
+    //     let expected = Tensor::new(&[3.0f32, 6.0, 9.0]).unwrap();
+    //     assert!(a.allclose(&expected, 1e-6, 1e-6));
+    // }
 
-    #[test]
-    fn test_div_assign_scalar() {
-        let a = Tensor::new(&[8.0f32, 12.0, 20.0]).unwrap();
-        let b = 2.0f32;
-        a.div_assign(b).unwrap();
-        let expected = Tensor::new(&[4.0f32, 6.0, 10.0]).unwrap();
-        assert!(a.allclose(&expected, 1e-6, 1e-6));
-    }
+    // #[test]
+    // fn test_div_assign_scalar() {
+    //     let a = Tensor::new(&[8.0f32, 12.0, 20.0]).unwrap();
+    //     let b = 2.0f32;
+    //     a.div_assign(&b).unwrap();
+    //     let expected = Tensor::new(&[4.0f32, 6.0, 10.0]).unwrap();
+    //     assert!(a.allclose(&expected, 1e-6, 1e-6));
+    // }
 
-    #[test]
-    fn test_minimum_assign_scalar() {
-        let a = Tensor::new(&[1.0f32, 5.0, 3.0]).unwrap();
-        let b = 4.0f32;
-        a.minimum_assign(b).unwrap();
-        let expected = Tensor::new(&[1.0f32, 4.0, 3.0]).unwrap();
-        assert!(a.allclose(&expected, 1e-6, 1e-6));
-    }
+    // #[test]
+    // fn test_minimum_assign_scalar() {
+    //     let a = Tensor::new(&[1.0f32, 5.0, 3.0]).unwrap();
+    //     let b = 4.0f32;
+    //     a.minimum_assign(&b).unwrap();
+    //     let expected = Tensor::new(&[1.0f32, 4.0, 3.0]).unwrap();
+    //     assert!(a.allclose(&expected, 1e-6, 1e-6));
+    // }
 
-    #[test]
-    fn test_maximum_assign_scalar() {
-        let a = Tensor::new(&[1.0f32, 5.0, 3.0]).unwrap();
-        let b = 4.0f32;
-        a.maximum_assign(b).unwrap();
-        let expected = Tensor::new(&[4.0f32, 5.0, 4.0]).unwrap();
-        assert!(a.allclose(&expected, 1e-6, 1e-6));
-    }
+    // #[test]
+    // fn test_maximum_assign_scalar() {
+    //     let a = Tensor::new(&[1.0f32, 5.0, 3.0]).unwrap();
+    //     let b = 4.0f32;
+    //     a.maximum_assign(&b).unwrap();
+    //     let expected = Tensor::new(&[4.0f32, 5.0, 4.0]).unwrap();
+    //     assert!(a.allclose(&expected, 1e-6, 1e-6));
+    // }
 
-    #[test]
-    fn test_eq_ne_scalar() {
-        let a = Tensor::new(&[1, 2, 3]).unwrap();
-        let b = 2;
+    // #[test]
+    // fn test_eq_ne_scalar() {
+    //     let a = Tensor::new(&[1, 2, 3]).unwrap();
+    //     let b = 2;
 
-        // Tensor vs scalar
-        let eq_res = a.eq(b).unwrap();
-        let expected_eq = Tensor::new(&[false, true, false]).unwrap();
-        assert_eq!(eq_res.to_vec(), expected_eq.to_vec());
+    //     // Tensor vs scalar
+    //     let eq_res = a.eq(&b).unwrap();
+    //     let expected_eq = Tensor::new(&[false, true, false]).unwrap();
+    //     assert_eq!(eq_res.to_vec(), expected_eq.to_vec());
 
-        let ne_res = a.ne(b).unwrap();
-        let expected_ne = Tensor::new(&[true, false, true]).unwrap();
-        assert_eq!(ne_res.to_vec(), expected_ne.to_vec());
-    }
+    //     let ne_res = a.ne(&b).unwrap();
+    //     let expected_ne = Tensor::new(&[true, false, true]).unwrap();
+    //     assert_eq!(ne_res.to_vec(), expected_ne.to_vec());
+    // }
 
-    #[test]
-    fn test_lt_le_gt_ge_scalar() {
-        let a = Tensor::new(&[1, 2, 3]).unwrap();
-        let b = 2;
+    // #[test]
+    // fn test_lt_le_gt_ge_scalar() {
+    //     let a = Tensor::new(&[1, 2, 3]).unwrap();
+    //     let b = 2;
 
-        let lt_res = a.lt(b).unwrap();
-        assert_eq!(lt_res.to_vec(), [true, false, false]);
+    //     let lt_res = a.lt(&b).unwrap();
+    //     assert_eq!(lt_res.to_vec(), [true, false, false]);
 
-        let le_res = a.le(b).unwrap();
-        assert_eq!(le_res.to_vec(), [true, true, false]);
+    //     let le_res = a.le(&b).unwrap();
+    //     assert_eq!(le_res.to_vec(), [true, true, false]);
 
-        let gt_res = a.gt(b).unwrap();
-        assert_eq!(gt_res.to_vec(), [false, false, true]);
+    //     let gt_res = a.gt(&b).unwrap();
+    //     assert_eq!(gt_res.to_vec(), [false, false, true]);
 
-        let ge_res = a.ge(b).unwrap();
-        assert_eq!(ge_res.to_vec(), [false, true, true]);
-    }
+    //     let ge_res = a.ge(&b).unwrap();
+    //     assert_eq!(ge_res.to_vec(), [false, true, true]);
+    // }
 
     #[test]
     fn test_eq_ne_tensor() {
@@ -922,27 +881,27 @@ mod tests {
         assert_eq!(gt_res.to_vec(), expected_gt.to_vec());
 
         // Tensor vs scalar
-        let le_res = a.le(3).unwrap();
-        let expected_le = Tensor::new(&[[true, true], [true, false]]).unwrap();
-        assert_eq!(le_res.to_vec(), expected_le.to_vec());
+        // let le_res = a.le(3).unwrap();
+        // let expected_le = Tensor::new(&[[true, true], [true, false]]).unwrap();
+        // assert_eq!(le_res.to_vec(), expected_le.to_vec());
     }
 
-    #[test]
-    fn test_std_ops() {
-        let a = Tensor::new(&[[1., 2.], [3., 4.]]).unwrap();
-        let b = Tensor::new(&[[2., 2.], [1., 5.]]).unwrap();
-        let _ = a + b;
+    // #[test]
+    // fn test_std_ops() {
+    //     let a = Tensor::new(&[[1., 2.], [3., 4.]]).unwrap();
+    //     let b = Tensor::new(&[[2., 2.], [1., 5.]]).unwrap();
+    //     let _ = a + b;
 
-        let a = Tensor::new(&[[1., 2.], [3., 4.]]).unwrap();
-        let b = Tensor::new(&[[2., 2.], [1., 5.]]).unwrap();
-        let _ = &a + &b;
+    //     let a = Tensor::new(&[[1., 2.], [3., 4.]]).unwrap();
+    //     let b = Tensor::new(&[[2., 2.], [1., 5.]]).unwrap();
+    //     let _ = &a + &b;
 
-        let a = Tensor::new(&[[1., 2.], [3., 4.]]).unwrap();
-        let b = Tensor::new(&[[2., 2.], [1., 5.]]).unwrap();
-        let _ = a + b;
+    //     let a = Tensor::new(&[[1., 2.], [3., 4.]]).unwrap();
+    //     let b = Tensor::new(&[[2., 2.], [1., 5.]]).unwrap();
+    //     let _ = a + b;
 
-        let a = Tensor::new(&[[1., 2.], [3., 4.]]).unwrap();
-        let b = Tensor::new(&[[2., 2.], [1., 5.]]).unwrap();
-        let _ = a + b;
-    }
+    //     let a = Tensor::new(&[[1., 2.], [3., 4.]]).unwrap();
+    //     let b = Tensor::new(&[[2., 2.], [1., 5.]]).unwrap();
+    //     let _ = a + b;
+    // }
 }
