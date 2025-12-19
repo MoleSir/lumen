@@ -1,7 +1,10 @@
 use crate::{FloatDType, Tensor};
-mod grad;
-pub use grad::*;
+mod gradmeta;
+mod gradstore;
+pub use gradmeta::*;
+pub use gradstore::*;
 mod backprop;
+mod test;
 
 #[derive(Clone)]
 pub enum Op<T: FloatDType> {
@@ -53,7 +56,6 @@ pub enum BinaryScalarOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
     Exp,
-    Log,
     Sin,
     Cos,
     Abs,

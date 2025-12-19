@@ -100,10 +100,10 @@ impl<T: NumDType> Tensor<T> {
     /// use lumen_core::Tensor;
     ///
     /// let a = Tensor::<i32>::ones((2, 2)).unwrap();
-    /// let b = a.zero_like().unwrap();
+    /// let b = a.zeros_like().unwrap();
     /// println!("{}", b);
     /// ```
-    pub fn zero_like(&self) -> Result<Self> {
+    pub fn zeros_like(&self) -> Result<Self> {
         Self::zeros(self.shape())
     }
 
@@ -296,7 +296,7 @@ impl<T: FloatDType> Tensor<T> {
         Self::zeros_impl(shape, AutogradInfo::var())
     }
 
-    pub fn zero_like_var(&self) -> Result<Self> {
+    pub fn zeros_like_var(&self) -> Result<Self> {
         Self::zeros_var(self.shape())
     }
 

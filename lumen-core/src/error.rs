@@ -175,6 +175,9 @@ pub enum Error {
         position: &'static str,
     },
 
+    #[error("backward not support '{0}'")]
+    BackwardNotSupported(&'static str),
+
     /// Integer parse error.
     #[error(transparent)]
     ParseInt(#[from] std::num::ParseIntError),

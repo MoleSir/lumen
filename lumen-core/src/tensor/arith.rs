@@ -307,17 +307,6 @@ macro_rules! float_unary_op_impl {
     };
 }
 
-macro_rules! float_unary_assign_op_impl {
-    ($fn_name:ident, $op:ident) => {
-        pub fn $fn_name(&self) {
-            if self.element_count() == 0 {
-                return;
-            }
-            self.unary_assign_op(F::$op);
-        }
-    };
-}
-
 impl<T: WithDType> Tensor<T> {
     pub fn map<F, O>(&self, f: F) -> Tensor<O>
     where 
@@ -340,31 +329,20 @@ impl<T: WithDType> Tensor<T> {
 }
 
 impl<F: FloatDType> Tensor<F> {
+    float_unary_op_impl!(floor);
+    float_unary_op_impl!(ceil);
+    float_unary_op_impl!(round);
+
     float_unary_op_impl!(exp);
     float_unary_op_impl!(sin);
     float_unary_op_impl!(cos);
     float_unary_op_impl!(tanh);
     float_unary_op_impl!(sqrt);
-    float_unary_op_impl!(floor);
-    float_unary_op_impl!(ceil);
-    float_unary_op_impl!(round);
+    float_unary_op_impl!(sqr);
     float_unary_op_impl!(abs);
     float_unary_op_impl!(neg);
     float_unary_op_impl!(ln);
     float_unary_op_impl!(recip);
-
-    float_unary_assign_op_impl!(exp_assign, exp);
-    float_unary_assign_op_impl!(sin_assign, sin);
-    float_unary_assign_op_impl!(cos_assign, cos);
-    float_unary_assign_op_impl!(sqrt_assign, sqrt);
-    float_unary_assign_op_impl!(tanh_assign, tanh);
-    float_unary_assign_op_impl!(floor_assign, floor);
-    float_unary_assign_op_impl!(ceil_assign, ceil);
-    float_unary_assign_op_impl!(round_assign, round);
-    float_unary_assign_op_impl!(abs_assign, abs);
-    float_unary_assign_op_impl!(neg_assign, neg);
-    float_unary_assign_op_impl!(ln_assign, ln);
-    float_unary_assign_op_impl!(recip_assign, recip);
 }
 
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Sub};
@@ -570,7 +548,6 @@ mod tests {
         let c = Tensor::add(&a, &b).unwrap();
         let expected = Tensor::new(&[5.0f32, 7.0, 9.0]).unwrap();
         assert!(c.allclose(&expected, 1e-6, 1e-6));
-        assert!(c.is_variable());
     }
 
     #[test]

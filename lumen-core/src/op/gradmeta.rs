@@ -9,78 +9,95 @@ pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_reduce_op(t: &Tensor<T>, dims: &[usize], op: ReduceOp) -> Self;
 }
 
-pub struct AutogradInfo<T: FloatDType> {
-    pub op: Option<Op<T>>,
-    pub is_variable: bool,
+// pub struct AutogradInfo<T: FloatDType> {
+//     pub op: Option<Op<T>>,
+//     pub requires_grad: bool,
+// }
+
+pub enum AutogradInfo<T: FloatDType> {
+    Var(Option<Op<T>>),
+    Val
 }
 
 impl<T: FloatDType> AutogradInfo<T>  {
     pub fn var() -> Self {
-        Self {
-            op: None,
-            is_variable: true
+        Self::Var(None)
+    }
+
+    pub fn val() -> Self {
+        Self::Val
+    }
+
+    pub fn var_from_op(op: Op<T>) -> Self {
+        Self::Var(Some(op))
+    }
+
+    pub fn op(&self) -> Option<&Op<T>> {
+        match self {
+            Self::Val => None,
+            Self::Var(op) => op.as_ref()
         }
     }
 
-    pub fn none() -> Self {
-        Default::default()
+    pub fn is_leaf(&self) -> bool {
+        match self {
+            Self::Val => false,
+            Self::Var(op) => op.is_none(),
+        }
     }
 
-    pub fn var_with_op(op: Op<T>) -> Self {
-        Self {
-            op: Some(op),
-            is_variable: true
+    pub fn requires_grad(&self) -> bool {
+        match self {
+            Self::Val => false,
+            Self::Var(_) => true,
         }
     }
 }
 
 impl<T: FloatDType> Default for AutogradInfo<T> {
     fn default() -> Self {
-        Self {
-            op: None,
-            is_variable: false,
-        }
+        Self::Val
     }
 } 
 
 impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
     fn on_binary_op(lhs: &Tensor<T>, rhs: &Tensor<T>, op: BinaryOp) -> Self {
-        if lhs.is_variable() || rhs.is_variable() {
-            Self::var_with_op(Op::Binary(lhs.clone(), rhs.clone(), op))
+        if lhs.requires_grad() || rhs.requires_grad() {
+            Self::var_from_op(Op::Binary(lhs.clone(), rhs.clone(), op))
         } else {
-            Self::none()
+            Self::val()
         }
     }
 
     fn on_binary_scalar_op(lhs: &Tensor<T>, rhs: T, op: BinaryScalarOp) -> Self {
-        if lhs.is_variable() {
-            Self::var_with_op(Op::BinaryScalar(lhs.clone(), rhs, op))
+        if lhs.requires_grad() {
+            Self::var_from_op(Op::BinaryScalar(lhs.clone(), rhs, op))
         } else {
-            Self::none()
+            Self::val()
         }
     }
 
     fn on_unray_op(t: &Tensor<T>, op: UnaryOp) -> Self {
-        if t.is_variable() {
-            Self::var_with_op(Op::Unary(t.clone(), op))
+        if t.requires_grad() {
+            Self::var_from_op(Op::Unary(t.clone(), op))
         } else {
-            Self::none()
+            Self::val()
         }
     }
 
     fn on_broadcast_op(t: &Tensor<T>) -> Self {
-        if t.is_variable() {
-            Self::var_with_op(Op::Broadcast(t.clone()))
+        if t.requires_grad() {
+            Self::var_from_op(Op::Broadcast(t.clone()))
         } else {
-            Self::none()
+            Self::val()
         }
     }
 
     fn on_reduce_op(t: &Tensor<T>, dims: &[usize], op: ReduceOp) -> Self {
-        if t.is_variable() {
-            Self::var_with_op(Op::Reduce(t.clone(), op, dims.to_vec()))
+        if t.requires_grad() {
+            Self::var_from_op(Op::Reduce(t.clone(), op, dims.to_vec()))
         } else {
-            Self::none()
+            Self::val()
         }
     }
 }

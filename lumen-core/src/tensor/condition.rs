@@ -36,27 +36,29 @@ impl<T: WithDType> Tensor<T> {
 
         Ok(())
     }
+}
 
-    pub fn select<TV, FV>(mask: &Tensor<bool>, true_val: TV, false_val: FV) -> Result<Self> 
+impl Tensor<bool> {
+    pub fn select<T: WithDType, TV, FV>(&self, true_val: TV, false_val: FV) -> Result<Tensor<T>> 
     where 
         TV: ConditionValue<T>,
         FV: ConditionValue<T>,
     {
-        if !true_val.check_shape(mask.shape()) {
-            Err(Error::ShapeMismatchSelect { mask: mask.shape().clone(), who: "true_val", })?
+        if !true_val.check_shape(self.shape()) {
+            Err(Error::ShapeMismatchSelect { mask: self.shape().clone(), who: "true_val", })?
         }
 
-        if !false_val.check_shape(mask.shape()) {
-            Err(Error::ShapeMismatchSelect { mask: mask.shape().clone(), who: "false_val", })?
+        if !false_val.check_shape(self.shape()) {
+            Err(Error::ShapeMismatchSelect { mask: self.shape().clone(), who: "false_val", })?
         }
 
-        let result = true_val.copy_self(mask.shape())?;
-        assert_eq!(mask.dims(), result.dims());
+        let result = true_val.copy_self(self.shape())?;
+        assert_eq!(self.dims(), result.dims());
 
         {
             let mut result_storage = result.storage_mut(0);
             // zip ( result storage index, condition and false value )
-            for ((result_index, condition), fv) in result.layout().storage_indices().zip(mask.iter()).zip(false_val.iter_value()) {
+            for ((result_index, condition), fv) in result.layout().storage_indices().zip(self.iter()).zip(false_val.iter_value()) {
                 if !condition {
                     result_storage.set_unchecked(result_index, fv);
                 }
@@ -147,7 +149,7 @@ mod test {
     #[test]
     fn test_select_scalar_values() {
         let mask = Tensor::new(&[true, false, true, false]).unwrap();
-        let result = Tensor::<i32>::select(&mask, 1, 0).unwrap();
+        let result = Tensor::select(&mask, 1, 0).unwrap();
         assert_eq!(result.to_vec(), [1, 0, 1, 0]);
     }
     
@@ -158,7 +160,7 @@ mod test {
         let true_vals = Tensor::new(&[10, 20, 30, 40]).unwrap();
         let false_vals = Tensor::new(&[100, 200, 300, 400]).unwrap();
         
-        let result = Tensor::<i32>::select(&mask, &true_vals, &false_vals).unwrap();
+        let result = mask.select(&true_vals, &false_vals).unwrap();
         assert_eq!(result.to_vec(), [10, 200, 30, 400]);
     }
     
@@ -169,7 +171,7 @@ mod test {
         let true_vals = 5;  // 标量
         let false_vals = Tensor::new(&[100, 200, 300, 400]).unwrap();
         
-        let result = Tensor::<i32>::select(&mask, true_vals, &false_vals).unwrap();
+        let result = Tensor::select(&mask, true_vals, &false_vals).unwrap();
         assert_eq!(result.to_vec(), [5, 200, 5, 400]);
     }
     
@@ -179,18 +181,18 @@ mod test {
         let true_vals = Tensor::new(&[1, 2, 3, 4]).unwrap();
         let false_vals = 0;
         
-        let result = Tensor::<i32>::select(&mask, &true_vals, false_vals);
+        let result = Tensor::select(&mask, &true_vals, false_vals);
         assert!(result.is_err());
     }
     
     #[test]
     fn test_select_all_true_or_all_false() {
         let mask = Tensor::new(&[true, true, true]).unwrap();
-        let result = Tensor::<i32>::select(&mask, 1, 0).unwrap();
+        let result = Tensor::select(&mask, 1, 0).unwrap();
         assert_eq!(result.to_vec(), [1, 1, 1]);
     
         let mask = Tensor::new(&[false, false, false]).unwrap();
-        let result = Tensor::<i32>::select(&mask, 1, 0).unwrap();
+        let result = Tensor::select(&mask, 1, 0).unwrap();
         assert_eq!(result.to_vec(), [0, 0, 0]);
     }
     
@@ -224,7 +226,7 @@ mod test {
         let true_vals = Tensor::new(&[[10, 20, 30], [40, 50, 60]]).unwrap();
         let false_vals = Tensor::new(&[[100, 200, 300], [400, 500, 600]]).unwrap();
     
-        let result = Tensor::<i32>::select(&mask, &true_vals, &false_vals).unwrap();
+        let result = Tensor::select(&mask, &true_vals, &false_vals).unwrap();
         assert_eq!(result.to_vec(), [10, 200, 30, 400, 50, 600]);
     }
     
@@ -240,7 +242,7 @@ mod test {
             [[50, 60], [70, 80]]
         ]).unwrap();
     
-        let result = Tensor::<i32>::select(&mask, true_val, &false_vals).unwrap();
+        let result = Tensor::select(&mask, true_val, &false_vals).unwrap();
         assert_eq!(result.to_vec(), [1, 20, 30, 1, 1, 1, 70, 80]);
     }
     

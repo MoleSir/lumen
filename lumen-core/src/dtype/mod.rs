@@ -137,6 +137,10 @@ pub trait FloatDType:
     NumDType<Category = FloatCategory, AutogradMeta = AutogradInfo<Self>>
     + num_traits::Float
 {
+    fn sqr(self) -> Self;
+    fn two() -> Self;
+    fn pi() -> Self;
+    fn half() -> Self;
 }
 
 pub trait NumCategory {}

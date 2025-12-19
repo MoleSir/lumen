@@ -11,9 +11,10 @@ mod convert;
 mod condition;
 
 pub use construct::ToTensor;
+pub use arith::TensorBinaryRhs;
 use std::{hash::Hash, sync::Arc};
 pub use indexer::{Range, IndexOp};
-use crate::{Error, FloatDType, Result};
+use crate::{Error, FloatDType, Op, Result};
 use super::{DType, Dim, DimCoordinates, DimNCoordinates, Layout, NumDType, Shape, Storage, StorageArc, StorageIndices, StorageMut, StorageRef, WithDType};
 pub use iter::*;
 pub use indexer::*;
@@ -96,8 +97,8 @@ impl<T: WithDType> Tensor<T> {
 }
 
 impl<T: WithDType> Tensor<T> {
-    pub fn id(&self) -> usize {
-        self.0.id.0
+    pub fn id(&self) -> TensorId {
+        self.0.id
     }
 
     pub fn shape(&self) -> &Shape {
@@ -196,7 +197,17 @@ impl<T: NumDType> Tensor<T> {
 }
 
 impl<T: FloatDType> Tensor<T> {
-    pub fn is_variable(&self) -> bool {
-        self.0.meta.is_variable
+    #[inline]
+    pub fn requires_grad(&self) -> bool {
+        self.0.meta.requires_grad()
+    }
+
+    #[inline]
+    pub fn op(&self) -> Option<&Op<T>> {
+        self.0.meta.op()
+    }
+
+    pub fn is_leaf(&self) -> bool {
+        self.0.meta.is_leaf()
     }
 }

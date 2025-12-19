@@ -51,4 +51,24 @@ impl NumDType for f32 {
     }
 }
 
-impl FloatDType for f32 {}
+impl FloatDType for f32 {
+    #[inline]
+    fn sqr(self) -> Self {
+        self * self
+    }
+
+    #[inline]
+    fn two() -> Self {
+        2.
+    }
+
+    #[inline]
+    fn pi() -> Self {
+        std::f32::consts::PI
+    }
+
+    #[inline]
+    fn half() -> Self {
+        0.5
+    }
+}

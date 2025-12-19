@@ -51,4 +51,24 @@ impl NumDType for f64 {
     }
 }
 
-impl FloatDType for f64 {}
+impl FloatDType for f64 {
+    #[inline]
+    fn sqr(self) -> Self {
+        self * self
+    }
+
+    #[inline]
+    fn two() -> Self {
+        2.
+    }
+
+    #[inline]
+    fn pi() -> Self {
+        std::f64::consts::PI
+    }
+
+    #[inline]
+    fn half() -> Self {
+        0.5
+    }
+}
