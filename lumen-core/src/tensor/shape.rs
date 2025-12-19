@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::{AutogradMetaT, Dim, Error, Layout, Result, Shape, Storage, WithDType, D};
+use crate::{AutogradMetaT, Dim, Dims, Error, Layout, Result, Shape, Storage, WithDType, D};
 use super::{Tensor, TensorId, TensorImpl, Range};
 
 impl<T: WithDType> Tensor<T> {
@@ -230,6 +230,40 @@ impl<T: WithDType> Tensor<T> {
 
     pub fn transpose_last(&self) -> Result<Self> {
         self.transpose(D::Minus1, D::Minus2)
+    }
+
+    /// Returns a tensor with the same data as the input where the dimensions have been permuted.
+    /// dims must be a permutation, i.e. include each dimension index exactly once.
+    ///
+    /// ```rust
+    /// use lumen_core::Tensor;
+    /// let tensor = Tensor::<u32>::arange(0u32, 120u32).unwrap().reshape((2, 3, 4, 5)).unwrap();
+    /// assert_eq!(tensor.dims(), &[2, 3, 4, 5]);
+    /// let tensor = tensor.permute((2, 3, 1, 0)).unwrap();
+    /// assert_eq!(tensor.dims(), &[4, 5, 3, 2]);
+    /// ```
+    pub fn permute<D: Dims>(&self, dims: D) -> Result<Self> {
+        let dims = dims.to_indexes(self.shape(), "permute")?;
+        // O(n^2) permutation check but these arrays are small.
+        let is_permutation =
+            dims.len() == self.rank() && (0..dims.len()).all(|i| dims.contains(&i));
+        if !is_permutation {
+            crate::bail!(
+                "dimension mismatch in permute, tensor {:?}, dims: {:?}",
+                self.dims(),
+                dims
+            )
+        }
+        // let op = BackpropOp::new1(self, |t| Op::Permute(t, dims.clone()));
+        let layout = self.layout().permute(&dims)?;
+        let meta = T::AutogradMeta::on_permute_op(self, dims);
+        let tensor_ = TensorImpl {
+            id: TensorId::new(),
+            storage: self.0.storage.clone(),
+            layout,
+            meta,
+        };
+        Ok(Tensor(Arc::new(tensor_)))
     }
 
     /// Concatenates two or more tensors along a particular dimension.

@@ -186,6 +186,15 @@ impl<T: FloatDType> Tensor<T> {
                         }
 
                         //=========================================================================================//
+                        //           Pow
+                        //=========================================================================================//
+                        Op::Pow(arg, e) => {
+                            let arg_grad = &(grad * arg.pow(*e - T::one())) * *e;
+                            let sum_grad = grads.or_insert(arg)?;
+                            *sum_grad = sum_grad.add(&arg_grad)?
+                        }
+
+                        //=========================================================================================//
                         //           Reduce
                         //=========================================================================================//
                         Op::Reduce(arg, ReduceOp::Sum, reduced_dims) => {
@@ -287,6 +296,19 @@ impl<T: FloatDType> Tensor<T> {
                         }
 
                         //=========================================================================================//
+                        //           Permute
+                        //=========================================================================================//
+                        Op::Permute(arg, dims) => {
+                            let mut inv_dims = vec![0; dims.len()];
+                            for (i, &dim_idx) in dims.iter().enumerate() {
+                                inv_dims[dim_idx] = i
+                            }
+                            let arg_grad = grad.permute(inv_dims)?;
+                            let sum_grad = grads.or_insert(arg)?;
+                            *sum_grad = sum_grad.add(&arg_grad)?
+                        }
+
+                        //=========================================================================================//
                         //           Cat
                         //=========================================================================================//
                         Op::Cat(args, dim) => {
@@ -350,6 +372,7 @@ impl<T: FloatDType> Tensor<T> {
                     | Op::Narrow(node, _, _, _)
                     | Op::Reshape(node)
                     | Op::Transpose(node, _, _)
+                    | Op::Permute(node, _)
                     | Op::ReduceAll(node, _) => {
                         let (tg, nodes) = walk(node, nodes, already_seen);
                         track_grad |= tg;

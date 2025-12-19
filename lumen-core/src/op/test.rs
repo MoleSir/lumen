@@ -560,4 +560,89 @@ mod test {
         let expected_grad_a = Tensor::new(&[0.0, 1.0, 0.0, 1.0]).unwrap();
         assert!(grads[&a].allclose(&expected_grad_a, 1e-5, 1e-8));
     }
+
+    #[test]
+    fn test_permute_backward() {
+        // [ [[1.0], [2.0], [3.0]],
+        //   [[4.0], [5.0], [6.0]] ]
+        let a = Var::<f64>::new(&[
+            [[1.0], [2.0], [3.0]],
+            [[4.0], [5.0], [6.0]]
+        ]).unwrap();
+
+        // Permute (0, 1, 2) -> (2, 0, 1)
+        let b = a.permute(vec![2, 0, 1]).unwrap();
+        assert_eq!(b.dims(), &[1, 2, 3]);
+
+        let w = Tensor::new(&[[
+            [1.0, 2.0, 3.0], 
+            [4.0, 5.0, 6.0]
+        ]]).unwrap();
+        
+        // loss = sum(b * w)
+        let loss = b.mul(&w).unwrap()
+            .sum_keepdim(0).unwrap()
+            .sum_keepdim(1).unwrap()
+            .sum_keepdim(2).unwrap();
+            
+        let grads = loss.backward().unwrap();
+
+        let expected_grad = Tensor::new(&[
+            [[1.0], [2.0], [3.0]],
+            [[4.0], [5.0], [6.0]]
+        ]).unwrap();
+
+        assert_eq!(grads[&a].dims(), &[2, 3, 1]);
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_permute_complex_backward() {
+        // (0, 1, 2, 3) -> (0, 2, 3, 1) 
+        let a = Var::<f64>::zeros(&[1, 2, 2, 2]).unwrap(); 
+        
+        let b = a.permute(vec![0, 2, 3, 1]).unwrap();
+        
+        let loss = b.sum_keepdim(0).unwrap().sum_keepdim(1).unwrap().sum_keepdim(2).unwrap().sum_keepdim(3).unwrap();
+        let grads = loss.backward().unwrap();
+        
+        let expected_grad = Tensor::ones(&[1, 2, 2, 2]).unwrap();
+        assert_eq!(grads[&a].dims(), &[1, 2, 2, 2]);
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_pow_backward() {
+        // a = [2.0, 4.0]
+        let a = Var::<f64>::new(&[2.0, 4.0]).unwrap();
+        
+        // b = a^3.0 = [8.0, 64.0]
+        let b = a.pow(3.0);
+        
+        // 假设 loss = sum(b)，则 grad_b = [1.0, 1.0]
+        let loss = b.sum_keepdim(0).unwrap();
+        let grads = loss.backward().unwrap();
+
+        // da = grad_b * (3.0 * a^(3.0 - 1.0))
+        // da = 1.0 * (3.0 * [4.0, 16.0]) = [12.0, 48.0]
+        let expected_grad = Tensor::new(&[12.0, 48.0]).unwrap();
+        
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_pow_fractional_backward() {
+        // 测试开根号: a^0.5
+        let a = Var::<f64>::new(&[4.0, 16.0]).unwrap();
+        let b = a.pow(0.5);
+        
+        let loss = b.sum_keepdim(0).unwrap();
+        let grads = loss.backward().unwrap();
+
+        // da = 0.5 * a^(-0.5) = 1 / (2 * sqrt(a))
+        // da = [1/(2*2), 1/(2*4)] = [0.25, 0.125]
+        let expected_grad = Tensor::new(&[0.25, 0.125]).unwrap();
+        
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
 }

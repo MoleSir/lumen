@@ -14,6 +14,7 @@ pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_reshape_op(t: &Tensor<T>) -> Self;
     fn on_transpose_op(t: &Tensor<T>, dim1: usize, dim2: usize) -> Self;
     fn on_cat_op<A: AsRef<Tensor<T>>>(args: &[A], dim: usize) -> Self;
+    fn on_permute_op(t: &Tensor<T>, dims: Vec<usize>) -> Self;
 }
 
 // pub struct AutogradInfo<T: FloatDType> {
@@ -164,6 +165,14 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
             Self::val()
         }
     }
+
+    fn on_permute_op(t: &Tensor<T>, dims: Vec<usize>) -> Self {
+        if t.requires_grad() {
+            Self::var_from_op(Op::Permute(t.clone(), dims))
+        } else {
+            Self::val()
+        } 
+    }
 }
 
 #[derive(Default)]
@@ -228,6 +237,11 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
 
     #[inline]
     fn on_cat_op<A: AsRef<Tensor<T>>>(args: &[A], dim: usize) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_permute_op(t: &Tensor<T>, dims: Vec<usize>) -> Self {
         NoAutograd
     }
 }

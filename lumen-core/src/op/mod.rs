@@ -19,6 +19,7 @@ pub enum Op<T: FloatDType> {
     Narrow(Tensor<T>, usize, usize, usize),
     Reshape(Tensor<T>),
     Transpose(Tensor<T>, usize, usize),
+    Permute(Tensor<T>, Vec<usize>),
     Cat(Vec<Tensor<T>>, usize),
 }
 
