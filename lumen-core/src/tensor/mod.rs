@@ -196,7 +196,7 @@ impl<T: NumDType> Tensor<T> {
 }
 
 impl<T: FloatDType> Tensor<T> {
-    pub fn requires_grad(&self) -> bool {
-        self.0.meta.requires_grad
+    pub fn is_variable(&self) -> bool {
+        self.0.meta.is_variable
     }
 }

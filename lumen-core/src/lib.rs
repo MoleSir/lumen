@@ -8,6 +8,7 @@ mod tensor;
 mod error;
 mod op;
 mod variable;
+mod scalar;
 
 pub use shape::*;
 pub use layout::*;
@@ -17,3 +18,4 @@ pub use tensor::*;
 pub use error::*;
 pub use op::*;
 pub use variable::*;
+pub use scalar::*;

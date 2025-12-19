@@ -6,6 +6,7 @@ mod backprop;
 #[derive(Clone)]
 pub enum Op<T: FloatDType> {
     Binary(Tensor<T>, Tensor<T>, BinaryOp),
+    BinaryScalar(Tensor<T>, T, BinaryScalarOp),
     Unary(Tensor<T>, UnaryOp),
     Reduce(Tensor<T>, ReduceOp, Vec<usize>),
     Matmul(Tensor<T>, Tensor<T>),
@@ -31,6 +32,16 @@ pub enum ReduceOp {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
+    Add,
+    Mul,
+    Sub,
+    Div,
+    Maximum,
+    Minimum,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryScalarOp {
     Add,
     Mul,
     Sub,
