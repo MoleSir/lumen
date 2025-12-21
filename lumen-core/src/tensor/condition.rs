@@ -1,5 +1,7 @@
-use crate::{Error, Result, Shape, Storage, WithDType};
-use super::Tensor;
+use std::sync::Arc;
+
+use crate::{AutogradMetaT, Error, Layout, Result, Storage, StorageArc, TensorOrScalar, WithDType};
+use super::{Tensor, TensorId, TensorImpl};
 
 impl<T: WithDType> Tensor<T> {
     pub fn masked_select(&self, conditions: &Tensor<bool>) -> Result<Tensor<T>> {
@@ -20,69 +22,59 @@ impl<T: WithDType> Tensor<T> {
 }
 
 impl Tensor<bool> {
-    pub fn if_else<T: WithDType, TV, FV>(&self, true_val: TV, false_val: FV) -> Result<Tensor<T>> 
-    where 
-        TV: ConditionValue<T>,
-        FV: ConditionValue<T>,
-    {
-        if !true_val.check_shape(self.shape()) {
+    pub fn if_else<T: WithDType>(&self, true_val: impl Into<TensorOrScalar<T>>, false_val: impl Into<TensorOrScalar<T>>) -> Result<Tensor<T>> {
+        let true_val = true_val.into();
+        let false_val = false_val.into();
+
+        if let TensorOrScalar::Tensor(tensor) = &true_val && tensor.shape() != self.shape() {
             Err(Error::ShapeMismatchSelect { mask: self.shape().clone(), who: "true_val", })?
         }
-
-        if !false_val.check_shape(self.shape()) {
+        if let TensorOrScalar::Tensor(tensor) = &false_val && tensor.shape() != self.shape() {
             Err(Error::ShapeMismatchSelect { mask: self.shape().clone(), who: "false_val", })?
         }
 
-        // TODO: backward
-        let result = true_val.copy_self(self.shape())?;
-        assert_eq!(self.dims(), result.dims());
+        let (mut new_storage, tv) = match &true_val {
+            TensorOrScalar::Tensor(tensor) => (tensor.storage().copy(self.layout()), Some(tensor)),
+            TensorOrScalar::Scalar(v) => (Storage::full(*v, self.shape()), None),
+        };
+        let layout = Layout::contiguous(self.shape());
 
-        {
-            let mut result_storage = result.storage_mut(0);
-            // zip ( result storage index, condition and false value )
-            for ((result_index, condition), fv) in result.layout().storage_indices().zip(self.iter()).zip(false_val.iter_value()) {
-                if !condition {
-                    result_storage.set_unchecked(result_index, fv);
+        let fv = match &false_val {
+            TensorOrScalar::Tensor(false_val) => {
+                for ((result_index, condition), fv) in layout.storage_indices().zip(self.iter()).zip(false_val.iter()) {
+                    if !condition {
+                        new_storage.set_unchecked(result_index, fv);
+                    }
                 }
+                Some(false_val)
             }
-        }
+            TensorOrScalar::Scalar(fv) => {
+                for (result_index, condition) in layout.storage_indices().zip(self.iter()) {
+                    if !condition {
+                        new_storage.set_unchecked(result_index, *fv);
+                    }
+                }
+                None
+            }
+        };
+
+        let meta = T::AutogradMeta::on_ifelse_op(self, tv, fv);
         
-        Ok(result)
+        let result = TensorImpl {
+            id: TensorId::new(),
+            storage: StorageArc::new(new_storage),
+            layout,
+            meta
+        };
+
+        Ok(Tensor(Arc::new(result)))
     }
 }
 
-pub trait ConditionValue<T: WithDType> {
-    fn check_shape(&self, shape: &Shape) -> bool;
-    fn copy_self(&self, shape: &Shape) -> Result<Tensor<T>>;
-    fn iter_value(&self) -> impl Iterator<Item = T>;
-}
-
-impl<T: WithDType> ConditionValue<T> for &Tensor<T> {
-    fn check_shape(&self, shape: &Shape) -> bool {
-        self.shape() == shape
-    }
-
-    fn copy_self(&self, shape: &Shape) -> Result<Tensor<T>> {
-        assert_eq!(self.shape(), shape);
-        Ok(self.copy())
-    }
-
-    fn iter_value(&self) -> impl Iterator<Item = T> {
-        self.iter()
-    }
-}
-
-impl<T: WithDType> ConditionValue<T> for T {
-    fn check_shape(&self, _: &Shape) -> bool {
-        true
-    }
-
-    fn copy_self(&self, shape: &Shape) -> Result<Tensor<T>> {
-        Tensor::<T>::full(shape, *self)
-    }
-
-    fn iter_value(&self) -> impl Iterator<Item = T> {
-        std::iter::repeat(*self)
+impl<T: WithDType> Tensor<T> {
+    pub fn masked_fill(&self, mask: &Tensor<bool>, value: impl Into<TensorOrScalar<T>>) -> Result<Tensor<T>> {
+        let mask = mask.not();
+        mask.if_else(self, value)
     }
 }
 

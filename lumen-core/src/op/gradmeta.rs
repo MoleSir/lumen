@@ -17,6 +17,7 @@ pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_cat_op<A: AsRef<Tensor<T>>>(args: &[A], dim: usize) -> Self;
     fn on_permute_op(t: &Tensor<T>, dims: Vec<usize>) -> Self;
     fn on_copy_op(t: &Tensor<T>) -> Self;
+    fn on_ifelse_op(mask: &Tensor<bool>, tv: Option<&Tensor<T>>, fv: Option<&Tensor<T>>) -> Self;
 }
 
 // pub struct AutogradInfo<T: FloatDType> {
@@ -191,6 +192,36 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
             Self::val()
         }  
     }
+
+    fn on_ifelse_op(mask: &Tensor<bool>, tv: Option<&Tensor<T>>, fv: Option<&Tensor<T>>) -> Self {
+        match (tv, fv) {
+            (Some(tv), Some(fv)) => {
+                if tv.requires_grad() || fv.requires_grad() {
+                    Self::var_from_op(Op::IfElse(mask.clone(), Some(tv.clone()), Some(fv.clone())))
+                } else {
+                    Self::val()
+                }
+            }
+            (None, Some(fv)) => {
+                if fv.requires_grad() {
+                    Self::var_from_op(Op::IfElse(mask.clone(), None, Some(fv.clone())))
+                } else {
+                    Self::val()
+                }
+            }
+            (Some(tv), None) => {
+                if tv.requires_grad() {
+                    Self::var_from_op(Op::IfElse(mask.clone(), Some(tv.clone()), None))
+                } else {
+                    Self::val()
+                }
+            }
+            (None, None) => {
+                Self::val()
+
+            }
+        }  
+    }
 }
 
 #[derive(Default)]
@@ -270,6 +301,11 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
 
     #[inline]
     fn on_copy_op(t: &Tensor<T>) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_ifelse_op(mask: &Tensor<bool>, tv: Option<&Tensor<T>>, fv: Option<&Tensor<T>>) -> Self {
         NoAutograd
     }
 }

@@ -645,4 +645,32 @@ mod test {
         
         assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
     }
+
+    #[test]
+    fn test_masked_fill_grad() {
+        let a = Var::<f64>::new(&[1.0, 2.0, 3.0, 4.0]).unwrap();
+        let mask = Tensor::new(&[false, true, false, true]).unwrap();
+        let y = a.masked_fill(&mask, f64::NEG_INFINITY).unwrap();
+        
+        let grads = y.backward().unwrap();
+
+        let expected_grad = Tensor::new(&[1.0, 0.0, 1.0, 0.0]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_where_grad() {
+        let cond = Tensor::new(&[true, false, true]).unwrap();
+        let a = Var::<f64>::new(&[10.0, 10.0, 10.0]).unwrap();
+        let b = Var::<f64>::new(&[20.0, 20.0, 20.0]).unwrap();
+        let y = cond.if_else(&a, &b).unwrap();
+        
+        let grads = y.backward().unwrap(); // 默认传入全是 1.0 的梯度
+
+        let expected_grad_a = Tensor::new(&[1.0, 0.0, 1.0]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad_a, 1e-5, 1e-8));
+
+        let expected_grad_b = Tensor::new(&[0.0, 1.0, 0.0]).unwrap();
+        assert!(grads[&b].allclose(&expected_grad_b, 1e-5, 1e-8));
+    }
 }

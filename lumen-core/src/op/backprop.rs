@@ -390,6 +390,23 @@ impl<T: FloatDType> Tensor<T> {
                             *sum_grad = sum_grad.add(&grad)?
                         }
 
+                        //=========================================================================================//
+                        //           IfElse
+                        //=========================================================================================//
+                        Op::IfElse(mask, tv, fv) => {
+                            if let Some(tv) = tv {
+                                let masked_grad = mask.if_else(&grad, T::zero())?;
+                                let sum_grad = grads.or_insert(tv)?;
+                                *sum_grad = sum_grad.add(&masked_grad)?;
+                            }
+
+                            if let Some(fv) = fv {
+                                let masked_grad = mask.if_else(T::zero(), &grad)?;
+                                let sum_grad = grads.or_insert(fv)?;
+                                *sum_grad = sum_grad.add(&masked_grad)?;
+                            }
+                        }
+
                         _ => unimplemented!(),
                     }
                 }
@@ -419,7 +436,9 @@ impl<T: FloatDType> Tensor<T> {
             } else if let Some(op) = node.op() {
                 match op {
                     | Op::Binary(lhs, rhs, _)
-                    | Op::Matmul(lhs, rhs) => {
+                    | Op::Matmul(lhs, rhs) 
+                    | Op::IfElse(_, Some(lhs), Some(rhs))
+                    => {
                         let (tg, nodes) = walk(lhs, nodes, already_seen);
                         track_grad |= tg;
                         let (tg, nodes) = walk(rhs, nodes, already_seen);
@@ -432,6 +451,8 @@ impl<T: FloatDType> Tensor<T> {
                     | Op::Unary(_node, UnaryOp::Round)
                     | Op::Unary(_node, UnaryOp::Sign) => nodes,
 
+                    | Op::IfElse(_, None, None) => nodes,
+
                     | Op::BinaryScalar(node, _, _)
                     | Op::Broadcast(node)
                     | Op::Unary(node, _)
@@ -443,6 +464,8 @@ impl<T: FloatDType> Tensor<T> {
                     | Op::Transpose(node, _, _)
                     | Op::Permute(node, _)
                     | Op::Copy(node) 
+                    | Op::IfElse(_, Some(node), None)
+                    | Op::IfElse(_, None, Some(node))
                     | Op::ReduceAll(node, _) => {
                         let (tg, nodes) = walk(node, nodes, already_seen);
                         track_grad |= tg;

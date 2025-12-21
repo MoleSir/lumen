@@ -1,29 +1,25 @@
-use crate::{Result, Tensor, WithDType};
+use crate::{Tensor, WithDType};
 
-pub enum TensorScalar<T: WithDType> {
+pub enum TensorOrScalar<T: WithDType> {
     Tensor(Tensor<T>),
-    Scalar(Tensor<T>),
+    Scalar(T),
 }
 
-pub trait TensorOrScalar<T: WithDType> {
-    fn to_tensor_scalar(self) -> Result<TensorScalar<T>>;
-}
-
-impl<T: WithDType> TensorOrScalar<T> for &Tensor<T> {
-    fn to_tensor_scalar(self) -> Result<TensorScalar<T>> {
-        Ok(TensorScalar::Tensor(self.clone()))
+impl<T: WithDType> From<T> for TensorOrScalar<T> {
+    fn from(value: T) -> Self {
+        TensorOrScalar::Scalar(value)
     }
 }
 
-impl<T: WithDType> TensorOrScalar<T> for Tensor<T> {
-    fn to_tensor_scalar(self) -> Result<TensorScalar<T>> {
-        Ok(TensorScalar::Tensor(self.clone()))
+impl<T: WithDType> From<Tensor<T>> for TensorOrScalar<T> {
+    fn from(value: Tensor<T>) -> Self {
+        TensorOrScalar::Tensor(value)
     }
 }
 
-impl<T: WithDType> TensorOrScalar<T> for T {
-    fn to_tensor_scalar(self) -> Result<TensorScalar<T>> {
-        let scalar = Tensor::new(self)?;
-        Ok(TensorScalar::Scalar(scalar))
+impl<T: WithDType> From<&Tensor<T>> for TensorOrScalar<T> {
+    fn from(value: &Tensor<T>) -> Self {
+        TensorOrScalar::Tensor(value.clone())
     }
 }
+

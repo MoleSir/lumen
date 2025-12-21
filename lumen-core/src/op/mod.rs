@@ -22,7 +22,7 @@ pub enum Op<T: FloatDType> {
     Transpose(Tensor<T>, usize, usize),
     Permute(Tensor<T>, Vec<usize>),
     Cat(Vec<Tensor<T>>, usize),
-    // WhereCond(Tensor<bool>, Tensor<T>, Tensor<T>),
+    IfElse(Tensor<bool>, Option<Tensor<T>>, Option<Tensor<T>>),
     Copy(Tensor<T>),
 
 }
