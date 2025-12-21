@@ -13,6 +13,7 @@ impl<T: WithDType> Tensor<T> {
                 .ok_or_else(|| Error::IndexOutOfRangeTake{ storage_len: self_storage_len, index: index.to_usize() })?;
             vec.push(value);
         }
+        // TODO: backward
         let storage = Storage::new(vec);
         Ok(Self::from_storage(storage, indices.shape()))
     }
@@ -23,8 +24,8 @@ impl<T: WithDType> Tensor<T> {
         for indexer in indexers.iter() {
             x = match indexer {
                 Indexer::Select(n) => x.narrow(current_dim, *n, 1)?.squeeze(current_dim)?,
-                Indexer::Range(range) => {
-                    let out = x.narrow_range(current_dim, range)?;
+                Indexer::Slice(range) => {
+                    let out = x.slice(current_dim, range)?;
                     current_dim += 1;
                     out
                 }
@@ -51,56 +52,17 @@ impl<T: WithDType> Tensor<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Indexer {
     Select(usize),
-    Range(Range),
-}
-
-impl Indexer {
-    pub fn begin_step_size(&self, max_end: usize, op: &'static str) -> Result<(usize, usize, usize)> {
-        match self {
-            &Indexer::Select(i) => {
-                if i >= max_end {
-                    Err(Error::IndexOutOfRange { max_size: max_end, index: i, op }) 
-                } else {
-                    Ok((i, 1, 1))
-                }
-            }
-            Indexer::Range(range) => {
-                let start = range.start;
-                if start >= max_end {
-                    Err(Error::IndexOutOfRange { max_size: max_end, index: start, op })?;
-                }
-
-                let end = match range.end {
-                    Some(end) if end >= 0 => end as usize,
-                    Some(end) => {
-                        let dis = -end as usize;
-                        if dis > max_end {
-                            0
-                        } else {
-                            max_end - dis
-                        }
-                    }
-                    None => max_end,
-                };
-
-                let end = end.min(max_end);
-                let step = range.step;
-                assert!(step != 0);
-                let len = (start..end).step_by(step).count();
-                Ok((start, step, len))
-            }
-        }
-    }
+    Slice(Slice),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Range {
+pub struct Slice {
     pub start: usize, 
     pub end: Option<isize>, 
     pub step: usize
 }
 
-impl Range {
+impl Slice {
     pub fn new(start: usize, end: Option<isize>, step: usize) -> Self {
         Self { start, end, step }
     }
@@ -110,7 +72,7 @@ impl Range {
     }
 }
 
-impl Iterator for Range {
+impl Iterator for Slice {
     type Item = usize;
     fn next(&mut self) -> Option<Self::Item> {
         match self.end {
@@ -137,7 +99,7 @@ impl Iterator for Range {
     }
 }
 
-impl Display for Range {
+impl Display for Slice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let step_part = match self.step {
             1 => format!(""),
@@ -156,29 +118,29 @@ impl From<usize> for Indexer {
     }
 }
 
-impl From<Range> for Indexer {
-    fn from(value: Range) -> Self {
-        Indexer::Range(value)
+impl From<Slice> for Indexer {
+    fn from(value: Slice) -> Self {
+        Indexer::Slice(value)
     }
 }
 
 impl From<std::ops::Range<usize>> for Indexer {
     fn from(value: std::ops::Range<usize>) -> Self {
-        let range = Range::new(value.start, Some(value.end as isize), 1);
+        let range = Slice::new(value.start, Some(value.end as isize), 1);
         range.into()
     }
 }
 
 impl From<std::ops::RangeFrom<usize>> for Indexer {
     fn from(value: std::ops::RangeFrom<usize>) -> Self {
-        let range = Range::new(value.start, None, 1);
+        let range = Slice::new(value.start, None, 1);
         range.into()
     }
 }
 
 impl From<std::ops::RangeFull> for Indexer {
     fn from(_: std::ops::RangeFull) -> Self {
-        let range = Range::new(0, None, 1);
+        let range = Slice::new(0, None, 1);
         range.into()
     }
 }
@@ -219,38 +181,38 @@ index_op_tuple!(I1, I2, I3, I4);
 index_op_tuple!(I1, I2, I3, I4, I5);
 
 #[macro_export]
-macro_rules! rng {
-    // rng!(start:end)
+macro_rules! s {
+    // s!(start:end)
     ($start:tt : $end:expr) => {
-        Range::new($start as usize, Some($end as isize), 1)
+        Slice::new($start as usize, Some($end as isize), 1)
     };
-    // rng!(start:end:step)
+    // s!(start:end:step)
     ($start:tt : $end:tt : $step:expr) => {
-        Range::new($start as usize, Some($end as isize), $step as usize)
+        Slice::new($start as usize, Some($end as isize), $step as usize)
     };
-    // rng!(start:)
+    // s!(start:)
     ($start:tt :) => {
-        Range::new($start as usize, None, 1)
+        Slice::new($start as usize, None, 1)
     };
-    // rng!(start::step)
+    // s!(start::step)
     ($start:tt :: $step:expr) => {
-        Range::new($start as usize, None, $step as usize)
+        Slice::new($start as usize, None, $step as usize)
     };
-    // rng!(:$end)
+    // s!(:$end)
     (: $end:tt) => {
-        Range::new(0, Some($end as isize), 1)
+        Slice::new(0, Some($end as isize), 1)
     };
-    // rng!(:$end:$step)
+    // s!(:$end:$step)
     (: $end:tt : $step:expr) => {
-        Range::new(0, Some($end as isize), $step as usize)
+        Slice::new(0, Some($end as isize), $step as usize)
     };
-    // rng!(::$step)
+    // s!(::$step)
     (:: $step:expr) => {
-        Range::new(0, None, $step as usize)
+        Slice::new(0, None, $step as usize)
     };
-    // rng!(:)
+    // s!(:)
     (:) => {
-        Range::new(0, None, 1)
+        Slice::new(0, None, 1)
     };
 }
 
@@ -275,10 +237,10 @@ mod test {
     fn test_index_range_basic() {
         let arr = Tensor::arange(0, 125).unwrap().reshape((5, 5, 5)).unwrap();
 
-        let sub = arr.index(rng!(1:3)).unwrap();
+        let sub = arr.index(s!(1:3)).unwrap();
         assert_eq!(sub.shape().dims(), &[2, 5, 5]);
 
-        let sub = arr.index((rng!(1:3), rng!(3:4), 1)).unwrap();
+        let sub = arr.index((s!(1:3), s!(3:4), 1)).unwrap();
         assert_eq!(sub.shape().dims(), &[2, 1]);
     }
 
@@ -286,13 +248,13 @@ mod test {
     fn test_index_full_and_mixed() {
         let arr = Tensor::<i32>::zeros((5, 5, 5)).unwrap();
 
-        let sub = arr.index((rng!(1:3), .., 1..2)).unwrap();
+        let sub = arr.index((s!(1:3), .., 1..2)).unwrap();
         assert_eq!(sub.shape().dims(), &[2, 5, 1]);
 
-        let sub = arr.index((2, .., rng!(0:2))).unwrap();
+        let sub = arr.index((2, .., s!(0:2))).unwrap();
         assert_eq!(sub.shape().dims(), &[5, 2]);
 
-        let sub = arr.index((rng!(0:2), rng!(2:5), rng!(1:3))).unwrap();
+        let sub = arr.index((s!(0:2), s!(2:5), s!(1:3))).unwrap();
         assert_eq!(sub.shape().dims(), &[2, 3, 2]);
     }
 
@@ -302,7 +264,7 @@ mod test {
         let result = arr.index(10);
         assert!(result.is_err());
 
-        let result = arr.index(rng!(3:10));
+        let result = arr.index(s!(3:10));
         assert!(result.is_err());
     }
     
@@ -319,7 +281,7 @@ mod test {
     fn test_index_range_values() {
         let arr = Tensor::arange(0, 125).unwrap().reshape((5, 5, 5)).unwrap();
 
-        let sub = arr.index(rng!(1:3)).unwrap();
+        let sub = arr.index(s!(1:3)).unwrap();
         let expected = Tensor::arange(25, 75).unwrap().reshape((2, 5, 5)).unwrap();
         assert!(sub.allclose(&expected, 0.0, 0.0));
     }
@@ -332,7 +294,7 @@ mod test {
         let expected = Tensor::arange(65, 70).unwrap();
         assert!(sub.allclose(&expected, 0.0, 0.0));
 
-        let sub = arr.index((rng!(1:3), rng!(3:5), 2)).unwrap();
+        let sub = arr.index((s!(1:3), s!(3:5), 2)).unwrap();
         let mut vals = Vec::new();
         for i in 1..3 {
             for j in 3..5 {
@@ -347,9 +309,9 @@ mod test {
     fn test_index_with_full_dim() {
         let arr = Tensor::arange(0, 125).unwrap().reshape((5, 5, 5)).unwrap();
 
-        let sub = arr.index((rng!(1:3), .., 1..2)).unwrap();
+        let sub = arr.index((s!(1:3), .., 1..2)).unwrap();
 
-        let expected = arr.index((rng!(1:3), rng!(0:5), rng!(1:2))).unwrap();
+        let expected = arr.index((s!(1:3), s!(0:5), s!(1:2))).unwrap();
         assert!(sub.allclose(&expected, 0.0, 0.0));
     }
 
@@ -406,45 +368,45 @@ mod test {
     fn test_macro() {
         let t = (0..12usize);
         let t = (2usize..);
-        assert_eq!(rng!(1:10), Range {start:1, end: Some(10), step:1});
+        assert_eq!(s!(1:10), Slice {start:1, end: Some(10), step:1});
 
         assert!(
-            rng!(1:20).zip((1..20))
+            s!(1:20).zip((1..20))
                 .all(|(a, b)| a == b)
         );
     
         assert!(
-            rng!(1:13:3).zip((1..13).step_by(3))
+            s!(1:13:3).zip((1..13).step_by(3))
                 .all(|(a, b)| a == b)
         );
     
         assert!(
-            rng!(1:).zip((1..).take(100))
+            s!(1:).zip((1..).take(100))
                 .all(|(a, b)| a == b)
         );
 
         assert!(
-            rng!(1::2).zip((1..).step_by(2).take(100))
+            s!(1::2).zip((1..).step_by(2).take(100))
                 .all(|(a, b)| a == b)
         );
 
         assert!(
-            rng!(:20).zip((0..20usize))
+            s!(:20).zip((0..20usize))
                 .all(|(a, b)| a == b)
         );
 
         assert!(
-            rng!(:20:5).zip((0..20usize).step_by(5))
+            s!(:20:5).zip((0..20usize).step_by(5))
                 .all(|(a, b)| a == b)
         );
 
         assert!(
-            rng!(::2).zip((0..).step_by(2).take(100))
+            s!(::2).zip((0..).step_by(2).take(100))
                 .all(|(a, b)| a == b)
         );
 
         assert!(
-            rng!(:).zip((0..).take(100))
+            s!(:).zip((0..).take(100))
                 .all(|(a, b)| a == b)
         );
     }

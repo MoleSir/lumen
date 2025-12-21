@@ -120,7 +120,7 @@ impl<T: FloatDType> Tensor<T> {
                         Op::Unary(arg, UnaryOp::Abs) => {
                             let sum_grad = grads.or_insert(arg)?;
                             let ones = arg.ones_like()?;
-                            let abs_grad = arg.ge(&arg.zeros_like()?)?.select(&ones, &ones.neg())?;
+                            let abs_grad = arg.ge(&arg.zeros_like()?)?.if_else(&ones, &ones.neg())?;
                             *sum_grad = sum_grad.add(&(&grad * abs_grad))?
                         }
                         Op::Unary(arg, UnaryOp::Neg) => {
@@ -276,7 +276,67 @@ impl<T: FloatDType> Tensor<T> {
                             let sum_grad = grads.or_insert(arg)?;
                             *sum_grad = sum_grad.add(&arg_grad)?
                         }
+
+                        //=========================================================================================//
+                        //           Slice
+                        //=========================================================================================//
+                        &Op::Slice(ref arg, dim, start, _end, step) => {
+                            let arg_dims = arg.dims();
+                            
+                            let body_grad = if step == 1 {
+                                // Narrow
+                                grad
+                            } else {
+                                let grad_len = grad.dims()[dim];
+                                let span_len = if grad_len > 0 { (grad_len - 1) * step + 1 } else { 0 };
+                                
+                                let mut unsqueezed_shape = grad.dims().to_vec();
+                                unsqueezed_shape.insert(dim + 1, 1);
+                                let grad_unsqueezed = grad.reshape(&unsqueezed_shape)?;
+                                
+                                let mut zeros_shape = unsqueezed_shape.clone();
+                                zeros_shape[dim + 1] = step - 1;
+                                let zeros_gap = Tensor::zeros(zeros_shape)?;
+                                
+                                let dilated = Tensor::cat(&[&grad_unsqueezed, &zeros_gap], dim + 1)?;
+                                
+                                let mut flattened_shape = grad.dims().to_vec();
+                                flattened_shape[dim] = grad_len * step;
+                                let flattened = dilated.reshape(flattened_shape)?;
+                                
+                                flattened.narrow(dim, 0, span_len)?
+                            };
                         
+                            let body_len = body_grad.dims()[dim];
+                            
+                            let left_pad = if start == 0 {
+                                None
+                            } else {
+                                let mut dims = arg_dims.to_vec();
+                                dims[dim] = start;
+                                Some(Tensor::zeros(dims)?)
+                            };
+                        
+                            let right_pad_len = arg_dims[dim] - start - body_len;
+                            let right_pad = if right_pad_len == 0 {
+                                None
+                            } else {
+                                let mut dims = arg_dims.to_vec();
+                                dims[dim] = right_pad_len;
+                                Some(Tensor::zeros(dims)?)
+                            };
+                        
+                            let arg_grad = match (left_pad, right_pad) {
+                                (None, None) => body_grad,
+                                (Some(l), None) => Tensor::cat(&[&l, &body_grad], dim)?,
+                                (None, Some(r)) => Tensor::cat(&[&body_grad, &r], dim)?,
+                                (Some(l), Some(r)) => Tensor::cat(&[&l, &body_grad, &r], dim)?,
+                            };
+                        
+                            let sum_grad = grads.or_insert(arg)?;
+                            *sum_grad = sum_grad.add(&arg_grad)?
+                        }
+
                         //=========================================================================================//
                         //           Reshape
                         //=========================================================================================//
@@ -320,6 +380,14 @@ impl<T: FloatDType> Tensor<T> {
                                 *sum_grad = sum_grad.add(&arg_grad)?;
                                 start_idx += len;
                             }
+                        }
+
+                        //=========================================================================================//
+                        //           Copy
+                        //=========================================================================================//
+                        Op::Copy(arg) => {
+                            let sum_grad = grads.or_insert(arg)?;
+                            *sum_grad = sum_grad.add(&grad)?
                         }
 
                         _ => unimplemented!(),
@@ -370,9 +438,11 @@ impl<T: FloatDType> Tensor<T> {
                     | Op::Pow(node, _)
                     | Op::Reduce(node, _, _)
                     | Op::Narrow(node, _, _, _)
+                    | Op::Slice(node, _, _, _, _)
                     | Op::Reshape(node)
                     | Op::Transpose(node, _, _)
                     | Op::Permute(node, _)
+                    | Op::Copy(node) 
                     | Op::ReduceAll(node, _) => {
                         let (tg, nodes) = walk(node, nodes, already_seen);
                         track_grad |= tg;

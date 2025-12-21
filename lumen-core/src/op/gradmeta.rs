@@ -11,10 +11,12 @@ pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_reduce_all_op(t: &Tensor<T>, op: ReduceOp) -> Self;
     fn on_matmul_op(lhs: &Tensor<T>, rhs: &Tensor<T>) -> Self;
     fn on_narrow_op(t: &Tensor<T>, dim: usize, start: usize, len: usize) -> Self;
+    fn on_slice_op(t: &Tensor<T>, dim: usize, start: usize, end: usize, step: usize) -> Self;
     fn on_reshape_op(t: &Tensor<T>) -> Self;
     fn on_transpose_op(t: &Tensor<T>, dim1: usize, dim2: usize) -> Self;
     fn on_cat_op<A: AsRef<Tensor<T>>>(args: &[A], dim: usize) -> Self;
     fn on_permute_op(t: &Tensor<T>, dims: Vec<usize>) -> Self;
+    fn on_copy_op(t: &Tensor<T>) -> Self;
 }
 
 // pub struct AutogradInfo<T: FloatDType> {
@@ -141,6 +143,14 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
         } 
     }
 
+    fn on_slice_op(t: &Tensor<T>, dim: usize, start: usize, end: usize, step: usize) -> Self {
+        if t.requires_grad() {
+            Self::var_from_op(Op::Slice(t.clone(), dim, start, end, step))
+        } else {
+            Self::val()
+        } 
+    }
+
     fn on_reshape_op(t: &Tensor<T>) -> Self {
         if t.requires_grad() {
             Self::var_from_op(Op::Reshape(t.clone()))
@@ -172,6 +182,14 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
         } else {
             Self::val()
         } 
+    }
+
+    fn on_copy_op(t: &Tensor<T>) -> Self {
+        if t.requires_grad() {
+            Self::var_from_op(Op::Copy(t.clone()))
+        } else {
+            Self::val()
+        }  
     }
 }
 
@@ -226,6 +244,11 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
     }
 
     #[inline]
+    fn on_slice_op(t: &Tensor<T>, dim: usize, start: usize, end: usize, step: usize) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
     fn on_reshape_op(t: &Tensor<T>) -> Self {
         NoAutograd
     }
@@ -242,6 +265,11 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
 
     #[inline]
     fn on_permute_op(t: &Tensor<T>, dims: Vec<usize>) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_copy_op(t: &Tensor<T>) -> Self {
         NoAutograd
     }
 }

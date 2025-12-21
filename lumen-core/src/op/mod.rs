@@ -17,10 +17,14 @@ pub enum Op<T: FloatDType> {
     Matmul(Tensor<T>, Tensor<T>),
     Broadcast(Tensor<T>),
     Narrow(Tensor<T>, usize, usize, usize),
+    Slice(Tensor<T>, usize, usize, usize, usize),
     Reshape(Tensor<T>),
     Transpose(Tensor<T>, usize, usize),
     Permute(Tensor<T>, Vec<usize>),
     Cat(Vec<Tensor<T>>, usize),
+    // WhereCond(Tensor<bool>, Tensor<T>, Tensor<T>),
+    Copy(Tensor<T>),
+
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

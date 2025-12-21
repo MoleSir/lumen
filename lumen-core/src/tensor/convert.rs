@@ -1,10 +1,19 @@
-use crate::{DTypeConvert, Error, Result, WithDType};
+use crate::{AutogradMetaT, DTypeConvert, Error, Result, WithDType};
 use super::Tensor;
 
 impl<T: WithDType> Tensor<T> {
+    pub fn contiguous(&self) -> Tensor<T> {
+        if self.is_contiguous() {
+            self.clone()
+        } else {
+            self.copy()
+        }
+    }
+
     pub fn copy(&self) -> Self {
         let storage = self.storage().copy(self.layout());
-        Self::from_storage(storage, self.shape())
+        let meta = T::AutogradMeta::on_copy_op(self);
+        Self::build(storage, self.shape(), meta)
     }
 
     pub fn copy_from(&self, source: &Self) -> Result<()> {

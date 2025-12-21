@@ -259,6 +259,11 @@ impl From<Vec<usize>> for Shape {
     }
 }
 
+impl From<&Vec<usize>> for Shape {
+    fn from(dims: &Vec<usize>) -> Self {
+        Self(dims.clone())
+    }
+}
 
 impl From<&[usize]> for Shape {
     fn from(dims: &[usize]) -> Self {

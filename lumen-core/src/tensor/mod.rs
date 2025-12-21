@@ -13,7 +13,7 @@ mod condition;
 pub use construct::ToTensor;
 pub use arith::TensorBinaryRhs;
 use std::{hash::Hash, sync::Arc};
-pub use indexer::{Range, IndexOp};
+pub use indexer::{Slice, IndexOp};
 use crate::{Error, FloatDType, Op, Result};
 use super::{DType, Dim, DimCoordinates, DimNCoordinates, Layout, NumDType, Shape, Storage, StorageArc, StorageIndices, StorageMut, StorageRef, WithDType};
 pub use iter::*;

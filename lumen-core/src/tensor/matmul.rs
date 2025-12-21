@@ -123,7 +123,7 @@ impl<T: NumDType> Tensor<T> {
 #[cfg(test)]
 #[allow(unused)]
 mod tests {
-    use crate::{rng, DType, IndexOp, Range};
+    use crate::{s, DType, IndexOp, Slice};
 
     use super::*;
 
@@ -170,7 +170,7 @@ mod tests {
     fn test_matmul_not_continues() {
         let a = Tensor::arange(0., 125.).unwrap().reshape((5, 5, 5)).unwrap();
 
-        let sub_a = a.index((rng!(1:3), rng!(3:5), 2)).unwrap();
+        let sub_a = a.index((s!(1:3), s!(3:5), 2)).unwrap();
         let mut vals = Vec::new();
         for i in 1..3 {
             for j in 3..5 {

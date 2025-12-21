@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use crate::{AutogradMetaT, Dim, Dims, Error, Layout, Result, Shape, Storage, WithDType, D};
-use super::{Tensor, TensorId, TensorImpl, Range};
+use super::{Tensor, TensorId, TensorImpl, Slice};
 
 impl<T: WithDType> Tensor<T> {
     /// Creates a new tensor with the specified dimension removed if its size was one.
@@ -111,33 +111,31 @@ impl<T: WithDType> Tensor<T> {
     }
 
     /// Returns a new tensor that is a narrowed version of the input, the dimension `dim`
-    /// ranges from `start` to `start : end : step`.
-    /// 
-    /// TODO: set `range` to a trait param
+    /// slice from `start` to `start : end : step`.
     /// 
     /// ```
-    /// use lumen_core::{Tensor, DType, rng, Range};
+    /// use lumen_core::{Tensor, DType, s, Slice};
     /// let a = Tensor::<i32>::zeros((5, 5, 5)).unwrap();
     ///
     /// let b = a.narrow(0, 1, 2).unwrap();
     /// assert_eq!(b.shape().dims(), &[2, 5, 5]);
     ///
-    /// let c = a.narrow_range(1, &rng!(::2)).unwrap();
+    /// let c = a.slice(1, &s!(::2)).unwrap();
     /// assert_eq!(c.shape().dims(), &[5, 3, 5]);
     /// ```
-    pub fn narrow_range<D: Dim>(&self, dim: D, range: &Range) -> Result<Self> {
+    pub fn slice<D: Dim>(&self, dim: D, slice: &Slice) -> Result<Self> {
         let dims = self.dims();
         let dim = dim.to_index(self.shape(), "narrow")?;
         let err = |msg| {
-            Err::<(), _>(Error::NarrowRangeInvalidArgs {
+            Err::<(), _>(Error::SliceInvalidArgs {
                 shape: self.shape().clone(),
                 dim,
-                range: range.clone(),
+                slice: slice.clone(),
                 msg,
             })
         };
 
-        let end = match range.end {
+        let end = match slice.end {
             Some(end) if end >= 0 => end as usize,
             Some(end) => {
                 let dis = -end as usize;
@@ -149,21 +147,22 @@ impl<T: WithDType> Tensor<T> {
             }
             None => dims[dim],
         };
-        if range.start > dims[dim] {
+        if slice.start > dims[dim] {
             err("start > dim_len")?;
         }
         if end > dims[dim] {
             err("end > dim_len")?
         }
-        if range.start == 0 && dims[dim] == end && range.step == 1 {
+        if slice.start == 0 && dims[dim] == end && slice.step == 1 {
             Ok(self.clone())
         } else {
-            let layout = self.layout().narrow_range(dim, range.start, end, range.step)?;
+            let meta = T::AutogradMeta::on_slice_op(self, dim, slice.start, end, slice.step);
+            let layout = self.layout().slice(dim, slice.start, end, slice.step)?;
             let tensor_ = TensorImpl {
                 id: TensorId::new(),
                 storage: self.0.storage.clone(),
                 layout,
-                meta: Default::default(),
+                meta,
             };
             Ok(Self(Arc::new(tensor_)))
         }
@@ -349,6 +348,7 @@ impl<T: WithDType> Tensor<T> {
             // Take sub Tensor 
             let sub_res_arr = res_arr.narrow(cat_dim, dim_offsets[arr_index], arr.as_ref().dims()[cat_dim])?;
             assert_eq!(sub_res_arr.shape(), arr.as_ref().shape());
+            // MARK: copy_from is no grad
             sub_res_arr.copy_from(arr.as_ref())?;
         }
 
