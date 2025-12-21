@@ -1,3 +1,3 @@
-# pyro-core
+# lumen-core
 
 TensorData implement.
