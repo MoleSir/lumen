@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::{NumDType, Result, Shape, WithDType};
+use crate::{AutogradMetaT, NumDType, Result, Shape, WithDType};
 use super::{Tensor, TensorId, TensorImpl};
 
 impl<T: WithDType> Tensor<T> {
@@ -15,6 +15,7 @@ impl<T: WithDType> Tensor<T> {
             id: TensorId::new(),
             storage: self.0.storage.clone(),
             layout: self.layout().broadcast_as(shape)?,
+            meta: T::AutogradMeta::on_broadcast_op(self)
         };
         Ok(Tensor(Arc::new(ndarry_)))
     }

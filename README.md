@@ -1,3 +1,3 @@
-# Pyra
+# Lumen
 
 Machine learning library.

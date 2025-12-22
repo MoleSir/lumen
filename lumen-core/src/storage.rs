@@ -17,6 +17,12 @@ impl<T: NumDType> Storage<T> {
     }
 }
 
+impl<T: WithDType> Storage<T> {
+    pub fn full(value: T, shape: &Shape) -> Self {
+        Self(vec![value; shape.element_count()])
+    }
+}
+
 impl<T: WithDType + rand_distr::uniform::SampleUniform> Storage<T> {
     pub fn rand_uniform(shape: &Shape, min: T, max: T) -> Result<Self> 
     where 

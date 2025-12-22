@@ -9,8 +9,24 @@ mod i8;
 mod u16;
 mod i16;
 
-use crate::Result;
+
+use crate::{op::{AutogradInfo, AutogradMetaT, NoAutograd}, Result, Tensor};
 use super::Storage;
+
+pub trait WithDType:
+    Sized
+    + Copy
+    + std::cmp::PartialOrd
+    + std::cmp::PartialEq
+    + std::fmt::Display
+    + Boolean
+    + 'static
+    + Send
+    + Sync
+{
+    const DTYPE: DType;
+    type AutogradMeta: AutogradMetaT<Self>;
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum DType {
@@ -68,20 +84,7 @@ impl std::fmt::Display for DType {
     }
 }
 
-pub trait WithDType:
-    Sized
-    + Copy
-    + std::cmp::PartialOrd
-    + std::cmp::PartialEq
-    + std::fmt::Display
-    + 'static
-    + Send
-    + Sync
-{
-    const DTYPE: DType;
-}
-
-pub trait NumDType : 
+pub trait NumDType: 
     WithDType 
   + num_traits::Num    
   + num_traits::Bounded
@@ -91,6 +94,14 @@ pub trait NumDType :
   + std::ops::SubAssign
   + std::ops::MulAssign
   + std::ops::DivAssign
+  + std::ops::Add<Tensor<Self>, Output = Tensor<Self>> 
+  + std::ops::Mul<Tensor<Self>, Output = Tensor<Self>>  
+  + std::ops::Sub<Tensor<Self>, Output = Tensor<Self>>  
+  + std::ops::Div<Tensor<Self>, Output = Tensor<Self>> 
+  + for<'a> std::ops::Add<&'a Tensor<Self>, Output = Tensor<Self>> 
+  + for<'a> std::ops::Mul<&'a Tensor<Self>, Output = Tensor<Self>> 
+  + for<'a> std::ops::Sub<&'a Tensor<Self>, Output = Tensor<Self>> 
+  + for<'a> std::ops::Div<&'a Tensor<Self>, Output = Tensor<Self>>  
 {
     type Category: NumCategory;
 
@@ -132,9 +143,19 @@ pub trait UnsignedIntDType :
 }
 
 pub trait FloatDType: 
-    NumDType<Category = FloatCategory>
+    NumDType<Category = FloatCategory, AutogradMeta = AutogradInfo<Self>>
     + num_traits::Float
 {
+    fn sqr(self) -> Self;
+    fn gelu(self) -> Self;
+    fn gelu_erf(self) -> Self;
+    fn erf(self) -> Self;
+    fn relu(self) -> Self;
+    fn silu(self) -> Self;
+
+    fn two() -> Self;
+    fn pi() -> Self;
+    fn half() -> Self;
 }
 
 pub trait NumCategory {}
@@ -171,24 +192,64 @@ impl_dtype_convert_from!(f32, { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
 impl_dtype_convert_from!(f64, { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
 impl_dtype_convert_from!(usize, { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
 
-macro_rules! impl_with_bool {
-    ($($dtype:ty),*) => {
+impl<T: NumDType> DTypeConvert<T> for bool {
+    fn convert(self) -> T {
+        if self { T::one() } else { T::zero() }
+    }
+}
+
+impl<T: NumDType> DTypeConvert<bool> for T {
+    fn convert(self) -> bool {
+        self == T::zero() 
+    }
+}
+
+pub trait Boolean {
+    fn true_value() -> Self;
+    fn false_value() -> Self;
+}
+
+macro_rules! impl_boolean_for_int {
+    ($($t:ty),*) => {
         $(
-            impl DTypeConvert<bool> for $dtype {
-                #[inline]
-                fn convert(self) -> bool {
-                    self != 0 as $dtype
+            impl Boolean for $t {
+                fn false_value() -> Self {
+                    0
                 }
-            }
             
-            impl DTypeConvert<$dtype> for bool {
-                #[inline]
-                fn convert(self) -> $dtype {
-                    if self { 1 as $dtype } else { 0 as $dtype }
+                fn true_value() -> Self {
+                    1
                 }
             }
         )*
     };
 }
 
-impl_with_bool!(f32, f64, i8, u8, i16, u16, i32, u32, usize);
+macro_rules! impl_boolean_for_float {
+    ($($t:ty),*) => {
+        $(
+            impl Boolean for $t {
+                fn false_value() -> Self {
+                    0.
+                }
+            
+                fn true_value() -> Self {
+                    1.
+                }
+            }
+        )*
+    };
+}
+
+impl_boolean_for_int!(i8, u8, i16, u16, i32, u32, usize);
+impl_boolean_for_float!(f32, f64);
+
+impl Boolean for bool {
+    fn false_value() -> Self {
+        false
+    }
+
+    fn true_value() -> Self {
+        true
+    }
+}

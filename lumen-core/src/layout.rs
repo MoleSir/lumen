@@ -64,65 +64,50 @@ impl Layout {
         self.shape.is_contiguous(&self.stride)
     }
 
-    pub fn narrow(&self, dim: usize, start: usize, len: usize) -> Result<Self> {
+    pub fn slice(&self, dim: usize, start: usize, end: usize, step: usize) -> Result<Self> {
         let dims = self.shape().dims();
+        
         if dim >= dims.len() {
             Err(Error::DimOutOfRange { 
                 shape: self.shape().clone(), 
                 dim: dim as i32, 
-                op: "narrow" 
-            })?;
-        }
-        if start + len > dims[dim] {
-            Err(Error::NarrowInvalidArgs {
-                shape: self.shape.clone(),
-                dim,
-                start,
-                len,
-                msg: "start + len > dim_len",
-            })?
-        }
-
-        let mut dims = dims.to_vec();
-        dims[dim] = len;
-        Ok(Self::new(
-            dims, 
-            self.stride.clone(),
-            self.start_offset + self.stride[dim] * start
-        ))
-    }
-
-    pub fn narrow_range(&self, dim: usize, start: usize, end: usize, step: usize) -> Result<Self> {
-        let dims = self.shape().dims();
-        if dim >= dims.len() {
-            Err(Error::DimOutOfRange { 
-                shape: self.shape().clone(), 
-                dim: dim as i32, 
-                op: "narrow" 
+                op: "slice" 
             })?;
         }
         
-        let len = (start..end).step_by(step).len();
-        if end > dims[dim] {
-            Err(Error::NarrowInvalidArgs {
+        if step == 0 {
+            return Err(Error::NarrowInvalidArgs {
                 shape: self.shape.clone(),
-                dim,
-                start,
-                len,
-                msg: "start + len > dim_len",
-            })?
+                dim, start, len: 0,
+                msg: "step cannot be 0",
+            }.into());
         }
 
-        let mut dims = dims.to_vec();
-        dims[dim] = len;
-        let mut stride = self.stride.clone();
-        stride[dim] *= step;
+        if start > end || end > dims[dim] {
+                return Err(Error::NarrowInvalidArgs {
+                shape: self.shape.clone(),
+                dim, start, len: end.saturating_sub(start), 
+                msg: "index out of range",
+            }.into());
+        }
+
+        let new_len = if start == end { 0 } else { (start..end).step_by(step).len() };
+
+        let mut new_dims = dims.to_vec();
+        new_dims[dim] = new_len;
+
+        let mut new_stride = self.stride.clone();
+        new_stride[dim] *= step; 
 
         Ok(Self::new(
-            dims, 
-            stride,
-            self.start_offset + self.stride[dim] * start
+            new_dims, 
+            new_stride,
+            self.start_offset + self.stride[dim] * start 
         ))
+    }
+
+    pub fn narrow(&self, dim: usize, start: usize, len: usize) -> Result<Self> {
+        self.slice(dim, start, start + len, 1)
     }
 
     pub fn transpose(&self, dim1: usize, dim2: usize) -> Result<Self> {
@@ -173,6 +158,31 @@ impl Layout {
         Ok(Self {
             shape,
             stride,
+            start_offset: self.start_offset,
+        })
+    }
+
+    pub fn permute(&self, idxs: &[usize]) -> Result<Self> {
+        let is_permutation =
+            idxs.len() == self.shape.rank() && (0..idxs.len()).all(|i| idxs.contains(&i));
+        if !is_permutation {
+            crate::bail!(
+                "dimension mismatch in permute, tensor {:?}, dims: {:?}",
+                self.dims(),
+                idxs
+            )
+        }
+        let stride = self.stride();
+        let dims = self.shape().dims();
+        let mut perm_stride = stride.to_vec();
+        let mut perm_dims = dims.to_vec();
+        for (i, &idx) in idxs.iter().enumerate() {
+            perm_stride[i] = stride[idx];
+            perm_dims[i] = dims[idx];
+        }
+        Ok(Self {
+            shape: Shape::from(perm_dims),
+            stride: perm_stride,
             start_offset: self.start_offset,
         })
     }

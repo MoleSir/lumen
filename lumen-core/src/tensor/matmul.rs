@@ -1,5 +1,5 @@
 use num_traits::Zero;
-use crate::{Error, Layout, NumDType, Result, Shape, Storage};
+use crate::{AutogradMetaT, Error, Layout, NumDType, Result, Shape, Storage};
 use super::Tensor;
 
 impl<T: NumDType> Tensor<T> {
@@ -53,7 +53,8 @@ impl<T: NumDType> Tensor<T> {
             (batching, m, n, k),
         );
 
-        Ok(Self::from_storage(c_storage, c_shape))
+        let meta = T::AutogradMeta::on_matmul_op(self, rhs);
+        Ok(Self::build(c_storage, c_shape, meta))
     }
 
     fn do_matmul(
@@ -63,52 +64,54 @@ impl<T: NumDType> Tensor<T> {
     ) -> Storage<T> 
         where T: num_traits::Num + Copy + Zero
     {
-        let lhs = lhs.data();
-        let rhs = rhs.data();
-
-        // l (b.., m, k)
-        // r (b.., k, n)
+        let lhs_data = lhs.data();
+        let rhs_data = rhs.data();
+    
         let lhs_rank = lhs_layout.shape().rank();
         let rhs_rank = rhs_layout.shape().rank();
-        assert!(lhs_rank == rhs_rank && rhs_rank >= 2);
         let (bs, ms, ns, ks) = bmnk;
-        assert_eq!(lhs_layout.dims()[lhs_rank - 2], ms);
-        assert_eq!(lhs_layout.dims()[lhs_rank - 1], ks);
-        assert_eq!(rhs_layout.dims()[rhs_rank - 2], ks);
-        assert_eq!(rhs_layout.dims()[rhs_rank - 1], ns);
+        
         let mut dst = vec![T::zero(); bs * ms * ns];
-
-        let l_batch_stride = ms * lhs_layout.stride()[lhs_rank - 2];
-        let r_batch_stride = ks * rhs_layout.stride()[rhs_rank - 2];
-        let dst_batch_stride = ms * ns;
-
-        let l_last_stride = lhs_layout.stride()[lhs_rank - 1];
-        let r_last_stride = rhs_layout.stride()[rhs_rank - 1];
-        let l_sec_last_stride = lhs_layout.stride()[lhs_rank - 2];
-        let r_sec_last_stride = rhs_layout.stride()[rhs_rank - 2];
-
-        // For each batch
+    
+        // 获取最后两个维度的 stride
+        let l_stride_m = lhs_layout.stride()[lhs_rank - 2];
+        let l_stride_k = lhs_layout.stride()[lhs_rank - 1];
+        let r_stride_k = rhs_layout.stride()[rhs_rank - 2];
+        let r_stride_n = rhs_layout.stride()[rhs_rank - 1];
+    
+        // 获取用于 Batch 迭代的维度和步幅（排除最后两个维度）
+        let batch_dims = &lhs_layout.dims()[..lhs_rank - 2];
+        let l_batch_strides = &lhs_layout.stride()[..lhs_rank - 2];
+        let r_batch_strides = &rhs_layout.stride()[..rhs_rank - 2];
+    
         for b in 0..bs {
-            let lhs_ = &lhs[lhs_layout.start_offset() + b * l_batch_stride .. ];
-            let rhs_ = &rhs[rhs_layout.start_offset() + b * r_batch_stride .. ]; 
-            let dst_ = &mut dst[b * dst_batch_stride .. ];
-
+            // 计算当前 batch 在 lhs 和 rhs 中的起始偏移量
+            // 这里我们需要将平面的索引 b 还原为多维索引
+            let mut l_batch_offset = lhs_layout.start_offset();
+            let mut r_batch_offset = rhs_layout.start_offset();
+            let mut temp_b = b;
+            
+            // 逆向计算每个 batch 维度的索引并乘以该维度的 stride
+            for i in (0..batch_dims.len()).rev() {
+                let idx = temp_b % batch_dims[i];
+                l_batch_offset += idx * l_batch_strides[i];
+                r_batch_offset += idx * r_batch_strides[i];
+                temp_b /= batch_dims[i];
+            }
+    
+            let dst_batch_offset = b * ms * ns;
+    
             for m in 0..ms {
-                // lhs_'s m row
-                let row = &lhs_[m * l_sec_last_stride ..];
-
                 for n in 0..ns {
-                    // rhs_'s n col
-                    let col = &rhs_[n * r_last_stride ..];
-
                     let mut v = T::zero();
                     for k in 0..ks {
-                        // row's k  * col's k
-                        let l = row[k * l_last_stride];
-                        let r = col[k * r_sec_last_stride];
-                        v = v + l * r;
+                        // 使用真实的 stride 进行寻址，无论是否转置都能正确工作
+                        let l_idx = l_batch_offset + m * l_stride_m + k * l_stride_k;
+                        let r_idx = r_batch_offset + k * r_stride_k + n * r_stride_n;
+                        
+                        v = v + lhs_data[l_idx] * rhs_data[r_idx];
                     }
-                    dst_[m * ns + n] = v;
+                    dst[dst_batch_offset + m * ns + n] = v;
                 }
             }
         }
@@ -120,7 +123,7 @@ impl<T: NumDType> Tensor<T> {
 #[cfg(test)]
 #[allow(unused)]
 mod tests {
-    use crate::{rng, DType, IndexOp, Range};
+    use crate::{s, DType, IndexOp, Slice};
 
     use super::*;
 
@@ -167,7 +170,7 @@ mod tests {
     fn test_matmul_not_continues() {
         let a = Tensor::arange(0., 125.).unwrap().reshape((5, 5, 5)).unwrap();
 
-        let sub_a = a.index((rng!(1:3), rng!(3:5), 2)).unwrap();
+        let sub_a = a.index((s!(1:3), s!(3:5), 2)).unwrap();
         let mut vals = Vec::new();
         for i in 1..3 {
             for j in 3..5 {

@@ -1,6 +1,6 @@
 use std::str::Utf8Error;
 
-use crate::{DType, Range, Shape};
+use crate::{DType, Slice, Shape};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -94,7 +94,7 @@ pub enum Error {
     },
 
     #[error("source Tensor shape {src:?} mismatch with condition shape {condition:?}")]
-    ShapeMismatchFilter {
+    ShapeMismatchMaskedSelect {
         src: Shape,
         condition: Shape, 
     },
@@ -112,11 +112,11 @@ pub enum Error {
     },
 
     // === Op Specific Errors ===
-    #[error("narrow range invalid args {msg}: {shape:?}, dim: {dim}, range: {range}")]
-    NarrowRangeInvalidArgs {
+    #[error("slice invalid args {msg}: {shape:?}, dim: {dim}, slice: {slice}")]
+    SliceInvalidArgs {
         shape: Shape,
         dim: usize,
-        range: Range,
+        slice: Slice,
         msg: &'static str,
     },
 
@@ -174,6 +174,9 @@ pub enum Error {
         index: usize,
         position: &'static str,
     },
+
+    #[error("backward not support '{0}'")]
+    BackwardNotSupported(&'static str),
 
     /// Integer parse error.
     #[error(transparent)]

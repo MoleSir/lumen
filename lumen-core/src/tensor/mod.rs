@@ -10,23 +10,27 @@ mod broadcast;
 mod convert;
 mod condition;
 
+pub use construct::ToTensor;
+pub use arith::TensorBinaryRhs;
 use std::{hash::Hash, sync::Arc};
-pub use indexer::{Range, IndexOp};
-use crate::{Error, Result};
+pub use indexer::{Slice, IndexOp};
+use crate::{Error, FloatDType, Op, Result};
 use super::{DType, Dim, DimCoordinates, DimNCoordinates, Layout, NumDType, Shape, Storage, StorageArc, StorageIndices, StorageMut, StorageRef, WithDType};
 pub use iter::*;
 pub use indexer::*;
 
 #[derive(Clone)]
-pub struct Tensor<D>(pub(crate) Arc<TensorImpl<D>>);
+pub struct Tensor<T: WithDType>(pub(crate) Arc<TensorImpl<T>>);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TensorId(usize);
 
-pub struct TensorImpl<T> {
+pub struct TensorImpl<T: WithDType> {
     pub(crate) id: TensorId,
     pub(crate) storage: StorageArc<T>,
     pub(crate) layout: Layout,
+
+    pub(crate) meta: T::AutogradMeta,
 }
 
 impl TensorId {
@@ -93,8 +97,8 @@ impl<T: WithDType> Tensor<T> {
 }
 
 impl<T: WithDType> Tensor<T> {
-    pub fn id(&self) -> usize {
-        self.0.id.0
+    pub fn id(&self) -> TensorId {
+        self.0.id
     }
 
     pub fn shape(&self) -> &Shape {
@@ -189,5 +193,21 @@ impl<T: NumDType> Tensor<T> {
             return false;
         }
         self.iter().zip(other.iter()).all(|(a, b)| a.close(b, rtol, atol))
+    }
+}
+
+impl<T: FloatDType> Tensor<T> {
+    #[inline]
+    pub fn requires_grad(&self) -> bool {
+        self.0.meta.requires_grad()
+    }
+
+    #[inline]
+    pub fn op(&self) -> Option<&Op<T>> {
+        self.0.meta.op()
+    }
+
+    pub fn is_leaf(&self) -> bool {
+        self.0.meta.is_leaf()
     }
 }

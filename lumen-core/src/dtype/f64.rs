@@ -2,10 +2,11 @@ use approx::relative_eq;
 
 use crate::{Result, Storage};
 
-use super::{DType, FloatCategory, FloatDType, NumDType, WithDType};
+use super::{AutogradInfo, DType, FloatCategory, FloatDType, NumDType, WithDType};
 
 impl WithDType for f64 {
     const DTYPE: DType = DType::F64;
+    type AutogradMeta = AutogradInfo<f64>;
 }
 
 impl NumDType for f64 {
@@ -50,4 +51,56 @@ impl NumDType for f64 {
     }
 }
 
-impl FloatDType for f64 {}
+impl FloatDType for f64 {
+    #[inline]
+    fn sqr(self) -> Self {
+        self * self
+    }
+
+    #[inline]
+    fn two() -> Self {
+        2.
+    }
+
+    #[inline]
+    fn pi() -> Self {
+        std::f64::consts::PI
+    }
+
+    #[inline]
+    fn half() -> Self {
+        0.5
+    }
+
+    /// 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+    fn gelu(self) -> Self {
+        const SQRT_2_OVER_PI: f64 = 0.79788456; // sqrt(2/pi)
+        const COEF: f64 = 0.044715;
+        let x_cubed = self * self * self;
+        let inner = SQRT_2_OVER_PI * (self + COEF * x_cubed);
+        
+        0.5 * self * (1.0 + inner.tanh())
+    }
+
+    /// 0.5 * x * (1 + erf(x / sqrt(2)))
+    fn gelu_erf(self) -> Self {
+        const FRAC_1_SQRT_2: f64 = std::f64::consts::FRAC_1_SQRT_2; // 0.70710678
+        0.5 * self * (1.0 + (self * FRAC_1_SQRT_2).erf())
+    }
+
+    #[inline]
+    fn erf(self) -> Self {
+        libm::erf(self)
+    }
+
+    /// ReLU
+    #[inline]
+    fn relu(self) -> Self {
+        self.max(0.0)
+    }
+
+    /// SiLU (Swish)
+    fn silu(self) -> Self {
+        self / (1.0 + (-self).exp())
+    }
+}

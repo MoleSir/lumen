@@ -1,8 +1,6 @@
 use std::sync::Arc;
-
-use crate::{Dim, Error, Layout, Result, Shape, Storage, WithDType, D};
-
-use super::{Tensor, TensorId, TensorImpl, Range};
+use crate::{AutogradMetaT, Dim, Dims, Error, Layout, Result, Shape, Storage, WithDType, D};
+use super::{Tensor, TensorId, TensorImpl, Slice};
 
 impl<T: WithDType> Tensor<T> {
     /// Creates a new tensor with the specified dimension removed if its size was one.
@@ -26,6 +24,7 @@ impl<T: WithDType> Tensor<T> {
                 id: TensorId::new(),
                 storage: self.0.storage.clone(),
                 layout: Layout::new(dims, strides, self.layout().start_offset()),
+                meta: T::AutogradMeta::on_reshape_op(self)
             };
             Ok(Self(Arc::new(tensor_)))
         } else {
@@ -56,6 +55,7 @@ impl<T: WithDType> Tensor<T> {
             id: TensorId::new(),
             storage: self.0.storage.clone(),
             layout: Layout::new(dims, strides, self.layout().start_offset()),
+            meta: T::AutogradMeta::on_reshape_op(self),
         };
         Ok(Self(Arc::new(tensor_)))
     }
@@ -98,44 +98,44 @@ impl<T: WithDType> Tensor<T> {
         if start == 0 && dims[dim] == len {
             Ok(self.clone())
         } else {
+            let meta = T::AutogradMeta::on_narrow_op(self, dim, start, len);
             let layout = self.layout().narrow(dim, start, len)?;
             let tensor_ = TensorImpl {
                 id: TensorId::new(),
                 storage: self.0.storage.clone(),
                 layout,
+                meta
             };
             Ok(Self(Arc::new(tensor_)))
         }
     }
 
     /// Returns a new tensor that is a narrowed version of the input, the dimension `dim`
-    /// ranges from `start` to `start : end : step`.
-    /// 
-    /// TODO: set `range` to a trait param
+    /// slice from `start` to `start : end : step`.
     /// 
     /// ```
-    /// use lumen_core::{Tensor, DType, rng, Range};
+    /// use lumen_core::{Tensor, DType, s, Slice};
     /// let a = Tensor::<i32>::zeros((5, 5, 5)).unwrap();
     ///
     /// let b = a.narrow(0, 1, 2).unwrap();
     /// assert_eq!(b.shape().dims(), &[2, 5, 5]);
     ///
-    /// let c = a.narrow_range(1, &rng!(::2)).unwrap();
+    /// let c = a.slice(1, &s!(::2)).unwrap();
     /// assert_eq!(c.shape().dims(), &[5, 3, 5]);
     /// ```
-    pub fn narrow_range<D: Dim>(&self, dim: D, range: &Range) -> Result<Self> {
+    pub fn slice<D: Dim>(&self, dim: D, slice: &Slice) -> Result<Self> {
         let dims = self.dims();
         let dim = dim.to_index(self.shape(), "narrow")?;
         let err = |msg| {
-            Err::<(), _>(Error::NarrowRangeInvalidArgs {
+            Err::<(), _>(Error::SliceInvalidArgs {
                 shape: self.shape().clone(),
                 dim,
-                range: range.clone(),
+                slice: slice.clone(),
                 msg,
             })
         };
 
-        let end = match range.end {
+        let end = match slice.end {
             Some(end) if end >= 0 => end as usize,
             Some(end) => {
                 let dis = -end as usize;
@@ -147,20 +147,22 @@ impl<T: WithDType> Tensor<T> {
             }
             None => dims[dim],
         };
-        if range.start > dims[dim] {
+        if slice.start > dims[dim] {
             err("start > dim_len")?;
         }
         if end > dims[dim] {
             err("end > dim_len")?
         }
-        if range.start == 0 && dims[dim] == end && range.step == 1 {
+        if slice.start == 0 && dims[dim] == end && slice.step == 1 {
             Ok(self.clone())
         } else {
-            let layout = self.layout().narrow_range(dim, range.start, end, range.step)?;
+            let meta = T::AutogradMeta::on_slice_op(self, dim, slice.start, end, slice.step);
+            let layout = self.layout().slice(dim, slice.start, end, slice.step)?;
             let tensor_ = TensorImpl {
                 id: TensorId::new(),
                 storage: self.0.storage.clone(),
                 layout,
+                meta,
             };
             Ok(Self(Arc::new(tensor_)))
         }
@@ -192,16 +194,18 @@ impl<T: WithDType> Tensor<T> {
             });
         }
 
+        let meta = T::AutogradMeta::on_reshape_op(self);
         if self.is_contiguous() {
             let tensor_ = TensorImpl {
                 id: TensorId::new(),
                 storage: self.0.storage.clone(),
                 layout: Layout::contiguous_with_offset(shape, self.layout().start_offset()),
+                meta
             };
             Ok(Tensor(Arc::new(tensor_)))
         } else {
             let storage = self.storage().copy(self.layout());
-            Ok(Self::from_storage(storage, shape))
+            Ok(Self::build(storage, shape, meta))
         }
     }
     
@@ -212,16 +216,53 @@ impl<T: WithDType> Tensor<T> {
         if dim1 == dim2 {
             return Ok(self.clone());
         }
+
+        let meta = T::AutogradMeta::on_transpose_op(self, dim1, dim2);
         let tensor_ = TensorImpl {
             id: TensorId::new(),
             storage: self.0.storage.clone(),
             layout: self.layout().transpose(dim1, dim2)?,
+            meta,
         };
         Ok(Tensor(Arc::new(tensor_)))
     }
 
     pub fn transpose_last(&self) -> Result<Self> {
         self.transpose(D::Minus1, D::Minus2)
+    }
+
+    /// Returns a tensor with the same data as the input where the dimensions have been permuted.
+    /// dims must be a permutation, i.e. include each dimension index exactly once.
+    ///
+    /// ```rust
+    /// use lumen_core::Tensor;
+    /// let tensor = Tensor::<u32>::arange(0u32, 120u32).unwrap().reshape((2, 3, 4, 5)).unwrap();
+    /// assert_eq!(tensor.dims(), &[2, 3, 4, 5]);
+    /// let tensor = tensor.permute((2, 3, 1, 0)).unwrap();
+    /// assert_eq!(tensor.dims(), &[4, 5, 3, 2]);
+    /// ```
+    pub fn permute<D: Dims>(&self, dims: D) -> Result<Self> {
+        let dims = dims.to_indexes(self.shape(), "permute")?;
+        // O(n^2) permutation check but these arrays are small.
+        let is_permutation =
+            dims.len() == self.rank() && (0..dims.len()).all(|i| dims.contains(&i));
+        if !is_permutation {
+            crate::bail!(
+                "dimension mismatch in permute, tensor {:?}, dims: {:?}",
+                self.dims(),
+                dims
+            )
+        }
+        // let op = BackpropOp::new1(self, |t| Op::Permute(t, dims.clone()));
+        let layout = self.layout().permute(&dims)?;
+        let meta = T::AutogradMeta::on_permute_op(self, dims);
+        let tensor_ = TensorImpl {
+            id: TensorId::new(),
+            storage: self.0.storage.clone(),
+            layout,
+            meta,
+        };
+        Ok(Tensor(Arc::new(tensor_)))
     }
 
     /// Concatenates two or more tensors along a particular dimension.
@@ -299,12 +340,15 @@ impl<T: WithDType> Tensor<T> {
         // Create a new storgae and copy
         let mut dst: Vec<T> = Vec::with_capacity(target_shape.element_count());
         unsafe { dst.set_len(target_shape.element_count()) };
-        let res_arr = Self::from_storage(Storage::new(dst), target_shape);
+        
+        let meta = T::AutogradMeta::on_cat_op(arrs, cat_dim);
+        let res_arr = Self::build(Storage::new(dst), target_shape, meta);
 
         for (arr_index, arr) in arrs.iter().enumerate() {
             // Take sub Tensor 
             let sub_res_arr = res_arr.narrow(cat_dim, dim_offsets[arr_index], arr.as_ref().dims()[cat_dim])?;
             assert_eq!(sub_res_arr.shape(), arr.as_ref().shape());
+            // MARK: copy_from is no grad
             sub_res_arr.copy_from(arr.as_ref())?;
         }
 
