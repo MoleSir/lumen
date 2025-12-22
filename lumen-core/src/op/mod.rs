@@ -14,7 +14,6 @@ pub enum Op<T: FloatDType> {
     Unary(Tensor<T>, UnaryOp),
     Pow(Tensor<T>, T),
     Reduce(Tensor<T>, ReduceOp, Vec<usize>),
-    ReduceAll(Tensor<T>, ReduceOp),
     Matmul(Tensor<T>, Tensor<T>),
     Broadcast(Tensor<T>),
     Narrow(Tensor<T>, usize, usize, usize),
@@ -25,7 +24,6 @@ pub enum Op<T: FloatDType> {
     Cat(Vec<Tensor<T>>, usize),
     IfElse(Tensor<bool>, Option<Tensor<T>>, Option<Tensor<T>>),
     Copy(Tensor<T>),
-
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -43,6 +41,7 @@ pub enum ReduceOp {
     Sum,
     Min,
     Max,
+    Mean,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

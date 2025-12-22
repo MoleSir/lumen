@@ -9,7 +9,6 @@ pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_pow_op(t: &Tensor<T>, e: T) -> Self;
     fn on_broadcast_op(t: &Tensor<T>) -> Self;
     fn on_reduce_op(t: &Tensor<T>, dims: &[usize], op: ReduceOp) -> Self;
-    fn on_reduce_all_op(t: &Tensor<T>, op: ReduceOp) -> Self;
     fn on_matmul_op(lhs: &Tensor<T>, rhs: &Tensor<T>) -> Self;
     fn on_narrow_op(t: &Tensor<T>, dim: usize, start: usize, len: usize) -> Self;
     fn on_slice_op(t: &Tensor<T>, dim: usize, start: usize, end: usize, step: usize) -> Self;
@@ -124,14 +123,6 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
     fn on_reduce_op(t: &Tensor<T>, dims: &[usize], op: ReduceOp) -> Self {
         if t.requires_grad() {
             Self::var_from_op(Op::Reduce(t.clone(), op, dims.to_vec()))
-        } else {
-            Self::val()
-        }
-    }
-
-    fn on_reduce_all_op(t: &Tensor<T>, op: ReduceOp) -> Self {
-        if t.requires_grad() {
-            Self::var_from_op(Op::ReduceAll(t.clone(), op))
         } else {
             Self::val()
         }
@@ -270,11 +261,6 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
 
     #[inline]
     fn on_reduce_op(t: &Tensor<T>, _: &[usize], _: ReduceOp) -> Self {
-        NoAutograd
-    }
-    
-    #[inline]
-    fn on_reduce_all_op(t: &Tensor<T>, op: ReduceOp) -> Self {
         NoAutograd
     }
 

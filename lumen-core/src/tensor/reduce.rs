@@ -1,4 +1,4 @@
-use crate::{Tensor, AutogradMetaT, Dim, NumDType, Result, Storage, StorageRef, WithDType};
+use crate::{AutogradMetaT, Dim, NumDType, Result, Storage, StorageRef, Tensor, WithDType};
 use paste::paste;
 
 use super::ResettableIterator;
@@ -7,14 +7,14 @@ macro_rules! reduce_impl {
     ($fn_name:ident, $reduce:ident, $op:ident) => {
         paste! {
             pub fn $fn_name<D: Dim>(&self, axis: D) -> Result<Self> {
-                let (storage, dims) = self.compute_reduec_axis_op(axis, $reduce::op, stringify!([< $fn_name _keepdim >]))?;
+                let (storage, dims) = self.compute_reduec_axis_op(axis, $reduce::op, stringify!($fn_name))?;
                 let meta = T::AutogradMeta::on_reduce_op(self, &dims, crate::ReduceOp::$op);
                 let res = Self::build(storage, dims, meta);
                 res.squeeze(axis)
             }
         
             pub fn [< $fn_name _keepdim >]<D: Dim>(&self, axis: D) -> Result<Self> {
-                let (storage, dims) = self.compute_reduec_axis_op(axis, $reduce::op, stringify!($fn_name))?;
+                let (storage, dims) = self.compute_reduec_axis_op(axis, $reduce::op, stringify!([< $fn_name _keepdim >]))?;
                 let meta = T::AutogradMeta::on_reduce_op(self, &dims, crate::ReduceOp::$op);
                 Ok(Self::build(storage, dims, meta))
             }
@@ -26,7 +26,21 @@ impl<T: NumDType> Tensor<T> {
     reduce_impl!(sum, ReduceSum, Sum);
     reduce_impl!(min, ReduceMin, Min);
     reduce_impl!(max, ReduceMax, Max);
+    reduce_impl!(mean, ReduceMean, Mean);
 
+    pub fn var_keepdim<D: Dim>(&self, axis: D) -> Result<Self> {
+        let mean = self.mean_keepdim(axis)?; // (..., 1, ...)
+        let delta = self.broadcast_sub(&mean)?; // (..., n, ...)
+        let delta_pow = &delta * &delta; // (..., n, ...)
+
+        delta_pow.mean_keepdim(axis)
+    }
+    
+    pub fn var<D: Dim>(&self, axis: D) -> Result<Self> {
+        let v = self.var_keepdim(axis)?;
+        let v = v.squeeze(axis)?;
+        Ok(v)
+    }
 
     pub fn argmin_keepdim<D: Dim>(&self, axis: D) -> Result<Tensor<usize>> {
         let (storage, dims) = self.compute_reduec_axis_op(axis, ReduceArgMin::op, "argmin")?;
@@ -48,20 +62,6 @@ impl<T: NumDType> Tensor<T> {
         let (storage, dims) = self.compute_reduec_axis_op(axis, ReduceArgMax::op, "argmax_keepdim")?;
         let res = Tensor::from_storage(storage, dims);
         res.squeeze(axis)
-    }
-}
-
-impl<T: NumDType> Tensor<T> {
-    pub fn sum_all(&self) -> T {
-        self.iter().sum::<T>()
-    }
-
-    pub fn min_all(&self) -> T {
-        self.iter().reduce(|acc, e| T::minimum(acc, e)).unwrap()
-    }
-
-    pub fn max_all(&self) -> T {
-        self.iter().reduce(|acc, e| T::maximum(acc, e)).unwrap()
     }
 }
 
@@ -152,6 +152,35 @@ impl<D: NumDType> ReduceOp<D> for ReduceSum {
     type Output = D;
     fn op(arr: &mut DimArrayIter<'_, D>) -> Self::Output {
         arr.into_iter().sum::<D>()
+    }
+} 
+
+pub struct ReduceMean;
+impl<D: NumDType> ReduceOp<D> for ReduceMean {
+    type Output = D;
+    fn op(arr: &mut DimArrayIter<'_, D>) -> Self::Output {
+        let len = arr.len();
+        arr.into_iter().sum::<D>() / D::from_usize(len)
+    }
+} 
+
+pub struct ReduceVar;
+impl<D: NumDType> ReduceOp<D> for ReduceVar {
+    type Output = D;
+    fn op(arr: &mut DimArrayIter<'_, D>) -> Self::Output {
+        let len = arr.len();
+        if len == 0 { return D::zero(); }
+
+        let mean = ReduceMean::op(arr);
+        
+        arr.reset();
+        let mut sum_sq_diff = D::zero();
+        while let Some(v) = arr.next() {
+            let diff = v - mean;
+            sum_sq_diff += diff * diff;
+        }
+
+        sum_sq_diff / D::from_usize(len)
     }
 } 
 
@@ -359,39 +388,5 @@ mod tests {
         let m = arr.argmax(1).unwrap();
         let expected = Tensor::new(&[2, 0]).unwrap();
         assert!(m.allclose(&expected, 1e-5, 1e-8));
-    }
-
-    #[test]
-    fn test_sum_1d() {
-        let arr = Tensor::new(&[1, 2, 3, 4]).unwrap();
-        assert_eq!(arr.sum_all(), 10);
-    }
-
-    #[test]
-    fn test_sum_2d() {
-        let arr = Tensor::new(&[[1, 2], [3, 4]]).unwrap();
-        assert_eq!(arr.sum_all(), 10);
-    }
-
-    #[test]
-    fn test_min_max_1d() {
-        let arr = Tensor::new(&[5, 2, 9, -1, 0]).unwrap();
-        assert_eq!(arr.min_all(), -1);
-        assert_eq!(arr.max_all(), 9);
-    }
-
-    #[test]
-    fn test_min_max_2d() {
-        let arr = Tensor::new(&[[3, 7, 1], [9, -2, 5]]).unwrap();
-        assert_eq!(arr.min_all(), -2);
-        assert_eq!(arr.max_all(), 9);
-    }
-
-    #[test]
-    fn test_float_array() {
-        let arr = Tensor::new(&[1.0f32, -3.5, 2.5]).unwrap();
-        assert!((arr.sum_all() - 0.0).abs() < 1e-6);
-        assert_eq!(arr.min_all(), -3.5);
-        assert_eq!(arr.max_all(), 2.5);
     }
 }

@@ -24,7 +24,7 @@ impl<T: WithDType> Tensor<T> {
                 id: TensorId::new(),
                 storage: self.0.storage.clone(),
                 layout: Layout::new(dims, strides, self.layout().start_offset()),
-                meta: Default::default(),
+                meta: T::AutogradMeta::on_reshape_op(self)
             };
             Ok(Self(Arc::new(tensor_)))
         } else {
@@ -55,7 +55,7 @@ impl<T: WithDType> Tensor<T> {
             id: TensorId::new(),
             storage: self.0.storage.clone(),
             layout: Layout::new(dims, strides, self.layout().start_offset()),
-            meta: Default::default(),
+            meta: T::AutogradMeta::on_reshape_op(self),
         };
         Ok(Self(Arc::new(tensor_)))
     }

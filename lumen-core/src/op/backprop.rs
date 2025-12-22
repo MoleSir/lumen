@@ -278,6 +278,16 @@ impl<T: FloatDType> Tensor<T> {
                             let sum_grad = grads.or_insert(arg)?;
                             *sum_grad = sum_grad.add(&grad.broadcast_as(sum_grad.dims())?)?;
                         }
+                        Op::Reduce(arg, ReduceOp::Mean, reduced_dims) => {
+                            let grad_output = Self::broadcast_back(arg, &grad, reduced_dims)?;
+                            let n = arg.element_count() / node.element_count();
+                            
+                            // grad_input = grad_output / n
+                            let grad_input = grad_output / T::from_usize(n);
+                            
+                            let sum_grad = grads.or_insert(arg)?;
+                            *sum_grad = sum_grad.add(&grad_input)?;
+                        }                        
 
                         //=========================================================================================//
                         //           Broadcast
@@ -468,8 +478,6 @@ impl<T: FloatDType> Tensor<T> {
                                 *sum_grad = sum_grad.add(&masked_grad)?;
                             }
                         }
-
-                        _ => unimplemented!(),
                     }
                 }
             }
@@ -528,8 +536,7 @@ impl<T: FloatDType> Tensor<T> {
                     | Op::Permute(node, _)
                     | Op::Copy(node) 
                     | Op::IfElse(_, Some(node), None)
-                    | Op::IfElse(_, None, Some(node))
-                    | Op::ReduceAll(node, _) => {
+                    | Op::IfElse(_, None, Some(node)) => {
                         let (tg, nodes) = walk(node, nodes, already_seen);
                         track_grad |= tg;
                         nodes

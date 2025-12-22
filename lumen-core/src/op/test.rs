@@ -22,22 +22,6 @@ mod test {
     }
 
     #[test]
-    fn test_add_sub() {
-        let a = Var::<f64>::new(&[[10., 20.], [30., 40.]]).unwrap();
-        let b = Var::<f64>::new(&[[1., 2.], [3., 4.]]).unwrap();
-    
-        // c = a + b - a
-        let c = (&a + &b).sub(&a).unwrap(); 
-        let grads = c.backward().unwrap();
-    
-        // dc/da = 1 - 1 = 0
-        assert!(grads[&a].sum_all() == 0.);
-        // dc/db = 1
-        let expected_b_grad = Tensor::ones_like(&b).unwrap();
-        assert!(grads[&b].allclose(&expected_b_grad, 1e-5, 1e-8));
-    }
-
-    #[test]
     fn test_division() {
         let a = Var::<f64>::new(&[6.0, 10.0]).unwrap();
         let b = Var::<f64>::new(&[2.0, 5.0]).unwrap();
@@ -498,6 +482,47 @@ mod test {
     }
 
     #[test]
+    fn test_mean_dim_0() {
+        // A: (2, 2)
+        // [ [1.0, 2.0],
+        //   [3.0, 4.0] ]
+        let a = Var::<f64>::new(&[[1.0, 2.0], [3.0, 4.0]]).unwrap();
+
+        // mean(0) => [ (1+3)/2, (2+4)/2 ] = [2.0, 3.0]
+        let s = a.mean_keepdim(0).unwrap(); 
+        let grads = s.backward().unwrap();
+
+        let expected_grad = Tensor::new(&[[0.5, 0.5], [0.5, 0.5]]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_var_dim_0() {
+        // A: (2, 2)
+        // [ [10.0, 2.0],
+        //   [20.0, 8.0] ]
+        let a = Var::<f64>::new(&[[10.0, 2.0], [20.0, 8.0]]).unwrap();
+        println!("{}", a.requires_grad());
+        
+        // dim 0: mean = [15.0, 5.0]
+        // var = [ ((10-15)^2 + (20-15)^2)/2, ((2-5)^2 + (8-5)^2)/2 ]
+        // var = [ (25+25)/2, (9+9)/2 ] = [25.0, 9.0]
+        let v = a.var_keepdim(0).unwrap();
+        let grads = v.backward().unwrap();
+
+        // a[0,0]=10: (2/2) * (10 - 15) = -5.0
+        // a[1,0]=20: (2/2) * (20 - 15) = 5.0
+        // a[0,1]=2:  (2/2) * (2 - 5)   = -3.0
+        // a[1,1]=8:  (2/2) * (8 - 5)   = 3.0
+        let expected_grad = Tensor::new(&[
+            [-5.0, -3.0],
+            [ 5.0,  3.0]
+        ]).unwrap();
+        
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
     fn test_max_with_ties() {
         // A: [5.0, 5.0, 2.0]
         let a = Var::<f64>::new(&[5.0, 5.0, 2.0]).unwrap();
@@ -786,5 +811,53 @@ mod test {
 
         let expected_grad_b = Tensor::new(&[0.0, 1.0, 0.0]).unwrap();
         assert!(grads[&b].allclose(&expected_grad_b, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_squeeze_backward() {
+        // A: (1, 2, 1) -> [[ [1.0], [2.0] ]]
+        let a = Var::<f64>::new(&[[[1.0], [2.0]]]).unwrap();
+        
+        let b = a.squeeze(0).unwrap();
+        assert_eq!(b.dims(), &[2, 1]);
+
+        let c = b.squeeze(1).unwrap();
+        assert_eq!(c.dims(), &[2]);
+
+        let loss = c.sum_keepdim(0).unwrap();
+        let grads = loss.backward().unwrap();
+
+        let grad_a = &grads[&a];
+        assert_eq!(grad_a.dims(), &[1, 2, 1]);
+        
+        let expected_grad = Tensor::new(&[[[1.0], [1.0]]]).unwrap();
+        assert!(grad_a.allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_unsqueeze_backward() {
+        // A: (2) -> [10.0, 20.0]
+        let a = Var::<f64>::new(&[10.0, 20.0]).unwrap();
+        
+        // 1. Unsqueeze 维度 0 -> (1, 2)
+        let b = a.unsqueeze(0).unwrap();
+        assert_eq!(b.dims(), &[1, 2]);
+
+        // 2. Unsqueeze 维度 2 -> (1, 2, 1)
+        let c = b.unsqueeze(2).unwrap();
+        assert_eq!(c.dims(), &[1, 2, 1]);
+
+        // c * [[ [2.0], [3.0] ]] = [[ [20.0], [60.0] ]]
+        let weights = Tensor::new(&[[[2.0], [3.0]]]).unwrap();
+        let out = c.mul(&weights).unwrap();
+        let loss = out.sum_keepdim(0).unwrap();
+        
+        let grads = loss.backward().unwrap();
+
+        let grad_a = &grads[&a];
+        assert_eq!(grad_a.dims(), &[2]);
+        
+        let expected_grad = Tensor::new(&[2.0, 3.0]).unwrap();
+        assert!(grad_a.allclose(&expected_grad, 1e-5, 1e-8));
     }
 }
