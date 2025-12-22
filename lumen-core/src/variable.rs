@@ -43,6 +43,16 @@ impl<T: FloatDType> Var<T> {
     }
 
     #[inline]
+    pub fn tril(size: usize, diagonal: bool) -> Result<Tensor<T>> {
+        Tensor::tril_var(size, diagonal)
+    }
+
+    #[inline]
+    pub fn triu(size: usize, diagonal: bool) -> Result<Tensor<T>> {
+        Tensor::triu_var(size, diagonal)
+    }
+
+    #[inline]
     pub fn diag(diag: &[T]) -> Result<Tensor<T>> {
         Tensor::diag_var(diag)
     }

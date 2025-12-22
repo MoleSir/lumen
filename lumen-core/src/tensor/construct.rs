@@ -170,19 +170,6 @@ impl<T: NumDType> Tensor<T> {
         Ok(Self::build(storage, shape, meta))
     }
 
-    pub fn eye(size: usize) -> Result<Self> {
-        Self::eye_impl(size, T::AutogradMeta::default())
-    }
-
-    pub(crate) fn eye_impl(size: usize, meta: T::AutogradMeta) -> Result<Self> {
-        let mut vec = vec![T::zero(); size * size];
-        for n in 0..size {
-            vec[n * size + n] = T::one();
-        }
-        let storage = Storage::new(vec);
-        Ok(Self::build(storage, (size, size), meta))
-    }
-
     pub fn diag(diag: &[T]) -> Result<Self> {
         Self::diag_impl(diag, T::AutogradMeta::default())
     }
@@ -283,6 +270,58 @@ where
     }
 }
 
+impl<T: WithDType> Tensor<T> {
+    pub fn eye(size: usize) -> Result<Self> {
+        Self::eye_impl(size, T::AutogradMeta::default())
+    }
+
+    pub(crate) fn eye_impl(size: usize, meta: T::AutogradMeta) -> Result<Self> {
+        let mut vec = vec![T::false_value(); size * size];
+        for n in 0..size {
+            vec[n * size + n] = T::true_value();
+        }
+        let storage = Storage::new(vec);
+        Ok(Self::build(storage, (size, size), meta))
+    }
+
+    pub fn tril(size: usize, diagonal: bool) -> Result<Self> {
+        Self::tril_impl(size, diagonal, T::AutogradMeta::default())
+    }
+
+    pub fn triu(size: usize, diagonal: bool) -> Result<Self> {
+        Self::triu_impl(size, diagonal, T::AutogradMeta::default())
+    }
+
+    pub(crate) fn tril_impl(size: usize, diagonal: bool, meta: T::AutogradMeta) -> Result<Self> {
+        let mut vec = vec![T::false_value(); size * size];
+        
+        for i in 0..size {
+            let end = if diagonal { i + 1 } else { i };            
+            for j in 0..end { 
+                vec[i * size + j] = T::true_value();
+            }
+        }
+        
+        let storage = Storage::new(vec);
+        Ok(Self::build(storage, (size, size), meta))
+    }
+
+    pub(crate) fn triu_impl(size: usize, diagonal: bool, meta: T::AutogradMeta) -> Result<Self> {
+        let mut vec = vec![T::false_value(); size * size];
+
+        for i in 0..size { 
+            let start = if diagonal { i } else { i + 1 };
+            
+            for j in start..size {
+                vec[i * size + j] = T::true_value();
+            }
+        }
+
+        let storage = Storage::new(vec);
+        Ok(Self::build(storage, (size, size), meta))        
+    }
+}
+
 impl<T: FloatDType> Tensor<T> {
     pub fn new_var<A: ToTensor<T>>(array: A) -> Result<Self> {
         Self::new_impl(array, AutogradInfo::var())
@@ -318,6 +357,14 @@ impl<T: FloatDType> Tensor<T> {
 
     pub fn eye_var(size: usize) -> Result<Self> {
         Self::eye_impl(size, AutogradInfo::var())
+    }
+
+    pub fn tril_var(size: usize, diagonal: bool) -> Result<Self> {
+        Self::tril_impl(size, diagonal, AutogradInfo::var())
+    }
+
+    pub fn triu_var(size: usize, diagonal: bool) -> Result<Self> {
+        Self::triu_impl(size, diagonal, AutogradInfo::var())
     }
 
     pub fn diag_var(diag: &[T]) -> Result<Self> {

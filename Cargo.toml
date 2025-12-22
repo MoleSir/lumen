@@ -12,8 +12,7 @@ keywords = ["machine-learning", "auto-grad"]
 license = "MIT"
 
 [workspace.dependencies]
-lumen-core = { path = "./lumen-core", package = "lumen-core", version = "0.1.0" }
-# lumen-autograd = { path = "./lumen-autograd", package = "lumen-autograd", version = "0.1.0" }
+lumen-core = { path = "./lumen-core", package = "lumen-core", version = "0.2.0" }
 
 approx = "0.5.1"
 derive_builder = "0.20.2"

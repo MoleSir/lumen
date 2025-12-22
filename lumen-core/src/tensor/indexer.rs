@@ -274,7 +274,6 @@ mod test {
     #[test]
     fn test_index_mixed_values() {
         let arr = Tensor::arange(0, 125).unwrap().reshape((5, 5, 5)).unwrap();
-
         let sub = arr.index((2, 3)).unwrap();
         let expected = Tensor::arange(65, 70).unwrap();
         assert!(sub.allclose(&expected, 0.0, 0.0));
@@ -293,7 +292,6 @@ mod test {
     #[test]
     fn test_index_with_full_dim() {
         let arr = Tensor::arange(0, 125).unwrap().reshape((5, 5, 5)).unwrap();
-
         let sub = arr.index((s!(1:3), .., 1..2)).unwrap();
 
         let expected = arr.index((s!(1:3), s!(0:5), s!(1:2))).unwrap();
