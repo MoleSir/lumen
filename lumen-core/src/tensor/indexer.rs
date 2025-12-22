@@ -1,23 +1,8 @@
 use std::fmt::Display;
-use crate::{Error, Result, Storage, UnsignedIntDType, WithDType};
+use crate::{Result, WithDType};
 use super::Tensor;
 
 impl<T: WithDType> Tensor<T> {
-    pub fn take<I: UnsignedIntDType>(&self, indices: &Tensor<I>) -> Result<Tensor<T>> {
-        let self_storage = self.storage_ref(0);
-        let self_storage_len = self_storage.len();
-
-        let mut vec = vec![];
-        for index in indices.iter() {
-            let value = self_storage.get(index.to_usize())
-                .ok_or_else(|| Error::IndexOutOfRangeTake{ storage_len: self_storage_len, index: index.to_usize() })?;
-            vec.push(value);
-        }
-        // TODO: backward
-        let storage = Storage::new(vec);
-        Ok(Self::from_storage(storage, indices.shape()))
-    }
-
     fn indexes(&self, indexers: &[Indexer]) -> Result<Self> {
         let mut x = self.clone();
         let mut current_dim = 0;
@@ -313,55 +298,6 @@ mod test {
 
         let expected = arr.index((s!(1:3), s!(0:5), s!(1:2))).unwrap();
         assert!(sub.allclose(&expected, 0.0, 0.0));
-    }
-
-    #[test]
-    fn test_take_basic_usize() {
-        let a = Tensor::new(&[10, 20, 30, 40, 50]).unwrap();
-        let idx = Tensor::new(&[0usize, 2, 4]).unwrap();
-
-        let result = a.take(&idx).unwrap();
-        assert_eq!(result.to_vec(), [10, 30, 50]);
-    }
-
-    #[test]
-    fn test_take_repeated_indices() {
-        let a = Tensor::new(&[10, 20, 30]).unwrap();
-        let idx = Tensor::new(&[1usize, 1, 1]).unwrap();
-
-        let result = a.take(&idx).unwrap();
-        assert_eq!(result.to_vec(), [20, 20, 20]);
-    }
-
-    #[test]
-    fn test_take_multidim_indices_shape_kept() {
-        let a = Tensor::new(&[10, 20, 30, 40]).unwrap();
-        let idx = Tensor::new(&[[0usize, 3usize],
-                                 [1usize, 2usize]]).unwrap();
-
-        let result = a.take(&idx).unwrap();
-        let expected = Tensor::new(&[[10, 40],
-                                      [20, 30]]).unwrap();
-
-        assert_eq!(result.to_vec(), expected.to_vec());
-    }
-
-    #[test]
-    fn test_take_u32_indices() {
-        let a = Tensor::new(&[5, 6, 7, 8, 9]).unwrap();
-        let idx = Tensor::new(&[4u32, 0u32, 2u32]).unwrap();
-
-        let result = a.take(&idx).unwrap();
-        assert_eq!(result.to_vec(), [9, 5, 7]);
-    }
-
-    #[test]
-    fn test_take_out_of_bounds() {
-        let a = Tensor::new(&[1, 2, 3]).unwrap();
-        let idx = Tensor::new(&[0usize, 5usize]).unwrap(); // 5 越界
-
-        let result = a.take(&idx);
-        assert!(result.is_err());
     }
 
     #[test]

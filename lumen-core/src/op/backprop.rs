@@ -52,31 +52,94 @@ impl<T: FloatDType> Tensor<T> {
                             let rhs_sum_grad = grads.or_insert(rhs)?;
                             *rhs_sum_grad = rhs_sum_grad.sub(&rhs_grad)?;
                         }
+                        Op::Binary(lhs, rhs, BinaryOp::Minimum)
+                        | Op::Binary(lhs, rhs, BinaryOp::Maximum) => {
+                            let mask_lhs = (*node).eq(lhs)?.to_dtype();
+                            let mask_rhs = (*node).eq(rhs)?.to_dtype();
+    
+                            // If both masks are 1 one the same point, we want to scale the
+                            // gradient by 0.5 rather than 1.
+                            let lhs_grad = mask_lhs.mul(&grad)?.div(&(&mask_rhs + T::one()))?;
+                            let lhs_sum_grad = grads.or_insert(lhs)?;
+                            *lhs_sum_grad = lhs_sum_grad.add(&lhs_grad)?;
+    
+                            let rhs_grad = mask_rhs.mul(&grad)?.div(&(&mask_lhs + T::one()))?;
+                            let rhs_sum_grad = grads.or_insert(rhs)?;
+                            *rhs_sum_grad = rhs_sum_grad.add(&rhs_grad)?;
+                        }
                         
                         //=========================================================================================//
-                        //           BinaryScalar
+                        //           BinaryScalarRhs
                         //=========================================================================================//
-                        Op::BinaryScalar(lhs, _, BinaryOp::Add) => {
+                        Op::BinaryScalarRhs(lhs, _, BinaryOp::Add) => {
                             // y = x + c => dy/dx = 1
                             let lhs_sum_grad = grads.or_insert(lhs)?;
                             *lhs_sum_grad = lhs_sum_grad.add(&grad)?;
                         }
-                        Op::BinaryScalar(lhs, _, BinaryOp::Sub) => {
+                        Op::BinaryScalarRhs(lhs, _, BinaryOp::Sub) => {
                             // y = x - c => dy/dx = 1
                             let lhs_sum_grad = grads.or_insert(lhs)?;
                             *lhs_sum_grad = lhs_sum_grad.add(&grad)?;
                         }
-                        Op::BinaryScalar(lhs, rhs, BinaryOp::Mul) => {
+                        Op::BinaryScalarRhs(lhs, rhs, BinaryOp::Mul) => {
                             // y = x * c => dy/dx = c
                             let lhs_grad = grad.mul_scalar(*rhs)?;
                             let lhs_sum_grad = grads.or_insert(lhs)?;
                             *lhs_sum_grad = lhs_sum_grad.add(&lhs_grad)?;
                         }
-                        Op::BinaryScalar(lhs, rhs, BinaryOp::Div) => {
+                        Op::BinaryScalarRhs(lhs, rhs, BinaryOp::Div) => {
                             // y = x / c => dy/dx = 1/c
                             let lhs_grad = grad.div_scalar(*rhs)?;
                             let lhs_sum_grad = grads.or_insert(lhs)?;
                             *lhs_sum_grad = lhs_sum_grad.add(&lhs_grad)?;
+                        }
+                        Op::BinaryScalarRhs(lhs, rhs, BinaryOp::Maximum) |
+                        Op::BinaryScalarRhs(lhs, rhs, BinaryOp::Minimum) => {
+                            let mask_lhs = (*node).eq(lhs)?.to_dtype();                            
+                            let mask_rhs = (*node).eq(*rhs)?.to_dtype();
+                            let lhs_grad = mask_lhs.mul(&grad)?.div(&(&mask_rhs + T::one()))?;
+                            let lhs_sum_grad = grads.or_insert(lhs)?;
+                            *lhs_sum_grad = lhs_sum_grad.add(&lhs_grad)?;
+                        }
+
+                        //=========================================================================================//
+                        //           BinaryScalarLhs
+                        //=========================================================================================//
+                        Op::BinaryScalarLhs(_, rhs, BinaryOp::Add) => {
+                            // y = c + x => dy/dx = 1
+                            let rhs_sum_grad = grads.or_insert(rhs)?;
+                            *rhs_sum_grad = rhs_sum_grad.add(&grad)?;
+                        }
+                        Op::BinaryScalarLhs(_, rhs, BinaryOp::Sub) => {
+                            // y = c - x => dy/dx = -1
+                            let rhs_grad = grad.neg();
+                            let rhs_sum_grad = grads.or_insert(rhs)?;
+                            *rhs_sum_grad = rhs_sum_grad.add(&rhs_grad)?;
+                        }
+                        Op::BinaryScalarLhs(lhs, rhs, BinaryOp::Mul) => {
+                            // y = c * x => dy/dx = c
+                            let rhs_grad = grad.mul_scalar(*lhs)?;
+                            let rhs_sum_grad = grads.or_insert(rhs)?;
+                            *rhs_sum_grad = rhs_sum_grad.add(&rhs_grad)?;
+                        }
+                        Op::BinaryScalarLhs(lhs, rhs, BinaryOp::Div) => {
+                            // y = c / x = c * x^(-1)
+                            // dy/dx = -c * x^(-2) = -c / (x^2)
+                            // grad_input = grad * (-c / x^2)
+                            let numerator = grad.mul_scalar(-*lhs)?;                            
+                            let denominator = rhs.mul(rhs)?;                          
+                            let rhs_grad = numerator.div(&denominator)?;
+                            
+                            let rhs_sum_grad = grads.or_insert(rhs)?;
+                            *rhs_sum_grad = rhs_sum_grad.add(&rhs_grad)?;
+                        }
+                        Op::BinaryScalarLhs(lhs, rhs, BinaryOp::Maximum) |
+                        Op::BinaryScalarLhs(lhs, rhs, BinaryOp::Minimum) => {
+                            let mask_lhs = (*node).eq(*lhs)?.to_dtype();
+                            let mask_rhs = (*node).eq(rhs)?.to_dtype();
+                            let rhs_grad = mask_rhs.mul(&grad)?.div(&(&mask_lhs + T::one()))?;                            
+                            let rhs_sum_grad = grads.or_insert(rhs)?;
+                            *rhs_sum_grad = rhs_sum_grad.add(&rhs_grad)?;
                         }
 
                         //=========================================================================================//
@@ -152,7 +215,7 @@ impl<T: FloatDType> Tensor<T> {
                             let sum_grad = grads.or_insert(arg)?;
                             // d/dx gelu_erf(x) = 0.5 + 0.398942 e^(-x^2/2) x + 0.5 erf(x/sqrt(2))
                             let neg_half_square = arg.sqr().neg() / T::two();
-                            let scaled_exp_arg = neg_half_square.exp() * arg * T::from_f64(0.398942);
+                            let scaled_exp_arg = T::from_f64(0.398942) * neg_half_square.exp() * arg;
                             let arg_scaled_sqrt = arg / T::two().sqrt();
                             let erf_scaled_sqrt = arg_scaled_sqrt.erf() / T::two();
                             let gelu_erf_grad = scaled_exp_arg + erf_scaled_sqrt + T::half();
@@ -167,8 +230,7 @@ impl<T: FloatDType> Tensor<T> {
                             let sum_grad = grads.or_insert(arg)?;
                             // d/dx silu = sigmoid(x) * (1 + x * (1 - sigmoid(x))) = sigmoid(x) * (1 - node) + node
                             let sigmoid_arg = (arg.neg().exp() + T::one()).recip();
-                            // TODO: 1 - Tensor
-                            let silu_grad = &sigmoid_arg * (node.neg() + T::one()) + *node;
+                            let silu_grad = &sigmoid_arg * (T::one() - *node) + *node;
                             *sum_grad = sum_grad.add(&(&grad * silu_grad))?
                         }
 
@@ -453,7 +515,8 @@ impl<T: FloatDType> Tensor<T> {
 
                     | Op::IfElse(_, None, None) => nodes,
 
-                    | Op::BinaryScalar(node, _, _)
+                    | Op::BinaryScalarLhs(_, node, _)
+                    | Op::BinaryScalarRhs(node, _, _)
                     | Op::Broadcast(node)
                     | Op::Unary(node, _)
                     | Op::Pow(node, _)

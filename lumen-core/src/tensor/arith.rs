@@ -50,7 +50,7 @@ impl<T: WithDType> Tensor<T> {
 }
 
 impl<T: WithDType> Tensor<T> {
-    fn compute_binary_scalar_op<U, F>(lhs: &Tensor<T>, rhs: T, mut f: F, _op_name: &'static str) -> Result<(Storage<U>, Shape)>
+    fn compute_binary_scalar_rhs_op<U, F>(lhs: &Tensor<T>, rhs: T, mut f: F, _op_name: &'static str) -> Result<(Storage<U>, Shape)>
         where 
             U: WithDType, 
             F: FnMut(T, T) -> U 
@@ -63,6 +63,25 @@ impl<T: WithDType> Tensor<T> {
         
         let output: Vec<_> = lhs_layout.storage_indices()
             .map(|lhs_index| f(lhs[lhs_index], rhs))
+            .collect();
+        
+        let storage = Storage::<U>::new(output);
+        Ok((storage, shape.clone()))
+    }
+
+    fn compute_scalar_binary_lhs_op<U, F>(lhs: T, rhs: &Tensor<T>, mut f: F, _op_name: &'static str) -> Result<(Storage<U>, Shape)>
+        where 
+            U: WithDType, 
+            F: FnMut(T, T) -> U 
+    {
+        let shape = rhs.shape();
+        let rhs_storage = rhs.storage();
+        let rhs_layout = rhs.layout();
+
+        let rhs = rhs_storage.data();
+        
+        let output: Vec<_> = rhs_layout.storage_indices()
+            .map(|index| f(lhs, rhs[index]))
             .collect();
         
         let storage = Storage::<U>::new(output);
@@ -107,7 +126,7 @@ impl<T: WithDType> Tensor<T> {
         U: WithDType, 
         F: FnMut(T, T) -> U 
     {
-        let (storage, shape) = Self::compute_binary_scalar_op(lhs, rhs, f, op_name)?;
+        let (storage, shape) = Self::compute_binary_scalar_rhs_op(lhs, rhs, f, op_name)?;
         Ok(Tensor::<U>::from_storage(storage, shape))
     }
 }
@@ -122,11 +141,17 @@ macro_rules! binary_op_impl {
             }
         
             pub fn [< $fn_name _scalar >](&self, rhs: T) -> Result<Self> {
-                let (storage, shape) = Self::compute_binary_scalar_op(self, rhs, T::$fn_name, stringify!([< $fn_name _scalar >]))?;
-                let meta = T::AutogradMeta::on_binary_scalar_op(self, rhs, BinaryOp::  [< $fn_name:camel >]);
+                let (storage, shape) = Self::compute_binary_scalar_rhs_op(self, rhs, T::$fn_name, stringify!([< $fn_name _scalar >]))?;
+                let meta = T::AutogradMeta::on_binary_scalar_rhs_op(self, rhs, BinaryOp::  [< $fn_name:camel >]);
                 Ok(Self::from_op(storage, shape, meta))
             } 
         
+            pub fn [< scalar_ $fn_name >](lhs: T, rhs: &Tensor<T>) -> Result<Tensor<T>> {
+                let (storage, shape) = Self::compute_scalar_binary_lhs_op(lhs, rhs, T::$fn_name, stringify!([< scalar_ $fn_name >]))?;
+                let meta = T::AutogradMeta::on_binary_scalar_lhs_op(lhs, rhs, BinaryOp::  [< $fn_name:camel >]);
+                Ok(Self::from_op(storage, shape, meta))
+            }
+
             pub fn $fn_name<'a>(&self, rhs: impl Into<TensorBinaryRhs<'a, T>>) -> Result<Self> {
                 match rhs.into() {
                     TensorBinaryRhs::Tensor(t) => self.[< $fn_name _tensor >](&t),
@@ -144,7 +169,7 @@ impl<T: NumDType> Tensor<T> {
     binary_op_impl!(sub);
     binary_op_impl!(div);
     binary_op_impl!(minimum);
-    binary_op_impl!(maximum);  
+    binary_op_impl!(maximum);
 }
 
 impl<T: NumDType> Tensor<T> {
@@ -328,6 +353,17 @@ impl<T: WithDType> Tensor<T> {
     }
 }
 
+impl<T: NumDType + Neg<Output = T>> Tensor<T> {
+    pub fn neg(&self) -> Self {
+        if self.element_count() == 0 {
+            return self.clone();
+        }
+        let storage = self.compute_unary_op(Neg::neg);
+        let meta = T::AutogradMeta::on_unray_op(self, UnaryOp::Neg);
+        Self::from_op(storage, self.shape(), meta)
+    }
+}
+
 impl<F: FloatDType> Tensor<F> {
     float_unary_op_impl!(floor);
     float_unary_op_impl!(ceil);
@@ -343,7 +379,7 @@ impl<F: FloatDType> Tensor<F> {
     float_unary_op_impl!(sqrt);
     float_unary_op_impl!(sqr);
     float_unary_op_impl!(abs);
-    float_unary_op_impl!(neg);
+    // float_unary_op_impl!(neg);
 
     float_unary_op_impl!(recip);
     float_unary_op_impl!(gelu);
@@ -365,7 +401,7 @@ impl<F: FloatDType> Tensor<F> {
     }
 }
 
-use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Sub};
+use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Sub};
 
 //////////////////////////////////////////////////////////////////////////////
 ///        Add
@@ -486,6 +522,82 @@ impl<'a, R: Into<TensorBinaryRhs<'a, bool>>> BitXor<R> for Tensor<bool> {
         self.xor(rhs).expect("Tensor::xor failed")
     }
 }
+
+//////////////////////////////////////////////////////////////////////////////
+///        Scalar & op
+//////////////////////////////////////////////////////////////////////////////
+
+macro_rules! impl_scalar_tensor_binary {
+    ($($t:ty),*) => {
+        $(
+            impl Add<Tensor<$t>> for $t {
+                type Output = Tensor<$t>;
+
+                fn add(self, rhs: Tensor<$t>) -> Self::Output {
+                    Tensor::add(&rhs, self).expect("Tensor::add failed")
+                }
+            }
+
+            impl Add<&Tensor<$t>> for $t {
+                type Output = Tensor<$t>;
+
+                fn add(self, rhs: &Tensor<$t>) -> Self::Output {
+                    Tensor::add(rhs, self).expect("Tensor::add failed")
+                }
+            }
+
+            impl Mul<Tensor<$t>> for $t {
+                type Output = Tensor<$t>;
+
+                fn mul(self, rhs: Tensor<$t>) -> Self::Output {
+                    Tensor::mul(&rhs, self).expect("Tensor::mul failed")
+                }
+            }
+
+            impl Mul<&Tensor<$t>> for $t {
+                type Output = Tensor<$t>;
+
+                fn mul(self, rhs: &Tensor<$t>) -> Self::Output {
+                    Tensor::mul(rhs, self).expect("Tensor::mul failed")
+                }
+            }
+
+            impl Sub<&Tensor<$t>> for $t {
+                type Output = Tensor<$t>;
+
+                fn sub(self, rhs: &Tensor<$t>) -> Self::Output {
+                    Tensor::scalar_sub(self, rhs).expect("Tensor::scalar_sub failed")
+                }
+            }
+
+            impl Sub<Tensor<$t>> for $t {
+                type Output = Tensor<$t>;
+
+                fn sub(self, rhs: Tensor<$t>) -> Self::Output {
+                    Tensor::scalar_sub(self, &rhs).expect("Tensor::scalar_sub failed")
+                }
+            }
+
+            impl Div<&Tensor<$t>> for $t {
+                type Output = Tensor<$t>;
+
+                fn div(self, rhs: &Tensor<$t>) -> Self::Output {
+                    Tensor::scalar_div(self, rhs).expect("Tensor::scalar_div failed")
+                }
+            }
+
+            impl Div<Tensor<$t>> for $t {
+                type Output = Tensor<$t>;
+
+                fn div(self, rhs: Tensor<$t>) -> Self::Output {
+                    Tensor::scalar_div(self, &rhs).expect("Tensor::scalar_div failed")
+                }
+            }
+        )*
+    };
+}
+
+impl_scalar_tensor_binary!(f32, f64, u8, i8, i16, u16, i32, u32, usize);
 
 #[cfg(test)]
 mod tests {

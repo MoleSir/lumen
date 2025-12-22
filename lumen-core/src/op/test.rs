@@ -84,6 +84,120 @@ mod test {
         assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
     }
 
+    #[test]
+    fn test_scalar_lhs_sub() {
+        // A: [1.0, 2.0, 3.0]
+        let a = Var::<f64>::new(&[1.0, 2.0, 3.0]).unwrap();
+
+        // y = 10.0 - a
+        // forward: [9.0, 8.0, 7.0]
+        let y = 10.0 - a.clone(); 
+        let grads = y.backward().unwrap();
+
+        // expected grad: [-1.0, -1.0, -1.0]
+        let expected_grad = Tensor::new(&[-1.0, -1.0, -1.0]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_scalar_lhs_div() {
+        // A: [1.0, 2.0, 4.0]
+        let a = Var::<f64>::new(&[1.0, 2.0, 4.0]).unwrap();
+
+        // y = 1.0 / a
+        // forward: [1.0, 0.5, 0.25]
+        let y = 1.0 / a.clone();
+        let grads = y.backward().unwrap();
+
+        // expected grad: -1.0 / a^2
+        // a=1.0 -> -1.0
+        // a=2.0 -> -1.0 / 4.0 = -0.25
+        // a=4.0 -> -1.0 / 16.0 = -0.0625
+        let expected_grad = Tensor::new(&[-1.0, -0.25, -0.0625]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_scalar_lhs_div_complex() {
+        // A: [1.0, 3.0]
+        let a = Var::<f64>::new(&[1.0, 3.0]).unwrap();
+
+        // u = a + 1.0 => [2.0, 4.0]
+        // y = 8.0 / u => [4.0, 2.0]
+        let y = 8.0 / (a.clone() + 1.0);
+        
+        let grads = y.backward().unwrap();
+
+        // Expected grad:
+        // x=1.0, u=2.0 => -8 / 4 = -2.0
+        // x=3.0, u=4.0 => -8 / 16 = -0.5
+        let expected_grad = Tensor::new(&[-2.0, -0.5]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_scalar_lhs_mul() {
+        let a = Var::<f64>::new(&[1.0, -1.0]).unwrap();
+        
+        // y = 0.5 * a
+        let y = 0.5 * a.clone();
+        let grads = y.backward().unwrap();
+
+        let expected_grad = Tensor::new(&[0.5, 0.5]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+    
+    #[test]
+    fn test_mixed_scalar_ops() {
+        let a = Var::<f64>::new(&[0.0, 1.0, 4.0]).unwrap();
+
+        let t1 = 10.0 - &a; // Scalar LHS Sub
+        let t2 = 2.0 + &a;  // Scalar LHS Add
+        let y = t1 * t2;           // Tensor Mul
+        
+        let grads = y.backward().unwrap();
+
+        // Expected: 8 - 2x
+        // x=0 -> 8
+        // x=1 -> 6
+        // x=4 -> 0
+        let expected_grad = Tensor::new(&[8.0, 6.0, 0.0]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_max_scalar_rhs_with_ties() {
+        let a = Var::<f64>::new(&[1.0, 5.0, 10.0]).unwrap();
+        let y = a.maximum(5.0).unwrap(); 
+        
+        let grads = y.backward().unwrap();
+        let expected_grad = Tensor::new(&[0.0, 0.5, 1.0]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_min_scalar_lhs_with_ties() {
+        let a = Var::<f64>::new(&[1.0, 3.0, 5.0]).unwrap();        
+        let result = Tensor::scalar_minimum(3.0, &a).unwrap(); 
+        let grads = result.backward().unwrap();
+
+        let expected_grad = Tensor::new(&[1.0, 0.5, 0.0]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_binary_max_ties() {
+        let a = Var::<f64>::new(&[1.0, 5.0, 8.0]).unwrap();
+        let b = Var::<f64>::new(&[2.0, 5.0, 6.0]).unwrap();
+        let y = a.maximum(&b).unwrap();
+        let grads = y.backward().unwrap();
+
+        let expected_grad_a = Tensor::new(&[0.0, 0.5, 1.0]).unwrap();
+        assert!(grads[&a].allclose(&expected_grad_a, 1e-5, 1e-8));
+
+        let expected_grad_b = Tensor::new(&[1.0, 0.5, 0.0]).unwrap();
+        assert!(grads[&b].allclose(&expected_grad_b, 1e-5, 1e-8));
+    }
 
     #[test]
     fn test_unary_math() {

@@ -3,7 +3,8 @@ use super::{BinaryOp, Op, ReduceOp, UnaryOp};
 
 pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_binary_op(lhs: &Tensor<T>, rhs: &Tensor<T>, op: BinaryOp) -> Self;
-    fn on_binary_scalar_op(lhs: &Tensor<T>, rhs: T, op: BinaryOp) -> Self;
+    fn on_binary_scalar_rhs_op(lhs: &Tensor<T>, rhs: T, op: BinaryOp) -> Self;
+    fn on_binary_scalar_lhs_op(lhs: T, rhs: &Tensor<T>, op: BinaryOp) -> Self;
     fn on_unray_op(t: &Tensor<T>, op: UnaryOp) -> Self; 
     fn on_pow_op(t: &Tensor<T>, e: T) -> Self;
     fn on_broadcast_op(t: &Tensor<T>) -> Self;
@@ -80,9 +81,17 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
         }
     }
 
-    fn on_binary_scalar_op(lhs: &Tensor<T>, rhs: T, op: BinaryOp) -> Self {
+    fn on_binary_scalar_rhs_op(lhs: &Tensor<T>, rhs: T, op: BinaryOp) -> Self {
         if lhs.requires_grad() {
-            Self::var_from_op(Op::BinaryScalar(lhs.clone(), rhs, op))
+            Self::var_from_op(Op::BinaryScalarRhs(lhs.clone(), rhs, op))
+        } else {
+            Self::val()
+        }
+    }
+
+    fn on_binary_scalar_lhs_op(lhs: T, rhs: &Tensor<T>, op: BinaryOp) -> Self {
+        if rhs.requires_grad() {
+            Self::var_from_op(Op::BinaryScalarLhs(lhs, rhs.clone(), op))
         } else {
             Self::val()
         }
@@ -235,7 +244,12 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
     }
 
     #[inline]
-    fn on_binary_scalar_op(_: &Tensor<T>, _: T, _: BinaryOp) -> Self {
+    fn on_binary_scalar_rhs_op(_: &Tensor<T>, _: T, _: BinaryOp) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_binary_scalar_lhs_op(lhs: T, rhs: &Tensor<T>, op: BinaryOp) -> Self {
         NoAutograd
     }
     

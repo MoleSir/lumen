@@ -3,24 +3,6 @@ use std::sync::Arc;
 use crate::{AutogradMetaT, Error, Layout, Result, Storage, StorageArc, TensorOrScalar, WithDType};
 use super::{Tensor, TensorId, TensorImpl};
 
-impl<T: WithDType> Tensor<T> {
-    pub fn masked_select(&self, conditions: &Tensor<bool>) -> Result<Tensor<T>> {
-        // self should has the same shape the condition
-        if self.dims() != conditions.dims() {
-            return Err(Error::ShapeMismatchMaskedSelect { src: self.shape().clone(), condition: conditions.shape().clone() });
-        }
-        
-        let vec: Vec<_> = self.iter().zip(conditions.iter())
-            .filter(|(_, condition)| *condition)
-            .map(|(value, _)| value)
-            .collect();
-        let shape = vec.len();
-
-        let storage = Storage::new(vec);
-        Ok(Self::from_storage(storage, shape))
-    }
-}
-
 impl Tensor<bool> {
     pub fn if_else<T: WithDType>(&self, true_val: impl Into<TensorOrScalar<T>>, false_val: impl Into<TensorOrScalar<T>>) -> Result<Tensor<T>> {
         let true_val = true_val.into();
@@ -83,44 +65,6 @@ mod test {
     use crate::Tensor;
 
     #[test]
-    fn test_masked_select_basic() {
-        let a = Tensor::new(&[10, 20, 30, 40, 50]).unwrap();
-        let mask = Tensor::new(&[false, true, false, true, true]).unwrap();
-
-        let result = a.masked_select(&mask).unwrap();
-        assert_eq!(result.to_vec(), [20, 40, 50]);
-    }
-
-    #[test]
-    fn test_masked_select_all_false() {
-        let a = Tensor::new(&[1, 2, 3]).unwrap();
-        let mask = Tensor::new(&[false, false, false]).unwrap();
-
-        let result = a.masked_select(&mask).unwrap();
-        assert!(result.to_vec().is_empty());
-    }
-
-    #[test]
-    fn test_masked_select_shape_mismatch() {
-        let a = Tensor::new(&[1, 2, 3, 4]).unwrap();
-        let mask = Tensor::new(&[true, false]).unwrap();
-
-        let result = a.masked_select(&mask);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_masked_select_2d_flatten_order() {
-        let a = Tensor::new(&[[1, 2, 3],
-                               [4, 5, 6]]).unwrap();
-        let mask = Tensor::new(&[[true,  false, true],
-                                  [false, true,  false]]).unwrap();
-
-        let result = a.masked_select(&mask).unwrap();
-        assert_eq!(result.to_vec(), [1, 3, 5]);
-    }
-
-    #[test]
     fn test_if_else_scalar_values() {
         let mask = Tensor::new(&[true, false, true, false]).unwrap();
         let result = Tensor::if_else(&mask, 1, 0).unwrap();
@@ -169,31 +113,7 @@ mod test {
         let result = Tensor::if_else(&mask, 1, 0).unwrap();
         assert_eq!(result.to_vec(), [0, 0, 0]);
     }
-    
-    #[test]
-    fn test_masked_select_2d_all_true() {
-        let a = Tensor::new(&[[1, 2, 3], [4, 5, 6], [7, 8, 9]]).unwrap();
-        let mask = Tensor::new(&[[true, true, true], [true, true, true], [true, true, true]]).unwrap();
-    
-        let result = a.masked_select(&mask).unwrap();
-        assert_eq!(result.to_vec(), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    }
-    
-    #[test]
-    fn test_masked_select_3d_partial_true() {
-        let a = Tensor::new(&[
-            [[1, 2], [3, 4]],
-            [[5, 6], [7, 8]]
-        ]).unwrap();
-        let mask = Tensor::new(&[
-            [[true, false], [false, true]],
-            [[false, true], [true, false]]
-        ]).unwrap();
-    
-        let result = a.masked_select(&mask).unwrap();
-        assert_eq!(result.to_vec(), [1, 4, 6, 7]);
-    }
-    
+
     #[test]
     fn test_if_else_2d_array_values() {
         let mask = Tensor::new(&[[true, false, true], [false, true, false]]).unwrap();
@@ -220,19 +140,19 @@ mod test {
         assert_eq!(result.to_vec(), [1, 20, 30, 1, 1, 1, 70, 80]);
     }
     
-    // #[test]
-    // fn test_if_else() {
-    //     let scores = Tensor::new(&[
-    //         [45., 12., 34., 90.],
-    //         [31., 19., 84., 60.],
-    //         [55., 34., 44., 82.],
-    //         [85., 89., 54., 67.],
-    //     ]).unwrap();
+    #[test]
+    fn test_if_else() {
+        let scores = Tensor::new(&[
+            [45., 12., 34., 90.],
+            [31., 19., 84., 60.],
+            [55., 34., 44., 82.],
+            [85., 89., 54., 67.],
+        ]).unwrap();
 
-    //     // scores > 60 & scores < 85
-    //     let mask = scores.ge(60.).unwrap().and(&scores.le(85.).unwrap()).unwrap();
+        // scores > 60 & scores < 85
+        let mask = scores.ge(60.).unwrap().and(&scores.le(85.).unwrap()).unwrap();
 
-    //     let if_elseed_scores = Tensor::if_else(&mask, &scores, -1.).unwrap();
-    //     println!("{}", if_elseed_scores);
-    // }
+        let if_elseed_scores = Tensor::if_else(&mask, &scores, -1.).unwrap();
+        println!("{}", if_elseed_scores);
+    }
 }

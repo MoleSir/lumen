@@ -10,7 +10,7 @@ mod u16;
 mod i16;
 
 
-use crate::{op::{AutogradInfo, AutogradMetaT, NoAutograd}, Result};
+use crate::{op::{AutogradInfo, AutogradMetaT, NoAutograd}, Result, Tensor};
 use super::Storage;
 
 pub trait WithDType:
@@ -83,7 +83,7 @@ impl std::fmt::Display for DType {
     }
 }
 
-pub trait NumDType : 
+pub trait NumDType: 
     WithDType 
   + num_traits::Num    
   + num_traits::Bounded
@@ -93,6 +93,14 @@ pub trait NumDType :
   + std::ops::SubAssign
   + std::ops::MulAssign
   + std::ops::DivAssign
+  + std::ops::Add<Tensor<Self>, Output = Tensor<Self>> 
+  + std::ops::Mul<Tensor<Self>, Output = Tensor<Self>>  
+  + std::ops::Sub<Tensor<Self>, Output = Tensor<Self>>  
+  + std::ops::Div<Tensor<Self>, Output = Tensor<Self>> 
+  + for<'a> std::ops::Add<&'a Tensor<Self>, Output = Tensor<Self>> 
+  + for<'a> std::ops::Mul<&'a Tensor<Self>, Output = Tensor<Self>> 
+  + for<'a> std::ops::Sub<&'a Tensor<Self>, Output = Tensor<Self>> 
+  + for<'a> std::ops::Div<&'a Tensor<Self>, Output = Tensor<Self>>  
 {
     type Category: NumCategory;
 
@@ -143,7 +151,6 @@ pub trait FloatDType:
     fn erf(self) -> Self;
     fn relu(self) -> Self;
     fn silu(self) -> Self;
-
 
     fn two() -> Self;
     fn pi() -> Self;
