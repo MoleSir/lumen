@@ -1,11 +1,11 @@
-use crate::{FloatDType, Tensor, WithDType};
+use crate::{FloatDType, IntTensor, Tensor, WithDType};
 use super::{BinaryOp, Op, ReduceOp, UnaryOp};
 
 pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_binary_op(lhs: &Tensor<T>, rhs: &Tensor<T>, op: BinaryOp) -> Self;
     fn on_binary_scalar_rhs_op(lhs: &Tensor<T>, rhs: T, op: BinaryOp) -> Self;
     fn on_binary_scalar_lhs_op(lhs: T, rhs: &Tensor<T>, op: BinaryOp) -> Self;
-    fn on_unray_op(t: &Tensor<T>, op: UnaryOp) -> Self; 
+    fn on_unray_op(t: &Tensor<T>, op: UnaryOp<T>) -> Self; 
     fn on_pow_op(t: &Tensor<T>, e: T) -> Self;
     fn on_broadcast_op(t: &Tensor<T>) -> Self;
     fn on_reduce_op(t: &Tensor<T>, dims: &[usize], op: ReduceOp) -> Self;
@@ -18,6 +18,8 @@ pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_permute_op(t: &Tensor<T>, dims: Vec<usize>) -> Self;
     fn on_copy_op(t: &Tensor<T>) -> Self;
     fn on_ifelse_op(mask: &Tensor<bool>, tv: Option<&Tensor<T>>, fv: Option<&Tensor<T>>) -> Self;
+    fn on_index_select_op(t: &Tensor<T>, indexes: &IntTensor, dim: usize) -> Self;
+    fn on_index_add_op(init: &Tensor<T>, indexes: &IntTensor, src: &Tensor<T>, dim: usize) -> Self;
 }
 
 // pub struct AutogradInfo<T: FloatDType> {
@@ -96,7 +98,7 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
         }
     }
 
-    fn on_unray_op(t: &Tensor<T>, op: UnaryOp) -> Self {
+    fn on_unray_op(t: &Tensor<T>, op: UnaryOp<T>) -> Self {
         if t.requires_grad() {
             Self::var_from_op(Op::Unary(t.clone(), op))
         } else {
@@ -222,6 +224,22 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
             }
         }  
     }
+
+    fn on_index_select_op(t: &Tensor<T>, indexes: &IntTensor, dim: usize) -> Self {
+        if t.requires_grad() {
+            Self::var_from_op(Op::IndexSelect(t.clone(), indexes.clone(), dim))
+        } else {
+            Self::val()
+        }  
+    }
+
+    fn on_index_add_op(init: &Tensor<T>, indexes: &IntTensor, src: &Tensor<T>, dim: usize) -> Self {
+        if init.requires_grad() || src.requires_grad() {
+            Self::var_from_op(Op::IndexAdd(init.clone(), indexes.clone(), src.clone(), dim))
+        } else {
+            Self::val()
+        }
+    }
 }
 
 #[derive(Default)]
@@ -245,7 +263,7 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
     }
     
     #[inline]
-    fn on_unray_op(_: &Tensor<T>, _: UnaryOp) -> Self {
+    fn on_unray_op(_: &Tensor<T>, _: UnaryOp<T>) -> Self {
         NoAutograd
     }
 
@@ -306,6 +324,16 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
 
     #[inline]
     fn on_ifelse_op(mask: &Tensor<bool>, tv: Option<&Tensor<T>>, fv: Option<&Tensor<T>>) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_index_select_op(t: &Tensor<T>, indexes: &IntTensor, dim: usize) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_index_add_op(init: &Tensor<T>, indexes: &IntTensor, src: &Tensor<T>, dim: usize) -> Self {
         NoAutograd
     }
 }

@@ -1,4 +1,4 @@
-use crate::{FloatDType, Tensor};
+use crate::{FloatDType, IntTensor, Tensor, WithDType};
 mod gradmeta;
 mod gradstore;
 pub use gradmeta::*;
@@ -11,13 +11,15 @@ pub enum Op<T: FloatDType> {
     Binary(Tensor<T>, Tensor<T>, BinaryOp),
     BinaryScalarRhs(Tensor<T>, T, BinaryOp),
     BinaryScalarLhs(T, Tensor<T>, BinaryOp),
-    Unary(Tensor<T>, UnaryOp),
+    Unary(Tensor<T>, UnaryOp<T>),
     Pow(Tensor<T>, T),
     Reduce(Tensor<T>, ReduceOp, Vec<usize>),
     Matmul(Tensor<T>, Tensor<T>),
     Broadcast(Tensor<T>),
     Narrow(Tensor<T>, usize, usize, usize),
     Slice(Tensor<T>, usize, usize, usize, usize),
+    IndexSelect(Tensor<T>, IntTensor, usize),
+    IndexAdd(Tensor<T>, IntTensor, Tensor<T>, usize),
     Reshape(Tensor<T>),
     Transpose(Tensor<T>, usize, usize),
     Permute(Tensor<T>, Vec<usize>),
@@ -55,7 +57,7 @@ pub enum BinaryOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UnaryOp {
+pub enum UnaryOp<T: WithDType> {
     Exp,
     Ln,
 
@@ -73,7 +75,9 @@ pub enum UnaryOp {
     GeluErf,
     Erf,
     Relu,
+    LeakyRelu(T),
     Silu,
+    Sigmoid,
 
     Floor,
     Ceil,

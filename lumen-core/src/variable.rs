@@ -61,4 +61,14 @@ impl<T: FloatDType> Var<T> {
     pub fn linspace(start: T, stop: T, num: usize) -> Result<Tensor<T>> {
         Tensor::linspace_var(start, stop, num)
     }
+
+    #[inline]
+    pub fn randn<S: Into<Shape>>(mean: T, std: T, shape: S) -> Result<Tensor<T>> {
+        Tensor::randn_var(mean, std, shape)
+    }
+
+    #[inline]
+    pub fn rand<S: Into<Shape>>(min: T, max: T, shape: S) -> Result<Tensor<T>> {
+        Tensor::rand_var(min, max, shape)
+    }
 }

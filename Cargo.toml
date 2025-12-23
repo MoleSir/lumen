@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "lumen-core", 
+    "lumen-nn", 
 ]
 
 [workspace.package]
@@ -12,7 +13,8 @@ keywords = ["machine-learning", "auto-grad"]
 license = "MIT"
 
 [workspace.dependencies]
-lumen-core = { path = "./lumen-core", package = "lumen-core", version = "0.2.0" }
+lumen-core = { path = "./lumen-core", package = "lumen-core" }
+lumen-nn = { path = "./lumen-nn", package = "lumen-nn" }
 
 approx = "0.5.1"
 derive_builder = "0.20.2"

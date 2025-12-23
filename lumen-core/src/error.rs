@@ -78,6 +78,16 @@ pub enum Error {
         got: Shape,
     },
 
+    #[error("requires contiguous {op}")]
+    RequiresContiguous { op: &'static str },
+
+    #[error("invalid index in {op}")]
+    InvalidIndex {
+        index: usize,
+        size: usize,
+        op: &'static str 
+    },
+
     #[error("shape mismatch in {op}, lhs: {lhs:?}, rhs: {rhs:?}")]
     ShapeMismatchBinaryOp {
         lhs: Shape,

@@ -1,5 +1,5 @@
 use std::fmt::Display;
-use crate::{Result, WithDType};
+use crate::{AutogradMetaT, Dim, Error, IntTensor, NumDType, Result, WithDType};
 use super::Tensor;
 
 impl<T: WithDType> Tensor<T> {
@@ -18,6 +18,110 @@ impl<T: WithDType> Tensor<T> {
         }
         Ok(x)
     }
+
+    pub fn index_select<D: Dim>(&self, indexes: impl Into<IntTensor>, dim: D) -> Result<Self> {   
+        let indexes: IntTensor = indexes.into();
+        let dim = dim.to_index(self.shape(), "index-select")?;
+        let indexes_len = indexes.shape().dims1()?;
+        let mut dims = self.dims().to_vec();
+        dims[dim] = indexes_len;
+        let meta = T::AutogradMeta::on_index_select_op(self, &indexes, dim);
+        let storage = match indexes {
+            IntTensor::I32(indexes) => self.storage().index_select(
+                self.layout(),
+                &indexes.storage(),
+                indexes.layout(),
+                dim,
+            )?,
+            IntTensor::U32(indexes) => self.storage().index_select(
+                self.layout(),
+                &indexes.storage(),
+                indexes.layout(),
+                dim,
+            )?,
+            IntTensor::U8(indexes) => self.storage().index_select(
+                self.layout(),
+                &indexes.storage(),
+                indexes.layout(),
+                dim,
+            )?,
+            IntTensor::USize(indexes) => self.storage().index_select(
+                self.layout(),
+                &indexes.storage(),
+                indexes.layout(),
+                dim,
+            )?,
+        };
+
+        Ok(Self::build(storage, dims, meta))
+    }
+}
+
+impl<T: NumDType> Tensor<T> {
+    pub fn index_add<D: Dim>(&self, indexes: impl Into<IntTensor>, source: &Tensor<T>, dim: D) -> Result<Self> {
+        let indexes: IntTensor = indexes.into();
+        let dim = dim.to_index(self.shape(), "index-add")?;
+        
+        let source_dims = source.dims();
+        let self_dims = self.dims();
+        if source_dims.len() != self_dims.len() {
+             return Err(Error::ShapeMismatchBinaryOp { 
+                 op: "index-add", 
+                 lhs: self.shape().clone(), 
+                 rhs: source.shape().clone() 
+             }.into());
+        }
+
+        // 检查除了 dim 以外的维度是否一致，以及 dim 维度是否匹配索引长度
+        let indexes_len = indexes.shape().dims1()?;
+        for (i, (&d_self, &d_src)) in self_dims.iter().zip(source_dims.iter()).enumerate() {
+            if i == dim {
+                if d_src != indexes_len {
+                    return Err(Error::ShapeMismatchBinaryOp { op: "index-add (dim mismatch)", lhs: self.shape().clone(), rhs: source.shape().clone() }.into());
+                }
+            } else if d_self != d_src {
+                return Err(Error::ShapeMismatchBinaryOp { op: "index-add", lhs: self.shape().clone(), rhs: source.shape().clone() }.into());
+            }
+        }
+
+        let storage = match &indexes {
+            IntTensor::I32(idx) => self.storage().index_add(
+                self.layout(),
+                &idx.storage(),
+                idx.layout(),
+                &source.storage(),
+                source.layout(),
+                dim,
+            )?,
+            IntTensor::U32(idx) => self.storage().index_add(
+                self.layout(),
+                &idx.storage(),
+                idx.layout(),
+                &source.storage(),
+                source.layout(),
+                dim,
+            )?,
+            IntTensor::U8(idx) => self.storage().index_add(
+                self.layout(),
+                &idx.storage(),
+                idx.layout(),
+                &source.storage(),
+                source.layout(),
+                dim,
+            )?,
+            IntTensor::USize(idx) => self.storage().index_add(
+                self.layout(),
+                &idx.storage(),
+                idx.layout(),
+                &source.storage(),
+                source.layout(),
+                dim,
+            )?,
+        };
+
+        let meta = T::AutogradMeta::on_index_add_op(self, &indexes, source, dim);
+        Ok(Self::build(storage, self_dims.to_vec(), meta))
+    } 
 }
 
 impl<T: WithDType> Tensor<T> {

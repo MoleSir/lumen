@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 use rand::rng;
-use rand_distr::{Distribution, StandardNormal, StandardUniform, Uniform};
-use crate::{Error, Result};
+use rand_distr::{Distribution, Uniform};
+use crate::{Error, IntDType, Result};
 use super::{DType, FloatDType, Layout, NumDType, Shape, WithDType};
 
 #[derive(Clone)]
@@ -23,11 +23,8 @@ impl<T: WithDType> Storage<T> {
     }
 }
 
-impl<T: WithDType + rand_distr::uniform::SampleUniform> Storage<T> {
-    pub fn rand_uniform(shape: &Shape, min: T, max: T) -> Result<Self> 
-    where 
-        StandardUniform: Distribution<T>,
-    {
+impl<T: NumDType> Storage<T> {
+    pub fn rand_uniform(shape: &Shape, min: T, max: T) -> Result<Self> {
         let elem_count = shape.element_count();
         let mut rng = rng();
         let uniform = Uniform::new(min, max).map_err(|e| Error::Rand(e.to_string()))?;
@@ -41,16 +38,156 @@ impl<T: WithDType + rand_distr::uniform::SampleUniform> Storage<T> {
 
 impl<F: FloatDType> Storage<F> {
     pub fn rand_normal(shape: &Shape, mean: F, std: F) -> Result<Self> 
-    where 
-        StandardNormal: Distribution<F>,
     {
         let elem_count = shape.element_count();
-        let normal = rand_distr::Normal::new(mean, std).map_err(|e| Error::Rand(e.to_string()))?;
-        let mut rng = rng();
-        let v: Vec<F> = (0..elem_count)
-            .map(|_| normal.sample(&mut rng))
-            .collect();
+        let v = F::random_normal_vec(elem_count, mean, std)?;
         Ok(Self(v))
+    }
+}
+
+impl<T: WithDType> Storage<T> {
+    pub(crate) fn index_select<I: IntDType>(
+        &self,
+        self_layout: &Layout,
+        ids: &Storage<I>,
+        ids_layout: &Layout,
+        dim: usize,
+    ) -> Result<Self> {
+        let vec = Self::do_index_select(ids.data(), ids_layout, dim, self.data(), self_layout)?;
+        Ok(Storage::new(vec))
+    }
+
+    fn do_index_select<I: IntDType>(ids: &[I], ids_l: &Layout, dim: usize, src: &[T], layout: &Layout) -> Result<Vec<T>> {
+        if !layout.is_contiguous() {
+            Err(Error::RequiresContiguous { op: "index-select" })?
+        } 
+        let src = &src[layout.start_offset..layout.start_offset+layout.shape.element_count()];
+        let n_ids = ids_l.dims();
+        assert!(n_ids.len() == 1);
+        let n_ids = n_ids[0];
+        let stride_ids = ids_l.stride()[0];
+        let mut dst_dims = layout.dims().to_vec();
+        let src_dim = dst_dims[dim];
+        dst_dims[dim] = n_ids;
+        let dst_len: usize = dst_dims.iter().product();
+        let left_len: usize = dst_dims[..dim].iter().product();
+        let right_len: usize = dst_dims[dim + 1..].iter().product();
+        let mut dst = vec![T::false_value(); dst_len];
+        for left_i in 0..left_len {
+            let start_src_idx = left_i * right_len * src_dim;
+            let start_dst_idx = left_i * right_len * n_ids;
+            for i in 0..n_ids {
+                let start_dst_idx = start_dst_idx + i * right_len;
+                let index = ids[ids_l.start_offset() + stride_ids * i];
+                if index == I::max_value() {
+                    dst[start_dst_idx..start_dst_idx + right_len].fill(T::false_value());
+                } else {
+                    let index = index.to_usize();
+                    if index >= src_dim {
+                        Err(Error::InvalidIndex {
+                            index,
+                            size: src_dim,
+                            op: "index-select",
+                        })?
+                    }
+                    let start_src_idx = start_src_idx + index * right_len;
+                    dst[start_dst_idx..start_dst_idx + right_len]
+                        .copy_from_slice(&src[start_src_idx..start_src_idx + right_len])
+                }
+            }
+        }
+        Ok(dst)
+    }
+}
+
+impl<T: NumDType> Storage<T> {
+    pub(crate) fn index_add<I: IntDType>(
+        &self,
+        self_layout: &Layout,
+        ids: &Storage<I>,
+        ids_layout: &Layout,
+        source: &Storage<T>,
+        source_layout: &Layout,
+        dim: usize,
+    ) -> Result<Self> {
+        if !self_layout.is_contiguous() || !source_layout.is_contiguous() {
+            return Err(Error::RequiresContiguous { op: "index-add" }.into());
+        }
+
+        let new_data = Self::do_index_add(
+            self.data(),
+            self_layout,
+            ids.data(),
+            ids_layout,
+            source.data(),
+            dim
+        )?;
+        
+        Ok(Storage::new(new_data))
+    }
+
+    fn do_index_add<I: IntDType>(
+        dst_data: &[T],      // 当前的梯度张量数据 (self)
+        dst_layout: &Layout,
+        ids: &[I],           // 索引
+        ids_layout: &Layout, // 索引 layout
+        src_data: &[T],      // 传入的梯度 (grad/source)
+        dim: usize,
+    ) -> Result<Vec<T>> {
+        // 1. 复制一份 dst_data 作为结果，因为我们要修改它 (或者说是累加到一个新 buffer 上)
+        // 注意：在大张量场景下，这里可能会有性能开销。
+        // 如果你的系统支持 inplace 修改且确信引用计数为1，可以直接修改。
+        // 这里为了安全采用 clone。
+        let mut result = dst_data.to_vec();
+
+        let n_ids = ids_layout.dims()[0];
+        let stride_ids = ids_layout.stride()[0];
+
+        let dst_dims = dst_layout.dims();
+        let src_dim_size = dst_dims[dim]; // 原始张量在该维度的长度
+
+        let left_len: usize = dst_dims[..dim].iter().product();
+        let right_len: usize = dst_dims[dim + 1..].iter().product();
+        
+        // src (grad) 的结构是 [left, n_ids, right]
+        // dst (self) 的结构是 [left, src_dim_size, right]
+
+        for left_i in 0..left_len {
+            let start_src_block = left_i * n_ids * right_len;
+            let start_dst_block = left_i * src_dim_size * right_len;
+
+            for i in 0..n_ids {
+                // 获取索引值
+                let index_val = ids[ids_layout.start_offset() + stride_ids * i];
+                
+                // 处理 mask (如果有 padding index)
+                if index_val == I::max_value() {
+                    continue; 
+                }
+
+                let idx = index_val.to_usize();
+                if idx >= src_dim_size {
+                    return Err(Error::InvalidIndex {
+                        index: idx,
+                        size: src_dim_size,
+                        op: "index-add",
+                    }.into());
+                }
+
+                // 计算偏移量
+                let src_offset = start_src_block + i * right_len;
+                let dst_offset = start_dst_block + idx * right_len;
+
+                // 执行加法： dst[idx] += src[i]
+                for k in 0..right_len {
+                    let s_val = src_data[src_offset + k];
+                    let d_val = result[dst_offset + k];
+                    result[dst_offset + k] = d_val + s_val;
+                }
+            }
+        }
+
+        Ok(result)
     }
 }
 

@@ -1,4 +1,6 @@
 use approx::relative_eq;
+use rand::rng;
+use rand_distr::Distribution;
 
 use crate::{Result, Storage};
 
@@ -99,8 +101,29 @@ impl FloatDType for f64 {
         self.max(0.0)
     }
 
+    fn leaky_relu(self, negative_slope: Self) -> Self {
+        if self > 0.0 {
+            self
+        } else {
+            self * negative_slope
+        }
+    }
+
     /// SiLU (Swish)
     fn silu(self) -> Self {
         self / (1.0 + (-self).exp())
+    }
+
+    fn sigmoid(self) -> Self {
+        1.0 / (1.0 + (-self).exp())
+    }
+
+    fn random_normal_vec(count: usize, mean: Self, std: Self) -> crate::Result<Vec<Self>> {
+        let normal = rand_distr::Normal::new(mean, std).map_err(|e| crate::Error::Rand(e.to_string()))?;
+        let mut rng = rng();
+        let v: Vec<Self> = (0..count)
+            .map(|_| normal.sample(&mut rng))
+            .collect();
+        Ok(v)
     }
 }

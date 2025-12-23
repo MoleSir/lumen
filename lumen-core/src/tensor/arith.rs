@@ -170,6 +170,10 @@ impl<T: NumDType> Tensor<T> {
     binary_op_impl!(div);
     binary_op_impl!(minimum);
     binary_op_impl!(maximum);
+
+    pub fn clamp(&self, min: T, max: T) -> Result<Self> {
+        self.maximum(min)?.minimum(max)
+    }
 }
 
 impl<T: NumDType> Tensor<T> {
@@ -387,6 +391,17 @@ impl<F: FloatDType> Tensor<F> {
     float_unary_op_impl!(erf);
     float_unary_op_impl!(relu);
     float_unary_op_impl!(silu);
+    float_unary_op_impl!(sigmoid);
+
+    pub fn leaky_relu(&self, negative_slope: F) -> Self {
+        if self.element_count() == 0 {
+            return self.clone();
+        }
+        let f = |v: F| F::leaky_relu(v, negative_slope);
+        let storage = self.compute_unary_op(f);
+        let meta = F::AutogradMeta::on_unray_op(self, UnaryOp::LeakyRelu(negative_slope));
+        Self::from_op(storage, self.shape(), meta)
+    }
 }
 
 impl<F: FloatDType> Tensor<F> {
@@ -597,7 +612,7 @@ macro_rules! impl_scalar_tensor_binary {
     };
 }
 
-impl_scalar_tensor_binary!(f32, f64, u8, i8, i16, u16, i32, u32, usize);
+impl_scalar_tensor_binary!(f32, f64, u8, i32, u32, usize);
 
 #[cfg(test)]
 mod tests {

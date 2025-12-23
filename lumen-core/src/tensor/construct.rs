@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use rand_distr::{Distribution, StandardNormal, StandardUniform};
 use crate::{AutogradInfo, Error, FloatDType, Layout, NumDType, Result, Shape, Storage, StorageArc, WithDType};
 use super::{Tensor, TensorId, TensorImpl};
 
@@ -185,10 +184,7 @@ impl<T: NumDType> Tensor<T> {
     }
 }
 
-impl<T: WithDType + rand_distr::uniform::SampleUniform> Tensor<T> 
-where 
-    StandardUniform: Distribution<T>
-{
+impl<T: NumDType> Tensor<T> {
     /// Creates an array with uniformly distributed random values in `[min, max)`.
     ///
     /// ```rust
@@ -241,10 +237,7 @@ impl<F: FloatDType> Tensor<F> {
     }
 }
 
-impl<F: FloatDType> Tensor<F> 
-where 
-    StandardNormal: Distribution<F>
-{
+impl<F: FloatDType> Tensor<F> {
     /// Creates an array with normally distributed random values
     /// with given `mean` and `std`.
     ///
@@ -323,56 +316,79 @@ impl<T: WithDType> Tensor<T> {
 }
 
 impl<T: FloatDType> Tensor<T> {
+    #[inline]
     pub fn new_var<A: ToTensor<T>>(array: A) -> Result<Self> {
         Self::new_impl(array, AutogradInfo::var())
     }
 
+    #[inline]
     pub fn full_var<S: Into<Shape>>(shape: S, value: T) -> Result<Self> {
         Self::full_impl(shape, value, AutogradInfo::var())
     }
 
+    #[inline]
     pub fn zeros_var<S: Into<Shape>>(shape: S) -> Result<Self> {
         Self::zeros_impl(shape, AutogradInfo::var())
     }
 
+    #[inline]
     pub fn zeros_like_var(&self) -> Result<Self> {
         Self::zeros_var(self.shape())
     }
 
+    #[inline]
     pub fn ones_var<S: Into<Shape>>(shape: S) -> Result<Self> {
         Self::ones_impl(shape, AutogradInfo::var())
     }
 
+    #[inline]
     pub fn ones_like_var(&self) -> Result<Self> {
         Self::ones_var(self.shape())
     }
 
+    #[inline]
     pub fn arange_var(start: T, end: T) -> Result<Self> {
         Self::arange_impl(start, end, AutogradInfo::var())
     }
 
+    #[inline]
     pub fn from_vec_var<V: Into<Vec<T>>, S: Into<Shape>>(vec: V, shape: S) -> Result<Self> {
         Self::from_vec_impl(vec, shape, AutogradInfo::var())
     }
 
+    #[inline]
     pub fn eye_var(size: usize) -> Result<Self> {
         Self::eye_impl(size, AutogradInfo::var())
     }
 
+    #[inline]
     pub fn tril_var(size: usize, diagonal: bool) -> Result<Self> {
         Self::tril_impl(size, diagonal, AutogradInfo::var())
     }
 
+    #[inline]
     pub fn triu_var(size: usize, diagonal: bool) -> Result<Self> {
         Self::triu_impl(size, diagonal, AutogradInfo::var())
     }
 
+    #[inline]
     pub fn diag_var(diag: &[T]) -> Result<Self> {
         Self::diag_impl(diag, AutogradInfo::var())
     }
 
+    #[inline]
     pub fn linspace_var(start: T, stop: T, num: usize) -> Result<Self> {
         Self::linspace_impl(start, stop, num, AutogradInfo::var())
+    }
+
+    #[inline]
+    pub fn randn_var<S: Into<Shape>>(mean: T, std: T, shape: S) -> Result<Self> {
+        Self::randn_impl(mean, std, shape, AutogradInfo::var())
+    }
+
+    #[inline]
+    pub fn rand_var<S: Into<Shape>>(min: T, max: T, shape: S) -> Result<Self> {
+        Self::rand_impl(min, max, shape, AutogradInfo::var())
     }
 }
 

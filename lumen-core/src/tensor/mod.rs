@@ -14,7 +14,7 @@ pub use construct::ToTensor;
 pub use arith::TensorBinaryRhs;
 use std::{hash::Hash, sync::Arc};
 pub use indexer::{Slice, IndexOp};
-use crate::{Error, FloatDType, Op, Result};
+use crate::{AutogradInfo, Error, FloatDType, Op, Result};
 use super::{DType, Dim, DimCoordinates, DimNCoordinates, Layout, NumDType, Shape, Storage, StorageArc, StorageIndices, StorageMut, StorageRef, WithDType};
 pub use iter::*;
 pub use indexer::*;
@@ -197,6 +197,32 @@ impl<T: NumDType> Tensor<T> {
 }
 
 impl<T: FloatDType> Tensor<T> {
+    pub fn detach(&self) -> Self {
+        if !self.requires_grad() {
+            self.clone()
+        } else {
+            Self(Arc::new(TensorImpl { 
+                id: TensorId::new(), 
+                storage: self.0.storage.clone(), 
+                layout: self.layout().clone(), 
+                meta: AutogradInfo::val(), 
+            }))
+        }
+    }
+
+    pub fn to_var(self) -> Self {
+        if self.requires_grad() {
+            self.clone()
+        } else {
+            Self(Arc::new(TensorImpl { 
+                id: TensorId::new(), 
+                storage: self.0.storage.clone(), 
+                layout: self.layout().clone(), 
+                meta: AutogradInfo::var(),
+            }))
+        }
+    }
+
     #[inline]
     pub fn requires_grad(&self) -> bool {
         self.0.meta.requires_grad()
@@ -207,6 +233,7 @@ impl<T: FloatDType> Tensor<T> {
         self.0.meta.op()
     }
 
+    #[inline]
     pub fn is_leaf(&self) -> bool {
         self.0.meta.is_leaf()
     }

@@ -440,6 +440,32 @@ impl<T: WithDType> Tensor<T> {
         Ok(vec)
     }
 
+    /// Split a tensor into the specified number of chunks, this may return less chunks than
+    /// specified.
+    pub fn chunk<D: Dim>(&self, chunks: usize, dim: D) -> Result<Vec<Self>> {
+        let dim = dim.to_index(self.shape(), "chunk")?;
+        let size = self.dim(dim)?;
+        if size < chunks {
+            (0..size).map(|i| self.narrow(dim, i, 1)).collect()
+        } else {
+            let chunk_size = size / chunks;
+            let cnt_additional = size % chunks;
+            let mut tensors = vec![];
+            let mut sum_chunk_size = 0;
+            for i in 0..chunks {
+                let chunk_size = if i < cnt_additional {
+                    chunk_size + 1
+                } else {
+                    chunk_size
+                };
+                let tensor = self.narrow(dim, sum_chunk_size, chunk_size)?;
+                tensors.push(tensor);
+                sum_chunk_size += chunk_size
+            }
+            Ok(tensors)
+        }
+    }
+
     /// Flattens the input tensor on the dimension indexes from `start_dim` to `end_dim` (both
     /// inclusive).
     pub fn flatten<D1: Dim, D2: Dim>(&self, start_dim: D1, end_dim: D2) -> Result<Self> {
