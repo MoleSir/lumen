@@ -11,7 +11,6 @@ mod convert;
 mod condition;
 
 pub use construct::ToTensor;
-pub use arith::TensorBinaryRhs;
 use std::{hash::Hash, sync::Arc};
 pub use indexer::{Slice, IndexOp};
 use crate::{AutogradInfo, Error, FloatDType, Op, Result};

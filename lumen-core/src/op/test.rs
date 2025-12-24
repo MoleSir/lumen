@@ -860,4 +860,89 @@ mod test {
         let expected_grad = Tensor::new(&[2.0, 3.0]).unwrap();
         assert!(grad_a.allclose(&expected_grad, 1e-5, 1e-8));
     }
+
+    #[test]
+    fn test_index_select_backward_basic() {
+        // A: (4) [1.0, 2.0, 3.0, 4.0]
+        let a = Var::<f64>::new(&[1.0, 2.0, 3.0, 4.0]).unwrap();
+        
+        // Indices: [0, 2]
+        let indices = Tensor::new(&[0, 2]).unwrap();
+        
+        // Forward: b = [1.0, 3.0]
+        let b = a.index_select(indices, 0).unwrap();
+        
+        // Loss = Sum(b)
+        // dLoss/db = [1.0, 1.0]
+        let loss = b.sum_keepdim(0).unwrap();
+        let grads = loss.backward().unwrap();
+        let expected_grad = Tensor::new(&[1.0, 0.0, 1.0, 0.0]).unwrap();
+
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_index_select_backward_accumulation() {        
+        // A: (3) [10.0, 20.0, 30.0]
+        let a = Var::<f64>::new(&[10.0, 20.0, 30.0]).unwrap();
+        
+        // Indices: [1, 1, 0] -> 第 1 个元素被选中两次！
+        let indices = Tensor::new(&[1, 1, 0]).unwrap();
+        
+        // Forward: b = [20.0, 20.0, 10.0]
+        let b = a.index_select(indices, 0).unwrap();
+        
+        // 我们给 b 一个加权 loss，以便更好区分梯度
+        // Weights: [0.5, 2.0, 3.0]
+        let w = Tensor::new(&[0.5, 2.0, 3.0]).unwrap();
+        
+        // Loss = Sum(b * w)
+        // b[0] (来自 a[1]) * 0.5 -> 对 a[1] 贡献梯度 0.5
+        // b[1] (来自 a[1]) * 2.0 -> 对 a[1] 贡献梯度 2.0
+        // b[2] (来自 a[0]) * 3.0 -> 对 a[0] 贡献梯度 3.0
+        let loss = b.mul(&w).unwrap().sum_keepdim(0).unwrap();
+        let grads = loss.backward().unwrap();
+
+        // Backward 预期:
+        // a[0]: 被索引 0 选中一次 (权重 3.0) -> grad = 3.0
+        // a[1]: 被索引 1 选中两次 (权重 0.5 和 2.0) -> grad = 0.5 + 2.0 = 2.5
+        // a[2]: 未被选中 -> grad = 0.0
+        let expected_grad = Tensor::new(&[3.0, 2.5, 0.0]).unwrap();
+
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_index_select_backward_dim1() {        
+        // A: (2, 3)
+        // [[1.0, 2.0, 3.0],
+        //  [4.0, 5.0, 6.0]]
+        let a = Var::<f64>::new(&[
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0]
+        ]).unwrap();
+
+        // Indices: [2, 0] (选第2列和第0列)
+        let indices = Tensor::new(&[2, 0]).unwrap();
+
+        // Forward (dim=1):
+        // [[3.0, 1.0],
+        //  [6.0, 4.0]]
+        let b = a.index_select(indices, 1).unwrap();
+
+        // Loss = Sum(b) -> 所有选中元素的梯度由于 sum 操作都收到 1.0 的回传
+        let loss = b.sum_keepdim(0).unwrap().sum_keepdim(1).unwrap();
+        let grads = loss.backward().unwrap();
+
+        // Backward 预期:
+        // Col 0: 被选中一次 -> grad 1.0 (对每一行)
+        // Col 1: 未被选中   -> grad 0.0
+        // Col 2: 被选中一次 -> grad 1.0
+        let expected_grad = Tensor::new(&[
+            [1.0, 0.0, 1.0],
+            [1.0, 0.0, 1.0]
+        ]).unwrap();
+
+        assert!(grads[&a].allclose(&expected_grad, 1e-5, 1e-8));
+    }
 }

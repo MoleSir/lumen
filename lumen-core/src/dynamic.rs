@@ -103,9 +103,21 @@ impl From<Tensor<u8>> for IntTensor {
     }
 }
 
+impl From<&Tensor<u8>> for IntTensor {
+    fn from(value: &Tensor<u8>) -> Self {
+        Self::U8(value.clone())
+    }
+}
+
 impl From<Tensor<i32>> for IntTensor {
     fn from(value: Tensor<i32>) -> Self {
         Self::I32(value)
+    }
+}
+
+impl From<&Tensor<i32>> for IntTensor {
+    fn from(value: &Tensor<i32>) -> Self {
+        Self::I32(value.clone())
     }
 }
 
@@ -115,9 +127,21 @@ impl From<Tensor<u32>> for IntTensor {
     }
 }
 
+impl From<&Tensor<u32>> for IntTensor {
+    fn from(value: &Tensor<u32>) -> Self {
+        Self::U32(value.clone())
+    }
+}
+
 impl From<Tensor<usize>> for IntTensor {
     fn from(value: Tensor<usize>) -> Self {
         Self::USize(value)
+    }
+}
+
+impl From<&Tensor<usize>> for IntTensor {
+    fn from(value: &Tensor<usize>) -> Self {
+        Self::USize(value.clone())
     }
 }
 
@@ -127,8 +151,20 @@ impl From<Tensor<f32>> for FloatTensor {
     }
 }
 
+impl From<&Tensor<f32>> for FloatTensor {
+    fn from(value: &Tensor<f32>) -> Self {
+        Self::F32(value.clone())
+    }
+}
+
 impl From<Tensor<f64>> for FloatTensor {
     fn from(value: Tensor<f64>) -> Self {
         Self::F64(value)
+    }
+}
+
+impl From<&Tensor<f64>> for FloatTensor {
+    fn from(value: &Tensor<f64>) -> Self {
+        Self::F64(value.clone())
     }
 }

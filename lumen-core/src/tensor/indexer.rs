@@ -309,8 +309,117 @@ macro_rules! s {
 #[allow(unused)]
 mod test {
     use crate::DType;
-
     use super::*;
+
+    #[test]
+    fn test_index_select_basic() {
+        // [[ 0,  1,  2,  3],
+        //  [ 4,  5,  6,  7],
+        //  [ 8,  9, 10, 11]]
+        let arr = Tensor::arange(0, 12).unwrap().reshape((3, 4)).unwrap();
+
+        let indices = Tensor::new(&[0, 2]).unwrap();
+        let selected = arr.index_select(indices, 0).unwrap();
+        
+        assert_eq!(selected.shape().dims(), &[2, 4]);
+        let data = selected.to_vec();
+        assert_eq!(data, vec![0, 1, 2, 3, 8, 9, 10, 11]);
+
+        let indices_col = Tensor::new(&[1]).unwrap();
+        let selected_col = arr.index_select(indices_col, 1).unwrap();
+
+        assert_eq!(selected_col.shape().dims(), &[3, 1]);
+        let data_col = selected_col.to_vec();
+        assert_eq!(data_col, vec![1, 5, 9]);
+    }
+
+    #[test]
+    fn test_index_select_duplicates_and_reorder() {
+        let arr = Tensor::arange(0, 5).unwrap(); // [0, 1, 2, 3, 4]
+
+        let indices = Tensor::new(&[4, 0, 0, 1]).unwrap();
+        let selected = arr.index_select(indices, 0).unwrap();
+
+        assert_eq!(selected.shape().dims(), &[4]);
+        let data = selected.to_vec();
+        assert_eq!(data, vec![4, 0, 0, 1]);
+    }
+
+    #[test]
+    fn test_index_select_out_of_bounds() {
+        let arr = Tensor::arange(0, 10).unwrap();
+        let indices = Tensor::new(&[0, 10]).unwrap(); 
+        
+        let result = arr.index_select(indices, 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_index_add_basic() {
+        let dst = Tensor::<i32>::zeros((3, 3)).unwrap();
+        let src = Tensor::<i32>::ones((2, 3)).unwrap();
+        let indices = Tensor::new(&[0, 2]).unwrap();
+        
+        let result = dst.index_add(indices, &src, 0).unwrap();
+        
+        // [[1, 1, 1],
+        //  [0, 0, 0],
+        //  [1, 1, 1]]
+        let data = result.to_vec();
+        assert_eq!(data, vec![
+            1, 1, 1, 
+            0, 0, 0, 
+            1, 1, 1
+        ]);
+    }
+
+    #[test]
+    fn test_index_add_accumulate() {
+        let dst = Tensor::<i32>::zeros((5,)).unwrap(); // [0, 0, 0, 0, 0]        
+        let src = Tensor::new(&[10, 20, 30]).unwrap();
+        let indices = Tensor::new(&[1, 1, 3]).unwrap();
+        
+        let result = dst.index_add(indices, &src, 0).unwrap();
+        
+        // dst[0] = 0
+        // dst[1] = 0 + 10 + 20 = 30
+        // dst[2] = 0
+        // dst[3] = 0 + 30 = 30
+        // dst[4] = 0
+        let data = result.to_vec();
+        assert_eq!(data, vec![0, 30, 0, 30, 0]);
+    }
+
+    #[test]
+    fn test_index_add_dim_mismatch() {
+        let dst = Tensor::<i32>::zeros((3, 3)).unwrap();        
+        let src = Tensor::<i32>::ones((2, 3)).unwrap();
+        let indices = Tensor::new(&[0, 1, 2]).unwrap();
+        
+        let result = dst.index_add(indices, &src, 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_index_add_inner_dim() {
+        // Shape: 2x3
+        // [[0, 0, 0],
+        //  [0, 0, 0]]
+        let dst = Tensor::<i32>::zeros((2, 3)).unwrap();
+        // Source: 2x1
+        let src = Tensor::new(&[
+            [5],
+            [5]
+        ]).unwrap(); // Shape 2x1
+        let indices = Tensor::new(&[1]).unwrap();        
+        let result = dst.index_add(indices, &src, 1).unwrap();
+        
+        // 预期:
+        // [[0, 5, 0],
+        //  [0, 5, 0]]
+        let data = result.to_vec();
+        assert_eq!(data, vec![0, 5, 0, 0, 5, 0]);
+    }
 
     #[test]
     fn test_index_scalar_dim_reduction() {
