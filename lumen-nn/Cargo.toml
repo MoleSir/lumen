@@ -8,5 +8,6 @@ license = { workspace = true }
 
 [dependencies]
 lumen-core = { workspace = true }
+lumen-macros = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }

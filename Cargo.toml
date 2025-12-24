@@ -2,6 +2,7 @@
 members = [
     "lumen-core", 
     "lumen-nn", 
+    "lumen-macros"
 ]
 
 [workspace.package]
@@ -15,6 +16,7 @@ license = "MIT"
 [workspace.dependencies]
 lumen-core = { path = "./lumen-core", package = "lumen-core" }
 lumen-nn = { path = "./lumen-nn", package = "lumen-nn" }
+lumen-macros = { path = "./lumen-macros", package = "lumen-macros" }
 
 approx = "0.5.1"
 derive_builder = "0.20.2"
@@ -25,3 +27,7 @@ tempfile = "3.21.0"
 thiserror = "2.0.16"
 paste = "1.0.15"
 libm = "0.2.15"
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = "2.0"
+proc-macro-crate = "3.3"
