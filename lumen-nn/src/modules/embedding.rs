@@ -1,14 +1,16 @@
 use lumen_core::{FloatDType, NumDType, Tensor};
+use lumen_macros::Module;
 use crate::init::Initialize;
-use super::{Module, ModuleVisitor};
 
 pub fn embedding<T: FloatDType>(num_embeddings: usize, embedding_dim: usize, init: &Initialize<T>) -> lumen_core::Result<Embedding<T>> {
     let embeddings = init.init((num_embeddings, embedding_dim))?;
     Ok(Embedding::new(embeddings, embedding_dim))
 }
 
+#[derive(Module)]
 pub struct Embedding<T: NumDType> {
     pub embeddings: Tensor<T>,
+    #[module(skip)]
     pub embedding_dim: usize,
 }
 
@@ -27,13 +29,5 @@ impl<T: NumDType> Embedding<T> {
         let values = self.embeddings.index_select(indexes, 0)?;
         let values = values.reshape(final_dims)?;
         Ok(values)
-    }
-}
-
-impl<T: NumDType> Module<T> for Embedding<T> {
-    fn visit<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) {
-        visitor.enter_module("embeddings");
-        visitor.visit(&self.embeddings);
-        visitor.exit_module("embeddings");
     }
 }

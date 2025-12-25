@@ -1,3 +1,5 @@
+use std::sync::RwLock;
+
 use crate::{FloatDType, IntTensor, Tensor, WithDType};
 use super::{BinaryOp, Op, ReduceOp, UnaryOp};
 
@@ -22,54 +24,58 @@ pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_index_add_op(init: &Tensor<T>, indexes: &IntTensor, src: &Tensor<T>, dim: usize) -> Self;
 }
 
-// pub struct AutogradInfo<T: FloatDType> {
-//     pub op: Option<Op<T>>,
-//     pub requires_grad: bool,
-// }
-
-pub enum AutogradInfo<T: FloatDType> {
-    Var(Option<Op<T>>),
-    Val
+pub struct AutogradInfo<T: FloatDType> {
+    pub op: Option<Op<T>>,
+    pub requires_grad: RwLock<bool>,
 }
+
+// pub enum AutogradInfo<T: FloatDType> {
+//     Var(Option<Op<T>>),
+//     Val
+// }
 
 impl<T: FloatDType> AutogradInfo<T>  {
     pub fn var() -> Self {
-        Self::Var(None)
+        Self {
+            op: None,
+            requires_grad: RwLock::new(true),
+        }
     }
 
     pub fn val() -> Self {
-        Self::Val
+        Self {
+            op: None,
+            requires_grad: RwLock::new(false),
+        }
     }
 
     pub fn var_from_op(op: Op<T>) -> Self {
-        Self::Var(Some(op))
+        Self {
+            op: Some(op),
+            requires_grad: RwLock::new(true),
+        }
     }
 
     pub fn op(&self) -> Option<&Op<T>> {
-        match self {
-            Self::Val => None,
-            Self::Var(op) => op.as_ref()
-        }
+        self.op.as_ref()
     }
 
     pub fn is_leaf(&self) -> bool {
-        match self {
-            Self::Val => false,
-            Self::Var(op) => op.is_none(),
-        }
+        self.requires_grad() && self.op.is_none()
     }
 
     pub fn requires_grad(&self) -> bool {
-        match self {
-            Self::Val => false,
-            Self::Var(_) => true,
-        }
+        self.requires_grad.read().unwrap().clone()
+    }
+
+    pub fn set_requires_grad(&self, mode: bool) {
+        *self.requires_grad.write().unwrap() = mode;
     }
 }
 
 impl<T: FloatDType> Default for AutogradInfo<T> {
     fn default() -> Self {
-        Self::Val
+        Self::val()
     }
 } 
 

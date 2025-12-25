@@ -44,6 +44,35 @@ pub trait ModuleVisitor<T: NumDType> {
 }
 
 //==================================================//
+//         Util Modules
+//==================================================//
+
+impl<T: NumDType> Module<T> for Tensor<T> {
+    #[inline]
+    fn visit<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) {
+        visitor.visit(self);
+    }
+}
+
+impl<T: NumDType, M: Module<T>> Module<T> for Option<M> {
+    fn visit<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) {
+        if let Some(module) = self {
+            module.visit(visitor);
+        }
+    }
+}
+
+impl<T: NumDType, M: Module<T>> Module<T> for Vec<M> {
+    fn visit<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) {
+        for (i, module) in self.iter().enumerate() {
+            visitor.enter_module(&i.to_string());
+            module.visit(visitor);
+            visitor.exit_module(&i.to_string());
+        }
+    }
+}
+
+//==================================================//
 //         Util Visitor
 //==================================================//
 

@@ -212,22 +212,14 @@ impl<T: FloatDType> Tensor<T> {
         }
     }
 
-    pub fn to_var(self) -> Self {
-        if self.requires_grad() {
-            self.clone()
-        } else {
-            Self(Arc::new(TensorImpl { 
-                id: TensorId::new(), 
-                storage: self.0.storage.clone(), 
-                layout: self.layout().clone(), 
-                meta: AutogradInfo::var(),
-            }))
-        }
-    }
-
     #[inline]
     pub fn requires_grad(&self) -> bool {
         self.0.meta.requires_grad()
+    }
+    
+    #[inline]
+    pub fn set_requires_grad(&self, mode: bool) {
+        self.0.meta.set_requires_grad(mode);
     }
 
     #[inline]

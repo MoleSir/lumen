@@ -23,6 +23,26 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
     match &ast.data {
         syn::Data::Struct(struct_data) => {
             for field in struct_data.fields.iter() {
+                let should_skip = field.attrs.iter().any(|attr| {
+                    if !attr.path().is_ident("module") {
+                        return false;
+                    }
+
+                    let mut found_skip = false;
+                    let _ = attr.parse_nested_meta(|meta| {
+                        if meta.path.is_ident("skip") {
+                            found_skip = true;
+                        }
+                        Ok(())
+                    });
+            
+                    found_skip
+                });
+                
+                if should_skip {
+                    continue;
+                }
+                
                 let name = field.ident.clone().unwrap();
                 let name_str = name.to_string();
                 let field_code = quote! {

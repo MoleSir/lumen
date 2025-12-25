@@ -1,7 +1,6 @@
 use lumen_core::{FloatDType, NumDType, Tensor};
+use lumen_macros::Module;
 use crate::init::Initialize;
-
-use super::{Module, ModuleVisitor};
 
 pub fn linear<T: FloatDType>(in_dim: usize, out_dim: usize, bias: bool, init: &Initialize<T>) -> lumen_core::Result<Linear<T>> {
     let weight = init.init((out_dim, in_dim))?;
@@ -11,17 +10,23 @@ pub fn linear<T: FloatDType>(in_dim: usize, out_dim: usize, bias: bool, init: &I
     } else {
         None
     };
-    Ok(Linear::new(weight, bias))
+    Ok(Linear::new(weight, bias, in_dim, out_dim))
 }
 
+#[derive(Module)]
 pub struct Linear<T: NumDType> {
     pub weight: Tensor<T>,  // (out_features, in_features)
     pub bias: Option<Tensor<T>>, // (out_features)
+
+    #[module(skip)]
+    pub in_dim: usize,
+    #[module(skip)]
+    pub out_dim: usize,
 }
 
 impl<T: NumDType> Linear<T> {
-    pub fn new(weight: Tensor<T>, bias: Option<Tensor<T>>) -> Self {
-        Self { weight, bias }
+    fn new(weight: Tensor<T>, bias: Option<Tensor<T>>, in_dim: usize, out_dim: usize) -> Self {
+        Self { weight, bias, in_dim, out_dim }
     }
     
     pub fn forward(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
@@ -34,25 +39,10 @@ impl<T: NumDType> Linear<T> {
     }
 }
 
-impl<T: NumDType> Module<T> for Linear<T> {
-    fn visit<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) {
-        visitor.enter_module("weight");
-        visitor.visit(&self.weight);
-        visitor.exit_module("weight");
-
-        if let Some(bias) = self.bias.as_ref() {
-            visitor.enter_module("bias");
-            visitor.visit(bias);
-            visitor.exit_module("bias");
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::init::Initialize;
-    use crate::modules::linear;
-    use super::Module;
+    use crate::modules::{linear, Module};
 
     #[test]
     fn test_module() {
