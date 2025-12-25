@@ -489,6 +489,8 @@ impl<T: WithDType> Tensor<T> {
     /// use lumen_core::Tensor;
     /// let arr = Tensor::new(&[[0f32, 1.], [2., 3.], [4., 5.]]).unwrap();
     /// let arr = arr.flatten_all().unwrap();
+    /// let len = arr.dims1().unwrap();
+    /// assert_eq!(len, 6);
     /// assert_eq!(arr.to_vec(), [0., 1., 2., 3., 4., 5.]);
     /// ```
     pub fn flatten_all(&self) -> Result<Self> {

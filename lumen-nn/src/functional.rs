@@ -1,4 +1,4 @@
-use lumen_core::{Dim, FloatDType, Tensor, D};
+use lumen_core::{Dim, FloatDType, IntTensor, Tensor, D};
 
 /// Applies the softmax function to the input tensor, rescaling the element so that elements on
 /// a slice of fixed index on dimension `dim` are between 0 and 1 and sum to 1.
@@ -58,3 +58,18 @@ pub fn dropout<T: FloatDType>(xs: &Tensor<T>, drop_p: f64) -> lumen_core::Result
     let mask = rand.ge(drop_p)?.to_dtype() * scale;
     Ok(xs * mask)
 }
+
+#[allow(unused)]
+pub fn null_loss<T: FloatDType>(input: &Tensor<T>, target: impl Into<IntTensor>) -> lumen_core::Result<Tensor<T>> {
+    unimplemented!("null_loss")
+}
+
+pub fn mse_loss<T: FloatDType>(input: &Tensor<T>, target: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    input.sub(target)?.sqr().mean_all()
+}
+
+#[allow(unused)]
+pub fn cross_entropy<T: FloatDType>(input: &Tensor<T>, target: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    unimplemented!("cross_entropy")
+}
+

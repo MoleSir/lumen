@@ -127,11 +127,11 @@ impl<T: NumDType> Storage<T> {
     }
 
     fn do_index_add<I: IntDType>(
-        dst_data: &[T],      // 当前的梯度张量数据 (self)
+        dst_data: &[T],      
         dst_layout: &Layout,
-        ids: &[I],           // 索引
-        ids_layout: &Layout, // 索引 layout
-        src_data: &[T],      // 传入的梯度 (grad/source)
+        ids: &[I],           
+        ids_layout: &Layout, 
+        src_data: &[T],     
         dim: usize,
     ) -> Result<Vec<T>> {
         // 1. 复制一份 dst_data 作为结果，因为我们要修改它 (或者说是累加到一个新 buffer 上)
@@ -190,6 +190,30 @@ impl<T: NumDType> Storage<T> {
         Ok(result)
     }
 }
+
+// #[allow(unused)]
+// impl<T: WithDType> Storage<T> {
+//     pub(crate) fn gather<I: IntDType>(
+//         &self,
+//         self_layout: &Layout,
+//         ids: &Storage<I>,
+//         ids_layout: &Layout,
+//         dim: usize,
+//     ) -> Result<Self> {
+//         let new_data = Self::do_gather(self.data(), self_layout, ids.data(), ids_layout, dim)?;
+//         Ok(Storage::new(new_data))
+//     }
+
+//     fn do_gather<I: IntDType>(
+//         src: &[T],      
+//         src_layout: &Layout,
+//         ids: &[I],           
+//         ids_layout: &Layout,
+//         dim: usize,
+//     ) -> Result<Vec<T>> {    
+//         unimplemented!()
+//     }
+// }
 
 impl<T: WithDType> Storage<T> {
     pub fn new<D: Into<Vec<T>>>(data: D) -> Self {
