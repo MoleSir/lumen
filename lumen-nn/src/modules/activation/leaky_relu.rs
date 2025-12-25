@@ -10,8 +10,8 @@ impl<T: FloatDType> LeakyRelu<T> {
         Self { negative_slope }
     }
 
-    pub fn forward(&self, input: &Tensor<T>) -> Tensor<T> {
-        input.leaky_relu(self.negative_slope)
+    pub fn forward(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+        Ok(input.leaky_relu(self.negative_slope))
     }
 }
 

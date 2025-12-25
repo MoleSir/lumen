@@ -9,8 +9,8 @@ impl Sigmoid {
         Self {}
     }
 
-    pub fn forward<T: FloatDType>(&self, input: Tensor<T>) -> Tensor<T> {
-        input.sigmoid()
+    pub fn forward<T: FloatDType>(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+        Ok(input.sigmoid())
     }
 }
 
