@@ -24,6 +24,12 @@ pub trait Module<T: NumDType> {
         self.visit(&mut visitor);
         visitor.map
     }
+
+    fn params(&self) -> Vec<Tensor<T>> {
+        let mut visitor = ParamsVisitor::new();
+        self.visit(&mut visitor);
+        visitor.params
+    }
 }
 
 pub trait ModuleVisitor<T: NumDType> {
@@ -36,6 +42,10 @@ pub trait ModuleVisitor<T: NumDType> {
     #[allow(unused_variables)]
     fn exit_module(&mut self, name: &str) {}
 }
+
+//==================================================//
+//         Util Visitor
+//==================================================//
 
 struct ParamCountVisitor {
     count: usize,
@@ -77,4 +87,20 @@ impl<T: NumDType> ModuleVisitor<T> for NamedParamsCountVisitor<T> {
         self.path.pop();
     }
 
+}
+
+struct ParamsVisitor<T: NumDType> {
+    params: Vec<Tensor<T>>,
+}
+
+impl<T: NumDType> ParamsVisitor<T> {
+    fn new() -> Self {
+        Self { params: vec![] }
+    }
+}
+
+impl<T: NumDType> ModuleVisitor<T> for ParamsVisitor<T> {
+    fn visit(&mut self, param: &Tensor<T>) {
+        self.params.push(param.clone());
+    }
 }

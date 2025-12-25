@@ -204,7 +204,7 @@ impl<T: WithDType> Tensor<T> {
             };
             Ok(Tensor(Arc::new(tensor_)))
         } else {
-            let storage = self.storage().copy(self.layout());
+            let storage = self.storage_read().copy(self.layout());
             Ok(Self::build(storage, shape, meta))
         }
     }

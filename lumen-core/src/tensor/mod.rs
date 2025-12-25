@@ -28,7 +28,6 @@ pub struct TensorImpl<T: WithDType> {
     pub(crate) id: TensorId,
     pub(crate) storage: StorageArc<T>,
     pub(crate) layout: Layout,
-
     pub(crate) meta: T::AutogradMeta,
 }
 
@@ -121,10 +120,14 @@ impl<T: WithDType> Tensor<T> {
         Ok(self.dims()[dim])
     }
 
-    pub fn storage(&self) -> std::sync::RwLockReadGuard<'_, Storage<T>> {
+    pub fn storage_read(&self) -> std::sync::RwLockReadGuard<'_, Storage<T>> {
         self.0.storage.0.read().unwrap()
     }
 
+    pub fn storage_write(&self) -> std::sync::RwLockWriteGuard<'_, Storage<T>> {
+        self.0.storage.0.write().unwrap()
+    }
+    
     pub fn element_count(&self) -> usize {
         self.shape().element_count()
     }

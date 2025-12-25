@@ -11,7 +11,7 @@ impl<T: WithDType> Tensor<T> {
     }
 
     pub fn copy(&self) -> Self {
-        let storage = self.storage().copy(self.layout());
+        let storage = self.storage_read().copy(self.layout());
         let meta = T::AutogradMeta::on_copy_op(self);
         Self::build(storage, self.shape(), meta)
     }
@@ -76,7 +76,7 @@ impl<From: WithDType> Tensor<From> {
     where
         From: DTypeConvert<To>,
     {
-        let storage = self.storage().copy_map(self.layout(), From::convert);
+        let storage = self.storage_read().copy_map(self.layout(), From::convert);
         Tensor::<To>::from_storage(storage, self.shape())
     }
 }

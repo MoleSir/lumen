@@ -27,27 +27,27 @@ impl<T: WithDType> Tensor<T> {
         dims[dim] = indexes_len;
         let meta = T::AutogradMeta::on_index_select_op(self, &indexes, dim);
         let storage = match indexes {
-            IntTensor::I32(indexes) => self.storage().index_select(
+            IntTensor::I32(indexes) => self.storage_read().index_select(
                 self.layout(),
-                &indexes.storage(),
+                &indexes.storage_read(),
                 indexes.layout(),
                 dim,
             )?,
-            IntTensor::U32(indexes) => self.storage().index_select(
+            IntTensor::U32(indexes) => self.storage_read().index_select(
                 self.layout(),
-                &indexes.storage(),
+                &indexes.storage_read(),
                 indexes.layout(),
                 dim,
             )?,
-            IntTensor::U8(indexes) => self.storage().index_select(
+            IntTensor::U8(indexes) => self.storage_read().index_select(
                 self.layout(),
-                &indexes.storage(),
+                &indexes.storage_read(),
                 indexes.layout(),
                 dim,
             )?,
-            IntTensor::USize(indexes) => self.storage().index_select(
+            IntTensor::USize(indexes) => self.storage_read().index_select(
                 self.layout(),
-                &indexes.storage(),
+                &indexes.storage_read(),
                 indexes.layout(),
                 dim,
             )?,
@@ -85,35 +85,35 @@ impl<T: NumDType> Tensor<T> {
         }
 
         let storage = match &indexes {
-            IntTensor::I32(idx) => self.storage().index_add(
+            IntTensor::I32(idx) => self.storage_read().index_add(
                 self.layout(),
-                &idx.storage(),
+                &idx.storage_read(),
                 idx.layout(),
-                &source.storage(),
+                &source.storage_read(),
                 source.layout(),
                 dim,
             )?,
-            IntTensor::U32(idx) => self.storage().index_add(
+            IntTensor::U32(idx) => self.storage_read().index_add(
                 self.layout(),
-                &idx.storage(),
+                &idx.storage_read(),
                 idx.layout(),
-                &source.storage(),
+                &source.storage_read(),
                 source.layout(),
                 dim,
             )?,
-            IntTensor::U8(idx) => self.storage().index_add(
+            IntTensor::U8(idx) => self.storage_read().index_add(
                 self.layout(),
-                &idx.storage(),
+                &idx.storage_read(),
                 idx.layout(),
-                &source.storage(),
+                &source.storage_read(),
                 source.layout(),
                 dim,
             )?,
-            IntTensor::USize(idx) => self.storage().index_add(
+            IntTensor::USize(idx) => self.storage_read().index_add(
                 self.layout(),
-                &idx.storage(),
+                &idx.storage_read(),
                 idx.layout(),
-                &source.storage(),
+                &source.storage_read(),
                 source.layout(),
                 dim,
             )?,

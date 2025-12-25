@@ -53,16 +53,6 @@ impl<T: WithDType> Tensor<T> {
         Tensor(Arc::new(tensor_))
     }
 
-    pub(crate) fn from_op<S: Into<Shape>>(storage: Storage<T>, shape: S, meta: T::AutogradMeta) -> Self {
-        let tensor_ = TensorImpl {
-            id: TensorId::new(),
-            storage: StorageArc::new(storage),
-            layout: Layout::contiguous(shape),
-            meta,
-        };
-        Tensor(Arc::new(tensor_))
-    }
-
     pub(crate) fn build<S: Into<Shape>>(storage: Storage<T>, shape: S, meta: T::AutogradMeta) -> Self {
         let tensor_ = TensorImpl {
             id: TensorId::new(),

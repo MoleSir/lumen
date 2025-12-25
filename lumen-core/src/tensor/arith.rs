@@ -29,7 +29,7 @@ impl<T: WithDType> Tensor<T> {
             F: FnMut(T, T) -> U 
     {
         let shape = lhs.shape();
-        let lhs_storage = lhs.storage();
+        let lhs_storage = lhs.storage_read();
         let lhs_layout = lhs.layout();
 
         let lhs = lhs_storage.data();
@@ -48,7 +48,7 @@ impl<T: WithDType> Tensor<T> {
             F: FnMut(T, T) -> U 
     {
         let shape = rhs.shape();
-        let rhs_storage = rhs.storage();
+        let rhs_storage = rhs.storage_read();
         let rhs_layout = rhs.layout();
 
         let rhs = rhs_storage.data();
@@ -67,8 +67,8 @@ impl<T: WithDType> Tensor<T> {
             F: FnMut(T, T) -> U 
     {
         let shape = Tensor::<T>::same_shape_binary_op(lhs, rhs, op_name)?;
-        let lhs_storage = lhs.storage();
-        let rhs_storage = rhs.storage();
+        let lhs_storage = lhs.storage_read();
+        let rhs_storage = rhs.storage_read();
         let lhs_layout = lhs.layout();
         let rhs_layout = rhs.layout();
 
@@ -110,19 +110,19 @@ macro_rules! binary_op_impl {
             pub fn [< $fn_name _tensor >](&self, rhs: &Self) -> Result<Self> {
                 let (storage, shape) = Self::compute_binary_op(self, rhs, T::$fn_name, stringify!([< $fn_name _tensor >]))?;
                 let meta = T::AutogradMeta::on_binary_op(self, rhs, BinaryOp::  [< $fn_name:camel >]);
-                Ok(Self::from_op(storage, shape, meta))
+                Ok(Self::build(storage, shape, meta))
             }
         
             pub fn [< $fn_name _scalar >](&self, rhs: T) -> Result<Self> {
                 let (storage, shape) = Self::compute_binary_scalar_rhs_op(self, rhs, T::$fn_name, stringify!([< $fn_name _scalar >]))?;
                 let meta = T::AutogradMeta::on_binary_scalar_rhs_op(self, rhs, BinaryOp::  [< $fn_name:camel >]);
-                Ok(Self::from_op(storage, shape, meta))
+                Ok(Self::build(storage, shape, meta))
             } 
         
             pub fn [< scalar_ $fn_name >](lhs: T, rhs: &Tensor<T>) -> Result<Tensor<T>> {
                 let (storage, shape) = Self::compute_scalar_binary_lhs_op(lhs, rhs, T::$fn_name, stringify!([< scalar_ $fn_name >]))?;
                 let meta = T::AutogradMeta::on_binary_scalar_lhs_op(lhs, rhs, BinaryOp::  [< $fn_name:camel >]);
-                Ok(Self::from_op(storage, shape, meta))
+                Ok(Self::build(storage, shape, meta))
             }
 
             pub fn $fn_name(&self, rhs: impl Into<TensorOrScalar<T>>) -> Result<Self> {
@@ -146,6 +146,68 @@ impl<T: NumDType> Tensor<T> {
     pub fn clamp(&self, min: T, max: T) -> Result<Self> {
         self.maximum(min)?.minimum(max)
     }
+}
+
+impl<T: NumDType> Tensor<T> {
+    fn binary_op_inplace<F>(lhs: &Tensor<T>, rhs: &Tensor<T>, mut f: F, op_name: &'static str) -> Result<()> 
+    where 
+        F: FnMut(T, T) -> T
+    {
+        let _ = Tensor::<T>::same_shape_binary_op(lhs, rhs, op_name)?;
+
+        let mut lhs_storage = lhs.storage_write();
+        let rhs_storage = rhs.storage_read();
+        let lhs_layout = lhs.layout();
+        let rhs_layout = rhs.layout();
+
+        assert_eq!(lhs_layout.dims(), rhs_layout.dims(), "lhs dims != rhs dim2");
+
+        let lhs = lhs_storage.data_mut();
+        let rhs = rhs_storage.data();
+        
+        lhs_layout.storage_indices().zip(rhs_layout.storage_indices())
+            .for_each(|(lhs_index, rhs_index)| lhs[lhs_index] = f(lhs[lhs_index], rhs[rhs_index]));
+        
+        Ok(())
+    }
+
+    fn binary_op_scalar_inplace<F>(lhs: &Tensor<T>, rhs: T, mut f: F, _op_name: &'static str) -> Result<()> 
+    where 
+        F: FnMut(T, T) -> T
+    {
+        let mut lhs_storage = lhs.storage_write();
+        let lhs_layout = lhs.layout();
+
+
+        let lhs = lhs_storage.data_mut();
+        
+        lhs_layout.storage_indices()
+            .for_each(|lhs_index| lhs[lhs_index] = f(lhs[lhs_index], rhs));
+        
+        Ok(())
+    }
+}
+
+macro_rules! binary_inplace_op_impl {
+    ($fn_name:ident) => {
+        paste! {
+            pub fn [< $fn_name _ >](&self, rhs: impl Into<TensorOrScalar<T>>) -> Result<()> {
+                let rhs = rhs.into();
+                match rhs {
+                    TensorOrScalar::Scalar(rhs) => Self::binary_op_scalar_inplace(self, rhs, T::$fn_name, stringify!([< $fn_name _scalar_ >])),
+                    TensorOrScalar::Tensor(rhs) => Self::binary_op_inplace(self, &rhs, T::$fn_name, stringify!([< $fn_name _scalar >])),
+                }
+            }
+        }
+    };
+}
+
+#[allow(unused)]
+impl<T: NumDType> Tensor<T> {
+    binary_inplace_op_impl!(add);
+    binary_inplace_op_impl!(sub);
+    binary_inplace_op_impl!(mul);
+    binary_inplace_op_impl!(div);
 }
 
 impl<T: NumDType> Tensor<T> {
@@ -240,7 +302,7 @@ impl<T: WithDType> Tensor<T> {
         U: WithDType,
         F: FnMut(T) -> U
     {
-        let storage = self.storage();
+        let storage = self.storage_read();
         let vec = storage.data();
         let mut output = vec![];
         for index in self.layout().storage_indices() {
@@ -289,7 +351,7 @@ macro_rules! float_unary_op_impl {
                 }
                 let storage = self.compute_unary_op(F::$fn_name);
                 let meta = F::AutogradMeta::on_unray_op(self, UnaryOp:: [< $fn_name:camel >]);
-                Self::from_op(storage, self.shape(), meta)
+                Self::build(storage, self.shape(), meta)
             }
         }
     };
@@ -323,7 +385,7 @@ impl<T: NumDType + Neg<Output = T>> Tensor<T> {
         }
         let storage = self.compute_unary_op(Neg::neg);
         let meta = T::AutogradMeta::on_unray_op(self, UnaryOp::Neg);
-        Self::from_op(storage, self.shape(), meta)
+        Self::build(storage, self.shape(), meta)
     }
 }
 
@@ -359,7 +421,7 @@ impl<F: FloatDType> Tensor<F> {
         let f = |v: F| F::leaky_relu(v, negative_slope);
         let storage = self.compute_unary_op(f);
         let meta = F::AutogradMeta::on_unray_op(self, UnaryOp::LeakyRelu(negative_slope));
-        Self::from_op(storage, self.shape(), meta)
+        Self::build(storage, self.shape(), meta)
     }
 }
 
@@ -371,7 +433,7 @@ impl<F: FloatDType> Tensor<F> {
         let f = |v: F| v.powf(e); 
         let storage = self.compute_unary_op(f);
         let meta = F::AutogradMeta::on_pow_op(self, e);
-        Self::from_op(storage, self.shape(), meta)
+        Self::build(storage, self.shape(), meta)
     }
 }
 
