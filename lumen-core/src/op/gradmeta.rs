@@ -22,6 +22,8 @@ pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_ifelse_op(mask: &Tensor<bool>, tv: Option<&Tensor<T>>, fv: Option<&Tensor<T>>) -> Self;
     fn on_index_select_op(t: &Tensor<T>, indexes: &IntTensor, dim: usize) -> Self;
     fn on_index_add_op(init: &Tensor<T>, indexes: &IntTensor, src: &Tensor<T>, dim: usize) -> Self;
+    fn on_scatter_add_op(init: &Tensor<T>, indexes: &IntTensor, src: &Tensor<T>, dim: usize) -> Self;
+    fn on_gather_op(src: &Tensor<T>, indexes: &IntTensor, dim: usize) -> Self;
 }
 
 pub struct AutogradInfo<T: FloatDType> {
@@ -246,6 +248,22 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
             Self::val()
         }
     }
+
+    fn on_scatter_add_op(init: &Tensor<T>, indexes: &IntTensor, src: &Tensor<T>, dim: usize) -> Self {
+        if init.requires_grad() || src.requires_grad() {
+            Self::var_from_op(Op::IndexAdd(init.clone(), indexes.clone(), src.clone(), dim))
+        } else {
+            Self::val()
+        }
+    }
+
+    fn on_gather_op(src: &Tensor<T>, indexes: &IntTensor, dim: usize) -> Self {
+        if src.requires_grad() {
+            Self::var_from_op(Op::Gather(src.clone(), indexes.clone(), dim))
+        } else {
+            Self::val()
+        }
+    }
 }
 
 #[derive(Default)]
@@ -340,6 +358,16 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
 
     #[inline]
     fn on_index_add_op(init: &Tensor<T>, indexes: &IntTensor, src: &Tensor<T>, dim: usize) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_scatter_add_op(init: &Tensor<T>, indexes: &IntTensor, src: &Tensor<T>, dim: usize) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_gather_op(src: &Tensor<T>, indexes: &IntTensor, dim: usize) -> Self {
         NoAutograd
     }
 }

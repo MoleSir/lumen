@@ -20,6 +20,8 @@ pub enum Op<T: FloatDType> {
     Slice(Tensor<T>, usize, usize, usize, usize),
     IndexSelect(Tensor<T>, IntTensor, usize),
     IndexAdd(Tensor<T>, IntTensor, Tensor<T>, usize),
+    ScatterAdd(Tensor<T>, IntTensor, Tensor<T>, usize),
+    Gather(Tensor<T>, IntTensor, usize),
     Reshape(Tensor<T>),
     Transpose(Tensor<T>, usize, usize),
     Permute(Tensor<T>, Vec<usize>),

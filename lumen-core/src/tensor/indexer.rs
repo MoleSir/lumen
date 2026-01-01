@@ -55,6 +55,53 @@ impl<T: WithDType> Tensor<T> {
 
         Ok(Self::build(storage, dims, meta))
     }
+
+    /// Gather values across the target dimension.
+    ///
+    /// # Arguments
+    ///
+    /// * `self` - The input tensor.
+    /// * `indexes` - The indices of elements to gather, this should have same number of dimensions as `self`
+    ///   and indexes.dims()[d] <= self.dims()[d] for all dimensions d != dim
+    /// * `dim` - the target dimension.
+    ///
+    /// The resulting tensor has the same shape as `indexes` and use values from `self` indexed on
+    /// dimension `dim` by the values in `indexes`.
+    pub fn gather<D: Dim>(&self, indexes: impl Into<IntTensor>, dim: D) -> Result<Self> {
+        let indexes = indexes.into();
+        let dim = dim.to_index(self.shape(), "gather")?;
+        let self_dims = self.dims();
+        let indexes_dims = indexes.dims();
+        let mismatch = if indexes_dims.len() != self_dims.len() {
+            true
+        } else {
+            let mut mismatch = false;
+            for (i, (&d1, &d2)) in self_dims.iter().zip(indexes_dims.iter()).enumerate() {
+                if i != dim && d1 < d2 {
+                    mismatch = true;
+                    break;
+                }
+            }
+            mismatch
+        };
+        if mismatch {
+            Err(Error::ShapeMismatchBinaryOp {
+                op: "gather",
+                lhs: self.shape().clone(),
+                rhs: indexes.shape().clone(),
+            })?
+        }
+
+        let storage = match &indexes {
+            IntTensor::I32(idx) => self.storage_read().gather(self.layout(), &idx.storage_read(), idx.layout(), dim)?,
+            IntTensor::U32(idx) => self.storage_read().gather(self.layout(), &idx.storage_read(), idx.layout(), dim)?,
+            IntTensor::U8(idx) => self.storage_read().gather(self.layout(), &idx.storage_read(), idx.layout(), dim)?,
+            IntTensor::USize(idx) => self.storage_read().gather(self.layout(), &idx.storage_read(), idx.layout(), dim)?,
+        };
+
+        let meta = T::AutogradMeta::on_gather_op(self, &indexes, dim);
+        Ok(Self::build(storage, indexes.shape(), meta))
+    }
 }
 
 impl<T: NumDType> Tensor<T> {
@@ -72,7 +119,6 @@ impl<T: NumDType> Tensor<T> {
              }.into());
         }
 
-        // 检查除了 dim 以外的维度是否一致，以及 dim 维度是否匹配索引长度
         let indexes_len = indexes.shape().dims1()?;
         for (i, (&d_self, &d_src)) in self_dims.iter().zip(source_dims.iter()).enumerate() {
             if i == dim {
@@ -122,6 +168,82 @@ impl<T: NumDType> Tensor<T> {
         let meta = T::AutogradMeta::on_index_add_op(self, &indexes, source, dim);
         Ok(Self::build(storage, self_dims.to_vec(), meta))
     } 
+
+    pub fn scatter_add<D: Dim>(&self, indexes: impl Into<IntTensor>, source: &Self, dim: D) -> Result<Self> {
+        let indexes = indexes.into();
+        let dim = dim.to_index(self.shape(), "scatter-add")?;
+        self.scatter_checks(&indexes, source, dim)?;
+
+        let storage = match &indexes {
+            IntTensor::I32(idx) => self.storage_read().scatter_add(
+                self.layout(),
+                &idx.storage_read(),
+                idx.layout(),
+                &source.storage_read(),
+                source.layout(),
+                dim,
+            )?,
+            IntTensor::U32(idx) => self.storage_read().scatter_add(
+                self.layout(),
+                &idx.storage_read(),
+                idx.layout(),
+                &source.storage_read(),
+                source.layout(),
+                dim,
+            )?,
+            IntTensor::U8(idx) => self.storage_read().scatter_add(
+                self.layout(),
+                &idx.storage_read(),
+                idx.layout(),
+                &source.storage_read(),
+                source.layout(),
+                dim,
+            )?,
+            IntTensor::USize(idx) => self.storage_read().scatter_add(
+                self.layout(),
+                &idx.storage_read(),
+                idx.layout(),
+                &source.storage_read(),
+                source.layout(),
+                dim,
+            )?,
+        };
+
+        let meta = T::AutogradMeta::on_scatter_add_op(self, &indexes, source, dim);
+        Ok(Self::build(storage, self.shape(), meta))
+    }
+
+    fn scatter_checks(&self, indexes: &IntTensor, source: &Self, dim: usize) -> Result<()> {
+        let source_dims = source.dims();
+        let self_dims = self.dims();
+        let mismatch = if source_dims.len() != self_dims.len() {
+            true
+        } else {
+            let mut mismatch = false;
+            for (i, (&d1, &d2)) in self_dims.iter().zip(source_dims.iter()).enumerate() {
+                if i != dim && d1 != d2 {
+                    mismatch = true;
+                    break;
+                }
+            }
+            mismatch
+        };
+        if mismatch {
+            Err(Error::ShapeMismatchBinaryOp {
+                op: "scatter (self, src)",
+                lhs: self.shape().clone(),
+                rhs: source.shape().clone(),
+            })?
+        }
+        if indexes.dims() != source.dims() {
+            Err(Error::ShapeMismatchBinaryOp {
+                op: "scatter (indexes, src)",
+                lhs: indexes.shape().clone(),
+                rhs: source.shape().clone(),
+            })?
+        }
+        Ok(())
+    }
 }
 
 impl<T: WithDType> Tensor<T> {
@@ -419,6 +541,185 @@ mod test {
         //  [0, 5, 0]]
         let data = result.to_vec();
         assert_eq!(data, vec![0, 5, 0, 0, 5, 0]);
+    }
+
+
+    #[test]
+    fn test_gather_dim_1() {
+        // Source: 2x2
+        // [[1, 2],
+        //  [3, 4]]
+        let src = Tensor::new(&[
+            [1, 2],
+            [3, 4]
+        ]).unwrap();
+        
+        // 我们想从第 1 维 (列) 取值。
+        // indexes 形状必须与输出一致。
+        // [[0, 0],  -> 取 src[0,0], src[0,0]
+        //  [1, 0]]  -> 取 src[1,1], src[1,0]
+        let indices = Tensor::new(&[
+            [0, 0],
+            [1, 0]
+        ]).unwrap();
+
+        let result = src.gather(&indices, 1).unwrap();
+
+        // 预期结果:
+        // [[1, 1],
+        //  [4, 3]]
+        let data = result.to_vec();
+        assert_eq!(data, vec![1, 1, 4, 3]);
+    }
+
+    #[test]
+    fn test_gather_dim_0() {
+        // Source: 3x2
+        // [[10, 20],
+        //  [30, 40],
+        //  [50, 60]]
+        let src = Tensor::new(&[
+            [10, 20],
+            [30, 40],
+            [50, 60]
+        ]).unwrap();
+
+        // 沿维度 0 (行) gather
+        // [[1, 2], -> src[1,0]=30, src[2,1]=60
+        //  [0, 1]] -> src[0,0]=10, src[1,1]=40
+        let indices = Tensor::new(&[
+            [1, 2],
+            [0, 1]
+        ]).unwrap();
+
+        let result = src.gather(&indices, 0).unwrap();
+
+        // 预期结果:
+        // [[30, 60],
+        //  [10, 40]]
+        let data = result.to_vec();
+        assert_eq!(data, vec![30, 60, 10, 40]);
+    }
+
+    #[test]
+    fn test_gather_3d() {
+        // Shape: 2x2x2
+        // Block 0: [[0, 1], [2, 3]]
+        // Block 1: [[4, 5], [6, 7]]
+        let src = Tensor::new(&[0, 1, 2, 3, 4, 5, 6, 7]).unwrap().reshape((2, 2, 2)).unwrap();
+
+        // Gather dim 1 (中间维度)
+        // 我们保持 dim 0 和 dim 2 不变，只改变 dim 1 的索引
+        // index shape: 2x1x2 (我们在 dim 1 上做降维提取)
+        let indices = Tensor::<u32>::zeros((2, 1, 2)).unwrap(); // 全是 0
+
+        // 逻辑:
+        // out[0, 0, 0] = src[0, idx[0,0,0], 0] = src[0,0,0] = 0
+        // out[0, 0, 1] = src[0, idx[0,0,1], 1] = src[0,0,1] = 1
+        // out[1, 0, 0] = src[1, idx[1,0,0], 0] = src[1,0,0] = 4
+        // out[1, 0, 1] = src[1, idx[1,0,1], 1] = src[1,0,1] = 5
+        
+        let result = src.gather(&indices, 1).unwrap();
+        
+        assert_eq!(result.dims(), &[2, 1, 2]);
+        let data = result.to_vec();
+        assert_eq!(data, vec![0, 1, 4, 5]);
+    }
+
+
+    #[test]
+    fn test_scatter_add_1d_accumulate() {
+        // 类似于直方图统计
+        let dst = Tensor::<i32>::zeros((5,)).unwrap();
+        
+        // Source 和 Indices 形状一致
+        let src = Tensor::new(&[1, 1, 1, 1]).unwrap();
+        let indices = Tensor::new(&[0, 2, 0, 4]).unwrap();
+
+        // scatter_add(dim=0)
+        // dst[0] += 1
+        // dst[2] += 1
+        // dst[0] += 1 (累加)
+        // dst[4] += 1
+        let result = dst.scatter_add(indices, &src, 0).unwrap();
+
+        // 预期: [2, 0, 1, 0, 1]
+        let data = result.to_vec();
+        assert_eq!(data, vec![2, 0, 1, 0, 1]);
+    }
+
+    #[test]
+    fn test_scatter_add_2d_dim1() {
+        // Dst: 2x3 zeros
+        let dst = Tensor::<i32>::zeros((2, 3)).unwrap();
+        
+        // Src: 2x2
+        // [[10, 20],
+        //  [30, 40]]
+        let src = Tensor::new(&[
+            [10, 20],
+            [30, 40]
+        ]).unwrap();
+
+        // Indices: 2x2
+        // [[0, 2], -> 将 10 加到 dst[0,0], 20 加到 dst[0,2]
+        //  [1, 1]] -> 将 30 加到 dst[1,1], 40 加到 dst[1,1] (累加)
+        let indices = Tensor::new(&[
+            [0, 2],
+            [1, 1]
+        ]).unwrap();
+
+        let result = dst.scatter_add(indices, &src, 1).unwrap();
+
+        // 预期:
+        // Row 0: [10, 0, 20]
+        // Row 1: [0, 70, 0] (30+40=70)
+        let data = result.to_vec();
+        assert_eq!(data, vec![10, 0, 20, 0, 70, 0]);
+    }
+
+    #[test]
+    fn test_scatter_add_3d() {
+        // Dst: 2x2x2 zeros
+        let dst = Tensor::<i32>::zeros((2, 2, 2)).unwrap();
+        
+        // Src: 2x1x2 (dim 1 is smaller)
+        let src = Tensor::ones((2, 1, 2)).unwrap(); // All ones
+        
+        // Indices: 2x1x2
+        // Block 0: [[1, 0]] -> dst[0, 1, 0] += 1, dst[0, 0, 1] += 1
+        // Block 1: [[0, 0]] -> dst[1, 0, 0] += 1, dst[1, 0, 1] += 1
+        let indices = Tensor::new(&[1, 0, 0, 0]).unwrap().reshape((2, 1, 2)).unwrap();
+
+        let result = dst.scatter_add(indices, &src, 1).unwrap();
+
+        // Check specifics:
+        // dst[0, 1, 0] should be 1
+        // dst[0, 0, 1] should be 1
+        // dst[1, 0, 0] should be 1
+        // dst[1, 0, 1] should be 1
+        // Others 0
+        let res_vec = result.to_vec();
+        // Flattened index check:
+        // 2x2x2 -> stride [4, 2, 1]
+        // [0,1,0] -> 2 -> val 1
+        // [0,0,1] -> 1 -> val 1
+        // [1,0,0] -> 4 -> val 1
+        // [1,0,1] -> 5 -> val 1
+        
+        // Vec: [0, 1, 1, 0, 1, 1, 0, 0]
+        assert_eq!(res_vec, vec![0, 1, 1, 0, 1, 1, 0, 0]);
+    }
+
+    #[test]
+    fn test_scatter_add_shape_mismatch() {
+        let dst = Tensor::<i32>::zeros((2, 2)).unwrap();
+        let src = Tensor::<i32>::ones((2, 2)).unwrap();
+        // Indices shape mismatch with Src
+        let indices = Tensor::new(&[0]).unwrap(); 
+
+        let result = dst.scatter_add(indices, &src, 0);
+        assert!(result.is_err());
     }
 
     #[test]

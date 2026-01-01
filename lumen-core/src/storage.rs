@@ -191,29 +191,202 @@ impl<T: NumDType> Storage<T> {
     }
 }
 
-// #[allow(unused)]
-// impl<T: WithDType> Storage<T> {
-//     pub(crate) fn gather<I: IntDType>(
-//         &self,
-//         self_layout: &Layout,
-//         ids: &Storage<I>,
-//         ids_layout: &Layout,
-//         dim: usize,
-//     ) -> Result<Self> {
-//         let new_data = Self::do_gather(self.data(), self_layout, ids.data(), ids_layout, dim)?;
-//         Ok(Storage::new(new_data))
-//     }
+impl<T: WithDType> Storage<T> {
+    pub(crate) fn gather<I: IntDType>(
+        &self,
+        self_layout: &Layout,
+        ids: &Storage<I>,
+        ids_layout: &Layout,
+        dim: usize,
+    ) -> Result<Self> {
+        let new_data = Self::do_gather(self.data(), self_layout, ids.data(), ids_layout, dim)?;
+        Ok(Storage::new(new_data))
+    }
 
-//     fn do_gather<I: IntDType>(
-//         src: &[T],      
-//         src_layout: &Layout,
-//         ids: &[I],           
-//         ids_layout: &Layout,
-//         dim: usize,
-//     ) -> Result<Vec<T>> {    
-//         unimplemented!()
-//     }
-// }
+    fn do_gather<I: IntDType>(
+        src: &[T],
+        src_layout: &Layout,
+        ids: &[I],
+        ids_layout: &Layout,
+        dim: usize,
+    ) -> Result<Vec<T>> {
+        // 1. 检查连续性：为了简化多维索引的偏移量计算，强制要求 src 和 ids 均连续。
+        // 如果需要支持非连续，需要根据 stride 手动计算物理偏移量，会显著增加复杂性。
+        if !src_layout.is_contiguous() || !ids_layout.is_contiguous() {
+            return Err(Error::RequiresContiguous { op: "gather" }.into());
+        }
+
+        let src_dims = src_layout.dims();
+        let ids_dims = ids_layout.dims();
+
+        // 2. 检查维度一致性 (Rank check)
+        if src_dims.len() != ids_dims.len() {
+             return Err(Error::ShapeMismatchBinaryOp { 
+                lhs: src_layout.shape().clone(), 
+                rhs: ids_layout.shape().clone(),
+                op: "gather" 
+             }.into());
+        }
+
+        // 3. 准备结果 Buffer
+        let dst_len = ids_layout.shape.element_count();
+        // 类似于 index_select，预填充默认值 (如 0 或 false)，方便处理 Padding Mask
+        let mut dst = vec![T::false_value(); dst_len];
+
+        // 4. 计算三段式维度的长度：[Left, Dim, Right]
+        // Left: dim 左边所有维度的乘积
+        let left_len: usize = src_dims[..dim].iter().product();
+        // Right: dim 右边所有维度的乘积
+        let right_len: usize = src_dims[dim + 1..].iter().product();
+        
+        let src_dim_size = src_dims[dim];
+        let ids_dim_size = ids_dims[dim];
+
+        // 5. 执行 Gather 操作
+        // 逻辑视角：src 是 [left, src_dim, right], ids 是 [left, ids_dim, right]
+        // 我们遍历 ids (即遍历 dst) 的所有位置
+        
+        for i in 0..left_len {
+            // 计算 src 在当前 Left 块的起始偏移
+            let src_block_start = i * src_dim_size * right_len;
+            let dst_block_start = i * ids_dim_size * right_len;
+
+            for j in 0..ids_dim_size {
+                for k in 0..right_len {
+                    // 计算 ids 和 dst 的线性索引 (因为是连续内存)
+                    // dst_idx = (i * ids_dim * right) + (j * right) + k
+                    let dst_idx = dst_block_start + j * right_len + k;
+                    
+                    let index_val = ids[dst_idx];
+
+                    // 处理 Mask (Padding Index)
+                    if index_val == I::max_value() {
+                        dst[dst_idx] = T::false_value();
+                        continue;
+                    }
+
+                    let idx = index_val.to_usize();
+                    if idx >= src_dim_size {
+                        return Err(Error::InvalidIndex {
+                            index: idx,
+                            size: src_dim_size,
+                            op: "gather",
+                        }.into());
+                    }
+
+                    // 计算 src 的线性索引
+                    // src 取值的逻辑：保持 Left(i) 和 Right(k) 不变，Dim 变为 ids 中读出的 idx
+                    let src_idx = src_block_start + idx * right_len + k;
+
+                    dst[dst_idx] = src[src_idx];
+                }
+            }
+        }
+
+        Ok(dst)
+    }
+}
+
+impl<T: NumDType> Storage<T> {
+    pub(crate) fn scatter_add<I: IntDType>(
+        &self,
+        self_layout: &Layout,
+        ids: &Storage<I>,
+        ids_layout: &Layout,
+        source: &Storage<T>,
+        source_layout: &Layout,
+        dim: usize,
+    ) -> Result<Self> {
+        if !self_layout.is_contiguous() || !ids_layout.is_contiguous() || !source_layout.is_contiguous() {
+            return Err(Error::RequiresContiguous { op: "scatter-add" }.into());
+        }
+
+        // 这里的 self 是 destination (arg_grad)，source 是 gradient
+        let new_data = Self::do_scatter_add(
+            self.data(),
+            self_layout,
+            ids.data(),
+            ids_layout,
+            source.data(),
+            dim
+        )?;
+        
+        Ok(Storage::new(new_data))
+    }
+
+    fn do_scatter_add<I: IntDType>(
+        dst: &[T],          // arg_grad 的当前数据 (通常是 zero buffer)
+        dst_layout: &Layout,
+        ids: &[I],          // 索引
+        ids_layout: &Layout,
+        src: &[T],          // incoming grad
+        dim: usize,
+    ) -> Result<Vec<T>> {
+        // 1. 复制 dst 数据以进行累加 (inplace 模拟)
+        let mut result = dst.to_vec();
+
+        let dst_dims = dst_layout.dims();
+        let src_dims = ids_layout.dims(); // src 和 ids 的形状应该一致
+
+        // 检查维度一致性
+        if dst_dims.len() != src_dims.len() {
+             return Err(Error::ShapeMismatchBinaryOp { 
+                lhs: dst_layout.shape().clone(), 
+                rhs: ids_layout.shape().clone(),
+                op: "scatter-add" 
+             }.into());
+        }
+
+        // 2. 计算三段式维度
+        // 我们遍历的是 source (grad) 和 ids，它们的形状是一样的
+        let left_len: usize = src_dims[..dim].iter().product();
+        let right_len: usize = src_dims[dim + 1..].iter().product();
+        
+        let src_dim_size = src_dims[dim]; // ids 的 dim 长度
+        let dst_dim_size = dst_dims[dim]; // arg (dst) 的 dim 长度
+
+        // 3. 执行 Scatter Add
+        // 逻辑：遍历 src(grad) 的每一个元素，找到 ids 中对应的索引 idx，
+        // 然后 result[left, idx, right] += src[left, i, right]
+        
+        for i in 0..left_len {
+            let src_block_start = i * src_dim_size * right_len;
+            let dst_block_start = i * dst_dim_size * right_len;
+
+            for j in 0..src_dim_size {
+                for k in 0..right_len {
+                    // src 和 ids 是同步遍历的
+                    let linear_idx = src_block_start + j * right_len + k;
+                    
+                    let index_val = ids[linear_idx];
+
+                    // 处理 Mask (Padding Index)
+                    if index_val == I::max_value() {
+                        continue;
+                    }
+
+                    let idx = index_val.to_usize();
+                    if idx >= dst_dim_size {
+                        return Err(Error::InvalidIndex {
+                            index: idx,
+                            size: dst_dim_size,
+                            op: "scatter-add",
+                        }.into());
+                    }
+
+                    // 计算目标位置的索引
+                    // 保持 Left(i) 和 Right(k) 不变，Dim 变为从 ids 读出的 idx
+                    let dst_idx = dst_block_start + idx * right_len + k;
+
+                    // 累加梯度
+                    result[dst_idx] = result[dst_idx] + src[linear_idx];
+                }
+            }
+        }
+
+        Ok(result)
+    }
+}
 
 impl<T: WithDType> Storage<T> {
     pub fn new<D: Into<Vec<T>>>(data: D) -> Self {

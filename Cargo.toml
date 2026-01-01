@@ -2,11 +2,12 @@
 members = [
     "lumen-core", 
     "lumen-nn", 
-    "lumen-macros"
+    "lumen-macros",
+    "lumen-dataset",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 repository = "https://github.com/MoleSir/lumen.git"
 description = "A tiny ML framework"
@@ -17,6 +18,7 @@ license = "MIT"
 lumen-core = { path = "./lumen-core", package = "lumen-core" }
 lumen-nn = { path = "./lumen-nn", package = "lumen-nn" }
 lumen-macros = { path = "./lumen-macros", package = "lumen-macros" }
+lumen-dataset = { path = "./lumen-dataset", package = "lumen-dataset" }
 
 approx = "0.5.1"
 derive_builder = "0.20.2"
@@ -31,3 +33,8 @@ proc-macro2 = "1.0"
 quote = "1.0"
 syn = "2.0"
 proc-macro-crate = "3.3"
+serde = { version = "1.0", default-features = false, features = [
+    "derive",
+    "alloc",
+] } # alloc is for no_std, derive is needed
+serde_json = { version = "1.0", default-features = false }

@@ -1,7 +1,9 @@
 mod sgd;
 mod adamw;
+mod momentum;
 pub use sgd::*;
 pub use adamw::*;
+pub use momentum::*;
 
 use lumen_core::{FloatDType, GradStore};
 

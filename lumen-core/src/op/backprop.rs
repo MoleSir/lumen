@@ -517,6 +517,22 @@ impl<T: FloatDType> Tensor<T> {
                             let src_sum_grad = grads.or_insert(src)?;
                             *src_sum_grad = src_sum_grad.add(&src_grad)?;
                         }
+
+                        //=========================================================================================//
+                        //           IndexAdd
+                        //=========================================================================================//
+                        #[allow(unused)]
+                        Op::ScatterAdd(init, indexes, src, dim) => {
+                            unimplemented!()
+                        }
+
+                        //=========================================================================================//
+                        //           Gather
+                        //=========================================================================================//
+                        Op::Gather(arg, indexes, dim) => {
+                            let arg_grad = grads.or_insert(arg)?;
+                            *arg_grad = arg_grad.scatter_add(indexes.clone(), &grad, *dim)?;
+                        }
                     }
                 }
             }
@@ -548,6 +564,7 @@ impl<T: FloatDType> Tensor<T> {
                     | Op::Matmul(lhs, rhs) 
                     | Op::IfElse(_, Some(lhs), Some(rhs))
                     | Op::IndexAdd(lhs, _, rhs, _)
+                    | Op::ScatterAdd(lhs, _, rhs, _)
                     => {
                         let (tg, nodes) = walk(lhs, nodes, already_seen);
                         track_grad |= tg;
@@ -575,6 +592,7 @@ impl<T: FloatDType> Tensor<T> {
                     | Op::Transpose(node, _, _)
                     | Op::Permute(node, _)
                     | Op::Copy(node) 
+                    | Op::Gather(node, _, _)
                     | Op::IndexSelect(node, _, _)
                     | Op::IfElse(_, Some(node), None)
                     | Op::IfElse(_, None, Some(node)) => {
