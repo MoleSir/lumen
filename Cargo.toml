@@ -38,3 +38,7 @@ serde = { version = "1.0", default-features = false, features = [
     "alloc",
 ] } # alloc is for no_std, derive is needed
 serde_json = { version = "1.0", default-features = false }
+dirs = "6.0"
+reqwest = "0.12"
+indicatif = "0.18"
+flate2 = "1.1"

@@ -1,7 +1,7 @@
-use std::{fs::File, io::{Read, Seek, SeekFrom}, path::Path};
-
-use crate::{transform::{Map, MapDataset}, Dataset, InMemoryDataset};
-
+use std::{fs::File, io::{Read, Seek, SeekFrom}, path::{Path, PathBuf}};
+use flate2::bufread::GzDecoder;
+use lumen_core::Tensor;
+use crate::{transform::{Map, MapDataset}, utils, Batcher, Dataset, InMemoryDataset};
 
 // CVDF mirror of http://yann.lecun.com/exdb/mnist/
 const URL: &str = "https://storage.googleapis.com/cvdf-datasets/mnist/";
@@ -62,9 +62,30 @@ impl Dataset<MnistItem> for MnistDataset {
 }
 
 impl MnistDataset {
-    // fn new(split: &str) -> Self {
+    pub fn train() -> MnistResult<Self> {
+        Self::new(MnistSplit::Train)
+    }
 
-    // }
+    pub fn test() -> MnistResult<Self> {
+        Self::new(MnistSplit::Test)
+    }
+
+    fn new(split: MnistSplit) -> MnistResult<Self> {
+        let root = Self::download(split)?;
+        let images = Self::read_images(&root, split)?;
+        let labels = Self::read_labels(&root, split)?;
+
+        let items: Vec<_> = images
+            .into_iter()
+            .zip(labels)
+            .map(|(image_bytes, label)| MnistItemRaw { image_bytes, label })
+            .collect();
+
+        let dataset = InMemoryDataset::new(items);
+        let dataset = MapDataset::new(dataset, BytesToImage);
+    
+        Ok( Self { dataset } )
+    }
 
     fn read_images<P: AsRef<Path>>(root: &P, split: MnistSplit) -> MnistResult<Vec<Vec<u8>>> {
         let file_path = root.as_ref().join(split.image_file_name());
@@ -104,6 +125,75 @@ impl MnistDataset {
 
         Ok(buf_labels)
     }
+
+    fn download(split: MnistSplit) -> MnistResult<PathBuf> {
+        let cache_dir = dirs::home_dir()
+            .expect("Could not get home directory")
+            .join(".cache")
+            .join("lumen-dataset");
+        let split_dir = cache_dir.join("mnist").join(split.as_str());
+
+        match split {
+            MnistSplit::Train => {
+                Self::download_file(TRAIN_IMAGES, &split_dir)?;
+                Self::download_file(TRAIN_LABELS, &split_dir)?;
+            }
+            MnistSplit::Test => {
+                Self::download_file(TEST_IMAGES, &split_dir)?;
+                Self::download_file(TEST_LABELS, &split_dir)?;
+            }
+        }
+
+        Ok(split_dir)
+    }
+
+    fn download_file<P: AsRef<Path>>(name: &str, dest_dir: &P) -> MnistResult<PathBuf> {
+        let file_name = dest_dir.as_ref().join(name);
+
+        if !file_name.exists() {
+            // download gzip file
+            let bytes = utils::download_file_as_bytes(&format!("{URL}{name}.gz"), name)?;
+            // create file to write the downloaded content to
+            let mut output_file = File::create(&file_name)?;
+            // Decode gzip file content and write to disk
+            let mut gz_buffer = GzDecoder::new(&bytes[..]);
+            std::io::copy(&mut gz_buffer, &mut output_file)?;
+        }
+
+        Ok(file_name)
+    }
+}
+
+#[derive(Clone)]
+pub struct MnistBatch {
+    pub images: Tensor<f32>,
+    pub targets: Tensor<u32>,
+}
+
+pub struct MnistBatcher;
+
+impl Batcher<MnistItem, MnistBatch> for MnistBatch {
+    type Error = MnistError;
+    fn batch(&self, items: Vec<MnistItem>) -> MnistResult<MnistBatch> {
+        let mut images = vec![];
+        let mut targets = vec![];
+
+        for item in items.iter() {
+            let image = Tensor::new(&item.image)?;
+            let image = image.reshape((1, HEIGHT, WIDTH))?;
+            let image = ((image / 255.0) - 0.1307) / 0.3081;
+            images.push(image);
+
+            let target = Tensor::new(item.label as u32)?;
+            let target = target.reshape((1,))?;
+            targets.push(target); 
+        }
+
+        let images = Tensor::cat(&images, 0)?;
+        let targets = Tensor::cat(&targets, 0)?;
+
+        Ok(MnistBatch { images, targets })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,12 +216,25 @@ impl MnistSplit {
             Self::Train => TRAIN_LABELS
         }
     } 
+
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Train => "train",
+            Self::Test => "test",
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum MnistError {
-    #[error("{0}")]
+    #[error(transparent)]
     Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Utils(#[from] crate::utils::UtilError),
+
+    #[error(transparent)]
+    Core(#[from] lumen_core::Error),
 }
 
 pub type MnistResult<T> = Result<T, MnistError>;

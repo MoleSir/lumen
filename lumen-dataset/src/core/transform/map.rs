@@ -12,6 +12,12 @@ pub struct MapDataset<D, M, I> {
     input: PhantomData<I>,
 }
 
+impl<D, M, I> MapDataset<D, M, I> {
+    pub fn new(dataset: D, map: M,) -> Self {
+        Self { dataset, map, input: PhantomData }
+    }
+}
+
 impl<D, M, I, O> Dataset<O> for MapDataset<D, M, I> 
 where 
     D: Dataset<I>,

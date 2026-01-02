@@ -1,9 +1,10 @@
-use std::sync::Arc;
 mod iter;
 mod memory;
+mod dataloader;
 pub mod transform;
 pub use iter::*;
 pub use memory::*;
+pub use dataloader::*;
 
 pub trait Dataset<I>: Send + Sync {
     /// Gets the item at the given index.
@@ -26,48 +27,3 @@ pub trait Dataset<I>: Send + Sync {
     }
 }
 
-impl<D, I> Dataset<I> for Arc<D>
-where
-    D: Dataset<I>,
-{
-    fn get(&self, index: usize) -> Option<I> {
-        self.as_ref().get(index)
-    }
-
-    fn len(&self) -> usize {
-        self.as_ref().len()
-    }
-}
-
-impl<I> Dataset<I> for Arc<dyn Dataset<I>> {
-    fn get(&self, index: usize) -> Option<I> {
-        self.as_ref().get(index)
-    }
-
-    fn len(&self) -> usize {
-        self.as_ref().len()
-    }
-}
-
-impl<D, I> Dataset<I> for Box<D>
-where
-    D: Dataset<I>,
-{
-    fn get(&self, index: usize) -> Option<I> {
-        self.as_ref().get(index)
-    }
-
-    fn len(&self) -> usize {
-        self.as_ref().len()
-    }
-}
-
-impl<I> Dataset<I> for Box<dyn Dataset<I>> {
-    fn get(&self, index: usize) -> Option<I> {
-        self.as_ref().get(index)
-    }
-
-    fn len(&self) -> usize {
-        self.as_ref().len()
-    }
-}
