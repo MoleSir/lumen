@@ -5,10 +5,6 @@ mod usize;
 mod i32;
 mod bool;
 mod u8;
-mod i8;
-mod u16;
-mod i16;
-
 
 use crate::{op::{AutogradInfo, AutogradMetaT, NoAutograd}, Result, Tensor};
 use super::Storage;
@@ -88,6 +84,7 @@ pub trait NumDType:
     WithDType 
   + num_traits::Num    
   + num_traits::Bounded
+  + rand_distr::uniform::SampleUniform
   + std::iter::Sum
   + std::iter::Product
   + std::ops::AddAssign
@@ -145,17 +142,22 @@ pub trait UnsignedIntDType :
 pub trait FloatDType: 
     NumDType<Category = FloatCategory, AutogradMeta = AutogradInfo<Self>>
     + num_traits::Float
+    + rand_distr::num_traits::Float
 {
     fn sqr(self) -> Self;
     fn gelu(self) -> Self;
     fn gelu_erf(self) -> Self;
     fn erf(self) -> Self;
     fn relu(self) -> Self;
+    fn leaky_relu(self, negative_slope: Self) -> Self; 
     fn silu(self) -> Self;
+    fn sigmoid(self) -> Self;
 
     fn two() -> Self;
     fn pi() -> Self;
     fn half() -> Self;
+
+    fn random_normal_vec(count: usize, mean: Self, std: Self) -> crate::Result<Vec<Self>>;
 }
 
 pub trait NumCategory {}
@@ -182,15 +184,12 @@ macro_rules! impl_dtype_convert_from {
     };
 }
 
-impl_dtype_convert_from!(i8,  { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
-impl_dtype_convert_from!(u8,  { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
-impl_dtype_convert_from!(i16, { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
-impl_dtype_convert_from!(u16, { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
-impl_dtype_convert_from!(i32, { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
-impl_dtype_convert_from!(u32, { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
-impl_dtype_convert_from!(f32, { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
-impl_dtype_convert_from!(f64, { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
-impl_dtype_convert_from!(usize, { i8, u8, i16, u16, i32, u32, usize, f32, f64 });
+impl_dtype_convert_from!(u8,  { u8, i32, u32, usize, f32, f64 });
+impl_dtype_convert_from!(i32, { u8, i32, u32, usize, f32, f64 });
+impl_dtype_convert_from!(u32, { u8, i32, u32, usize, f32, f64 });
+impl_dtype_convert_from!(f32, { u8, i32, u32, usize, f32, f64 });
+impl_dtype_convert_from!(f64, { u8, i32, u32, usize, f32, f64 });
+impl_dtype_convert_from!(usize, { u8, i32, u32, usize, f32, f64 });
 
 impl<T: NumDType> DTypeConvert<T> for bool {
     fn convert(self) -> T {
@@ -241,7 +240,7 @@ macro_rules! impl_boolean_for_float {
     };
 }
 
-impl_boolean_for_int!(i8, u8, i16, u16, i32, u32, usize);
+impl_boolean_for_int!(i8, u8, i32, u32, usize);
 impl_boolean_for_float!(f32, f64);
 
 impl Boolean for bool {

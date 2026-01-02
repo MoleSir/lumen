@@ -46,9 +46,9 @@ impl<T: NumDType> Tensor<T> {
 
         // (..., m, k) @ (..., k, n)
         let c_storage = Self::do_matmul(
-            &self.storage(),
+            &self.storage_read(),
             self.layout(),
-            &rhs.storage(),
+            &rhs.storage_read(),
             rhs.layout(),
             (batching, m, n, k),
         );

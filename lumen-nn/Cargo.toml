@@ -1,0 +1,13 @@
+[package]
+name = "lumen-nn"
+version = { workspace = true }
+edition = { workspace = true }
+description = { workspace = true }
+keywords = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+lumen-core = { workspace = true }
+lumen-macros = { workspace = true }
+rand = { workspace = true }
+rand_distr = { workspace = true }

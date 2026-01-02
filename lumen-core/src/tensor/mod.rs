@@ -11,10 +11,9 @@ mod convert;
 mod condition;
 
 pub use construct::ToTensor;
-pub use arith::TensorBinaryRhs;
 use std::{hash::Hash, sync::Arc};
 pub use indexer::{Slice, IndexOp};
-use crate::{Error, FloatDType, Op, Result};
+use crate::{AutogradInfo, Error, FloatDType, Op, Result};
 use super::{DType, Dim, DimCoordinates, DimNCoordinates, Layout, NumDType, Shape, Storage, StorageArc, StorageIndices, StorageMut, StorageRef, WithDType};
 pub use iter::*;
 pub use indexer::*;
@@ -29,7 +28,6 @@ pub struct TensorImpl<T: WithDType> {
     pub(crate) id: TensorId,
     pub(crate) storage: StorageArc<T>,
     pub(crate) layout: Layout,
-
     pub(crate) meta: T::AutogradMeta,
 }
 
@@ -122,10 +120,14 @@ impl<T: WithDType> Tensor<T> {
         Ok(self.dims()[dim])
     }
 
-    pub fn storage(&self) -> std::sync::RwLockReadGuard<'_, Storage<T>> {
+    pub fn storage_read(&self) -> std::sync::RwLockReadGuard<'_, Storage<T>> {
         self.0.storage.0.read().unwrap()
     }
 
+    pub fn storage_write(&self) -> std::sync::RwLockWriteGuard<'_, Storage<T>> {
+        self.0.storage.0.write().unwrap()
+    }
+    
     pub fn element_count(&self) -> usize {
         self.shape().element_count()
     }
@@ -197,9 +199,27 @@ impl<T: NumDType> Tensor<T> {
 }
 
 impl<T: FloatDType> Tensor<T> {
+    pub fn detach(&self) -> Self {
+        if !self.requires_grad() {
+            self.clone()
+        } else {
+            Self(Arc::new(TensorImpl { 
+                id: TensorId::new(), 
+                storage: self.0.storage.clone(), 
+                layout: self.layout().clone(), 
+                meta: AutogradInfo::val(), 
+            }))
+        }
+    }
+
     #[inline]
     pub fn requires_grad(&self) -> bool {
         self.0.meta.requires_grad()
+    }
+    
+    #[inline]
+    pub fn set_requires_grad(&self, mode: bool) {
+        self.0.meta.set_requires_grad(mode);
     }
 
     #[inline]
@@ -207,6 +227,7 @@ impl<T: FloatDType> Tensor<T> {
         self.0.meta.op()
     }
 
+    #[inline]
     pub fn is_leaf(&self) -> bool {
         self.0.meta.is_leaf()
     }

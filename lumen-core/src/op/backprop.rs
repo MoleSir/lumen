@@ -233,6 +233,25 @@ impl<T: FloatDType> Tensor<T> {
                             let silu_grad = &sigmoid_arg * (T::one() - *node) + *node;
                             *sum_grad = sum_grad.add(&(&grad * silu_grad))?
                         }
+                        Op::Unary(arg, UnaryOp::Sigmoid) => {
+                            let sum_grad = grads.or_insert(arg)?;
+    
+                            // y = sigmoid(x) = *node
+                            let local_deriv = *node * (T::one() - *node);                            
+                            *sum_grad = sum_grad.add(&(&grad * local_deriv))?
+                        }
+                        Op::Unary(arg, UnaryOp::LeakyRelu(negative_slope)) => {
+                            let sum_grad = grads.or_insert(arg)?;
+                            let mask = arg.ge(&arg.zeros_like()?)?.to_dtype::<T>();
+                        
+                            let ones = mask.ones_like()?;
+                            let inv_mask = ones.sub(&mask)?; 
+                        
+                            let slope_part = inv_mask.mul_scalar(*negative_slope)?;
+                            let local_deriv = mask.add(&slope_part)?;
+                        
+                            *sum_grad = sum_grad.add(&(&grad * local_deriv))?;
+                        }
 
                         //=========================================================================================//
                         //           Matmul
@@ -478,6 +497,42 @@ impl<T: FloatDType> Tensor<T> {
                                 *sum_grad = sum_grad.add(&masked_grad)?;
                             }
                         }
+
+                        //=========================================================================================//
+                        //           IndexSelect
+                        //=========================================================================================//
+                        Op::IndexSelect(arg, indexes, dim) => {
+                            let sum_grad = grads.or_insert(arg)?;
+                            *sum_grad = sum_grad.index_add(indexes.clone(), &grad, *dim)?;
+                        }
+
+                        //=========================================================================================//
+                        //           IndexAdd
+                        //=========================================================================================//
+                        Op::IndexAdd(init, indexes, src, dim) => {
+                            let init_sum_grad = grads.or_insert(init)?;
+                            *init_sum_grad = init_sum_grad.add(&grad)?;
+    
+                            let src_grad = grad.index_select(indexes.clone(), *dim)?;
+                            let src_sum_grad = grads.or_insert(src)?;
+                            *src_sum_grad = src_sum_grad.add(&src_grad)?;
+                        }
+
+                        //=========================================================================================//
+                        //           IndexAdd
+                        //=========================================================================================//
+                        #[allow(unused)]
+                        Op::ScatterAdd(init, indexes, src, dim) => {
+                            unimplemented!()
+                        }
+
+                        //=========================================================================================//
+                        //           Gather
+                        //=========================================================================================//
+                        Op::Gather(arg, indexes, dim) => {
+                            let arg_grad = grads.or_insert(arg)?;
+                            *arg_grad = arg_grad.scatter_add(indexes.clone(), &grad, *dim)?;
+                        }
                     }
                 }
             }
@@ -508,6 +563,8 @@ impl<T: FloatDType> Tensor<T> {
                     | Op::Binary(lhs, rhs, _)
                     | Op::Matmul(lhs, rhs) 
                     | Op::IfElse(_, Some(lhs), Some(rhs))
+                    | Op::IndexAdd(lhs, _, rhs, _)
+                    | Op::ScatterAdd(lhs, _, rhs, _)
                     => {
                         let (tg, nodes) = walk(lhs, nodes, already_seen);
                         track_grad |= tg;
@@ -535,6 +592,8 @@ impl<T: FloatDType> Tensor<T> {
                     | Op::Transpose(node, _, _)
                     | Op::Permute(node, _)
                     | Op::Copy(node) 
+                    | Op::Gather(node, _, _)
+                    | Op::IndexSelect(node, _, _)
                     | Op::IfElse(_, Some(node), None)
                     | Op::IfElse(_, None, Some(node)) => {
                         let (tg, nodes) = walk(node, nodes, already_seen);

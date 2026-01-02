@@ -16,7 +16,7 @@ impl Tensor<bool> {
         }
 
         let (mut new_storage, tv) = match &true_val {
-            TensorOrScalar::Tensor(tensor) => (tensor.storage().copy(self.layout()), Some(tensor)),
+            TensorOrScalar::Tensor(tensor) => (tensor.storage_read().copy(self.layout()), Some(tensor)),
             TensorOrScalar::Scalar(v) => (Storage::full(*v, self.shape()), None),
         };
         let layout = Layout::contiguous(self.shape());

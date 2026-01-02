@@ -1,37 +1,10 @@
-use crate::{op::BinaryOp, AutogradMetaT, CmpOp, Error, FloatDType, NumDType, Result, Shape, Storage, UnaryOp, WithDType};
+use crate::{TensorOrScalar, op::BinaryOp, AutogradMetaT, CmpOp, Error, FloatDType, NumDType, Result, Shape, Storage, UnaryOp, WithDType};
 use super::Tensor;
 use paste::paste;
 
 //////////////////////////////////////////////////////////////////////////////
 ///        Binary(Assign) Op with Tensor and Tensor / scalar
 //////////////////////////////////////////////////////////////////////////////
-
-pub enum TensorBinaryRhs<'a, T: WithDType> {
-    Tensor(Tensor<T>),
-    TensorRef(&'a Tensor<T>),
-    Scalar(T),
-}
-
-impl<'a, T: WithDType> Into<TensorBinaryRhs<'a, T>> for Tensor<T> {
-    #[inline]
-    fn into(self) -> TensorBinaryRhs<'a, T> {
-        TensorBinaryRhs::Tensor(self)
-    }
-}
-
-impl<'a, T: WithDType> Into<TensorBinaryRhs<'a, T>> for &'a Tensor<T> {
-    #[inline]
-    fn into(self) -> TensorBinaryRhs<'a, T> {
-        TensorBinaryRhs::TensorRef(self)
-    }
-}
-
-impl<'a, T: WithDType> From<T> for TensorBinaryRhs<'a, T> {
-    #[inline]
-    fn from(s: T) -> Self {
-        TensorBinaryRhs::Scalar(s)
-    }
-}
 
 impl<T: WithDType> Tensor<T> {
     fn same_shape_binary_op(&self, rhs: &Self, op: &'static str) -> Result<&Shape> {
@@ -56,7 +29,7 @@ impl<T: WithDType> Tensor<T> {
             F: FnMut(T, T) -> U 
     {
         let shape = lhs.shape();
-        let lhs_storage = lhs.storage();
+        let lhs_storage = lhs.storage_read();
         let lhs_layout = lhs.layout();
 
         let lhs = lhs_storage.data();
@@ -75,7 +48,7 @@ impl<T: WithDType> Tensor<T> {
             F: FnMut(T, T) -> U 
     {
         let shape = rhs.shape();
-        let rhs_storage = rhs.storage();
+        let rhs_storage = rhs.storage_read();
         let rhs_layout = rhs.layout();
 
         let rhs = rhs_storage.data();
@@ -94,8 +67,8 @@ impl<T: WithDType> Tensor<T> {
             F: FnMut(T, T) -> U 
     {
         let shape = Tensor::<T>::same_shape_binary_op(lhs, rhs, op_name)?;
-        let lhs_storage = lhs.storage();
-        let rhs_storage = rhs.storage();
+        let lhs_storage = lhs.storage_read();
+        let rhs_storage = rhs.storage_read();
         let lhs_layout = lhs.layout();
         let rhs_layout = rhs.layout();
 
@@ -137,26 +110,25 @@ macro_rules! binary_op_impl {
             pub fn [< $fn_name _tensor >](&self, rhs: &Self) -> Result<Self> {
                 let (storage, shape) = Self::compute_binary_op(self, rhs, T::$fn_name, stringify!([< $fn_name _tensor >]))?;
                 let meta = T::AutogradMeta::on_binary_op(self, rhs, BinaryOp::  [< $fn_name:camel >]);
-                Ok(Self::from_op(storage, shape, meta))
+                Ok(Self::build(storage, shape, meta))
             }
         
             pub fn [< $fn_name _scalar >](&self, rhs: T) -> Result<Self> {
                 let (storage, shape) = Self::compute_binary_scalar_rhs_op(self, rhs, T::$fn_name, stringify!([< $fn_name _scalar >]))?;
                 let meta = T::AutogradMeta::on_binary_scalar_rhs_op(self, rhs, BinaryOp::  [< $fn_name:camel >]);
-                Ok(Self::from_op(storage, shape, meta))
+                Ok(Self::build(storage, shape, meta))
             } 
         
             pub fn [< scalar_ $fn_name >](lhs: T, rhs: &Tensor<T>) -> Result<Tensor<T>> {
                 let (storage, shape) = Self::compute_scalar_binary_lhs_op(lhs, rhs, T::$fn_name, stringify!([< scalar_ $fn_name >]))?;
                 let meta = T::AutogradMeta::on_binary_scalar_lhs_op(lhs, rhs, BinaryOp::  [< $fn_name:camel >]);
-                Ok(Self::from_op(storage, shape, meta))
+                Ok(Self::build(storage, shape, meta))
             }
 
-            pub fn $fn_name<'a>(&self, rhs: impl Into<TensorBinaryRhs<'a, T>>) -> Result<Self> {
+            pub fn $fn_name(&self, rhs: impl Into<TensorOrScalar<T>>) -> Result<Self> {
                 match rhs.into() {
-                    TensorBinaryRhs::Tensor(t) => self.[< $fn_name _tensor >](&t),
-                    TensorBinaryRhs::TensorRef(t) => self.[< $fn_name _tensor >](t),
-                    TensorBinaryRhs::Scalar(s) => self.[< $fn_name _scalar >](s)
+                    TensorOrScalar::Tensor(t) => self.[< $fn_name _tensor >](&t),
+                    TensorOrScalar::Scalar(s) => self.[< $fn_name _scalar >](s)
                 }
             } 
         }
@@ -170,36 +142,102 @@ impl<T: NumDType> Tensor<T> {
     binary_op_impl!(div);
     binary_op_impl!(minimum);
     binary_op_impl!(maximum);
+
+    pub fn clamp(&self, min: T, max: T) -> Result<Self> {
+        self.maximum(min)?.minimum(max)
+    }
 }
 
 impl<T: NumDType> Tensor<T> {
-    pub fn eq<'a>(&'a self, rhs: impl Into<TensorBinaryRhs<'a, T>>) -> Result<Tensor<bool>> {
+    fn binary_op_inplace<F>(lhs: &Tensor<T>, rhs: &Tensor<T>, mut f: F, op_name: &'static str) -> Result<()> 
+    where 
+        F: FnMut(T, T) -> T
+    {
+        let _ = Tensor::<T>::same_shape_binary_op(lhs, rhs, op_name)?;
+
+        let mut lhs_storage = lhs.storage_write();
+        let rhs_storage = rhs.storage_read();
+        let lhs_layout = lhs.layout();
+        let rhs_layout = rhs.layout();
+
+        assert_eq!(lhs_layout.dims(), rhs_layout.dims(), "lhs dims != rhs dim2");
+
+        let lhs = lhs_storage.data_mut();
+        let rhs = rhs_storage.data();
+        
+        lhs_layout.storage_indices().zip(rhs_layout.storage_indices())
+            .for_each(|(lhs_index, rhs_index)| lhs[lhs_index] = f(lhs[lhs_index], rhs[rhs_index]));
+        
+        Ok(())
+    }
+
+    fn binary_op_scalar_inplace<F>(lhs: &Tensor<T>, rhs: T, mut f: F, _op_name: &'static str) -> Result<()> 
+    where 
+        F: FnMut(T, T) -> T
+    {
+        let mut lhs_storage = lhs.storage_write();
+        let lhs_layout = lhs.layout();
+
+
+        let lhs = lhs_storage.data_mut();
+        
+        lhs_layout.storage_indices()
+            .for_each(|lhs_index| lhs[lhs_index] = f(lhs[lhs_index], rhs));
+        
+        Ok(())
+    }
+}
+
+macro_rules! binary_inplace_op_impl {
+    ($fn_name:ident) => {
+        paste! {
+            pub fn [< $fn_name _ >](&self, rhs: impl Into<TensorOrScalar<T>>) -> Result<()> {
+                let rhs = rhs.into();
+                match rhs {
+                    TensorOrScalar::Scalar(rhs) => Self::binary_op_scalar_inplace(self, rhs, T::$fn_name, stringify!([< $fn_name _scalar_ >])),
+                    TensorOrScalar::Tensor(rhs) => Self::binary_op_inplace(self, &rhs, T::$fn_name, stringify!([< $fn_name _scalar >])),
+                }
+            }
+        }
+    };
+}
+
+#[allow(unused)]
+impl<T: NumDType> Tensor<T> {
+    binary_inplace_op_impl!(add);
+    binary_inplace_op_impl!(sub);
+    binary_inplace_op_impl!(mul);
+    binary_inplace_op_impl!(div);
+}
+
+impl<T: NumDType> Tensor<T> {
+    pub fn eq(&self, rhs: impl Into<TensorOrScalar<T>>) -> Result<Tensor<bool>> {
         self.cmp(rhs, CmpOp::Eq)
     }
 
-    pub fn ne<'a>(&'a self, rhs: impl Into<TensorBinaryRhs<'a, T>>) -> Result<Tensor<bool>> {
+    pub fn ne(&self, rhs: impl Into<TensorOrScalar<T>>) -> Result<Tensor<bool>> {
         self.cmp(rhs, CmpOp::Ne)
     }
 
-    pub fn le<'a>(&'a self, rhs: impl Into<TensorBinaryRhs<'a, T>>) -> Result<Tensor<bool>> {
+    pub fn le(&self, rhs: impl Into<TensorOrScalar<T>>) -> Result<Tensor<bool>> {
         self.cmp(rhs, CmpOp::Le)
     }
 
-    pub fn ge<'a>(&'a self, rhs: impl Into<TensorBinaryRhs<'a, T>>) -> Result<Tensor<bool>> {
+    pub fn ge(&self, rhs: impl Into<TensorOrScalar<T>>) -> Result<Tensor<bool>> {
         self.cmp(rhs, CmpOp::Ge)
     }
 
-    pub fn lt<'a>(&'a self, rhs: impl Into<TensorBinaryRhs<'a, T>>) -> Result<Tensor<bool>> {
+    pub fn lt(&self, rhs: impl Into<TensorOrScalar<T>>) -> Result<Tensor<bool>> {
         self.cmp(rhs, CmpOp::Lt)
     }
 
-    pub fn gt<'a>(&'a self, rhs: impl Into<TensorBinaryRhs<'a, T>>) -> Result<Tensor<bool>> {
+    pub fn gt(&self, rhs: impl Into<TensorOrScalar<T>>) -> Result<Tensor<bool>> {
         self.cmp(rhs, CmpOp::Gt)
     }
 
-    pub fn cmp<'a>(&'a self, rhs: impl Into<TensorBinaryRhs<'a, T>>, op: CmpOp) -> Result<Tensor<bool>> {
+    pub fn cmp(&self, rhs: impl Into<TensorOrScalar<T>>, op: CmpOp) -> Result<Tensor<bool>> {
         match rhs.into() {
-            TensorBinaryRhs::Tensor(rhs) => {
+            TensorOrScalar::Tensor(rhs) => {
                 match op {
                     CmpOp::Eq => Self::binary_op(self, &rhs, |a, b| a == b, "eq"),
                     CmpOp::Ne => Self::binary_op(self, &rhs, |a, b| a != b, "nq"),
@@ -209,17 +247,7 @@ impl<T: NumDType> Tensor<T> {
                     CmpOp::Gt => Self::binary_op(self, &rhs, |a, b| a >  b, "gt"),
                 }
             }
-            TensorBinaryRhs::TensorRef(rhs) => {
-                match op {
-                    CmpOp::Eq => Self::binary_op(self, rhs, |a, b| a == b, "eq"),
-                    CmpOp::Ne => Self::binary_op(self, rhs, |a, b| a != b, "nq"),
-                    CmpOp::Le => Self::binary_op(self, rhs, |a, b| a <= b, "le"),
-                    CmpOp::Ge => Self::binary_op(self, rhs, |a, b| a >= b, "ge"),
-                    CmpOp::Lt => Self::binary_op(self, rhs, |a, b| a <  b, "lt"),
-                    CmpOp::Gt => Self::binary_op(self, rhs, |a, b| a >  b, "gt"),
-                }
-            }
-            TensorBinaryRhs::Scalar(rhs) => {
+            TensorOrScalar::Scalar(rhs) => {
                 match op {
                     CmpOp::Eq => Self::binary_scalar_op(self, rhs, |a, b| a == b, "eq"),
                     CmpOp::Ne => Self::binary_scalar_op(self, rhs, |a, b| a != b, "nq"),
@@ -234,27 +262,24 @@ impl<T: NumDType> Tensor<T> {
 }
 
 impl Tensor<bool> {
-    pub fn and<'a>(&self, rhs: impl Into<TensorBinaryRhs<'a, bool>>) -> Result<Tensor<bool>> {
+    pub fn and(&self, rhs: impl Into<TensorOrScalar<bool>>) -> Result<Tensor<bool>> {
         match rhs.into() {
-            TensorBinaryRhs::TensorRef(rhs) => Self::binary_op(self, rhs, |a, b| a & b, "and"),
-            TensorBinaryRhs::Tensor(rhs) => Self::binary_op(self, &rhs, |a, b| a & b, "and"),
-            TensorBinaryRhs::Scalar(rhs) => Self::binary_scalar_op(self, rhs, |a, b| a & b, "and"),
+            TensorOrScalar::Tensor(rhs) => Self::binary_op(self, &rhs, |a, b| a & b, "and"),
+            TensorOrScalar::Scalar(rhs) => Self::binary_scalar_op(self, rhs, |a, b| a & b, "and"),
         }
     }
 
-    pub fn or<'a>(&self, rhs: impl Into<TensorBinaryRhs<'a, bool>>) -> Result<Tensor<bool>> {
+    pub fn or(&self, rhs: impl Into<TensorOrScalar<bool>>) -> Result<Tensor<bool>> {
         match rhs.into() {
-            TensorBinaryRhs::TensorRef(rhs) => Self::binary_op(self, rhs, |a, b| a | b, "or"),
-            TensorBinaryRhs::Tensor(rhs) => Self::binary_op(self, &rhs, |a, b| a | b, "or"),
-            TensorBinaryRhs::Scalar(rhs) => Self::binary_scalar_op(self, rhs, |a, b| a | b, "or"),
+            TensorOrScalar::Tensor(rhs) => Self::binary_op(self, &rhs, |a, b| a | b, "or"),
+            TensorOrScalar::Scalar(rhs) => Self::binary_scalar_op(self, rhs, |a, b| a | b, "or"),
         }
     }
 
-    pub fn xor<'a>(&self, rhs: impl Into<TensorBinaryRhs<'a, bool>>) -> Result<Tensor<bool>> {
+    pub fn xor(&self, rhs: impl Into<TensorOrScalar<bool>>) -> Result<Tensor<bool>> {
         match rhs.into() {
-            TensorBinaryRhs::TensorRef(rhs) => Self::binary_op(self, rhs, |a, b| a ^ b, "xor"),
-            TensorBinaryRhs::Tensor(rhs) => Self::binary_op(self, &rhs, |a, b| a ^ b, "xor"),
-            TensorBinaryRhs::Scalar(rhs) => Self::binary_scalar_op(self, rhs, |a, b| a ^ b, "xor"),
+            TensorOrScalar::Tensor(rhs) => Self::binary_op(self, &rhs, |a, b| a ^ b, "xor"),
+            TensorOrScalar::Scalar(rhs) => Self::binary_scalar_op(self, rhs, |a, b| a ^ b, "xor"),
         }
     }
 
@@ -277,7 +302,7 @@ impl<T: WithDType> Tensor<T> {
         U: WithDType,
         F: FnMut(T) -> U
     {
-        let storage = self.storage();
+        let storage = self.storage_read();
         let vec = storage.data();
         let mut output = vec![];
         for index in self.layout().storage_indices() {
@@ -326,7 +351,7 @@ macro_rules! float_unary_op_impl {
                 }
                 let storage = self.compute_unary_op(F::$fn_name);
                 let meta = F::AutogradMeta::on_unray_op(self, UnaryOp:: [< $fn_name:camel >]);
-                Self::from_op(storage, self.shape(), meta)
+                Self::build(storage, self.shape(), meta)
             }
         }
     };
@@ -360,7 +385,7 @@ impl<T: NumDType + Neg<Output = T>> Tensor<T> {
         }
         let storage = self.compute_unary_op(Neg::neg);
         let meta = T::AutogradMeta::on_unray_op(self, UnaryOp::Neg);
-        Self::from_op(storage, self.shape(), meta)
+        Self::build(storage, self.shape(), meta)
     }
 }
 
@@ -387,6 +412,17 @@ impl<F: FloatDType> Tensor<F> {
     float_unary_op_impl!(erf);
     float_unary_op_impl!(relu);
     float_unary_op_impl!(silu);
+    float_unary_op_impl!(sigmoid);
+
+    pub fn leaky_relu(&self, negative_slope: F) -> Self {
+        if self.element_count() == 0 {
+            return self.clone();
+        }
+        let f = |v: F| F::leaky_relu(v, negative_slope);
+        let storage = self.compute_unary_op(f);
+        let meta = F::AutogradMeta::on_unray_op(self, UnaryOp::LeakyRelu(negative_slope));
+        Self::build(storage, self.shape(), meta)
+    }
 }
 
 impl<F: FloatDType> Tensor<F> {
@@ -397,7 +433,7 @@ impl<F: FloatDType> Tensor<F> {
         let f = |v: F| v.powf(e); 
         let storage = self.compute_unary_op(f);
         let meta = F::AutogradMeta::on_pow_op(self, e);
-        Self::from_op(storage, self.shape(), meta)
+        Self::build(storage, self.shape(), meta)
     }
 }
 
@@ -407,7 +443,7 @@ use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Sub};
 ///        Add
 //////////////////////////////////////////////////////////////////////////////
 
-impl<'a, T: NumDType, R: Into<TensorBinaryRhs<'a, T>>> Add<R> for &Tensor<T> {
+impl<'a, T: NumDType, R: Into<TensorOrScalar<T>>> Add<R> for &Tensor<T> {
     type Output = Tensor<T>;
     fn add(self, rhs: R) -> Self::Output {
         Tensor::add(self, rhs).expect("Tensor::add failed")
@@ -415,7 +451,7 @@ impl<'a, T: NumDType, R: Into<TensorBinaryRhs<'a, T>>> Add<R> for &Tensor<T> {
 }
 
 impl<'a, T: NumDType, R> Add<R> for Tensor<T> 
-where R: Into<TensorBinaryRhs<'a, T>> 
+where R: Into<TensorOrScalar<T>> 
 {
     type Output = Tensor<T>;
     fn add(self, rhs: R) -> Self::Output {
@@ -427,14 +463,14 @@ where R: Into<TensorBinaryRhs<'a, T>>
 ///        Sub
 //////////////////////////////////////////////////////////////////////////////
 
-impl<'a, T: NumDType, R: Into<TensorBinaryRhs<'a, T>>> Sub<R> for &Tensor<T> {
+impl<'a, T: NumDType, R: Into<TensorOrScalar<T>>> Sub<R> for &Tensor<T> {
     type Output = Tensor<T>;
     fn sub(self, rhs: R) -> Self::Output {
         Tensor::sub(self, rhs).expect("Tensor::sub failed")
     }
 }
 
-impl<'a, T: NumDType, R: Into<TensorBinaryRhs<'a, T>>> Sub<R> for Tensor<T> {
+impl<'a, T: NumDType, R: Into<TensorOrScalar<T>>> Sub<R> for Tensor<T> {
     type Output = Tensor<T>;
     fn sub(self, rhs: R) -> Self::Output {
         Tensor::sub(&self, rhs).expect("Tensor::sub failed")
@@ -445,14 +481,14 @@ impl<'a, T: NumDType, R: Into<TensorBinaryRhs<'a, T>>> Sub<R> for Tensor<T> {
 ///        Mul
 //////////////////////////////////////////////////////////////////////////////
 
-impl<'a, T: NumDType, R: Into<TensorBinaryRhs<'a, T>>> Mul<R> for &Tensor<T> {
+impl<'a, T: NumDType, R: Into<TensorOrScalar<T>>> Mul<R> for &Tensor<T> {
     type Output = Tensor<T>;
     fn mul(self, rhs: R) -> Self::Output {
         Tensor::mul(self, rhs).expect("Tensor::mul failed")
     }
 }
 
-impl<'a, T: NumDType, R: Into<TensorBinaryRhs<'a, T>>> Mul<R> for Tensor<T> {
+impl<'a, T: NumDType, R: Into<TensorOrScalar<T>>> Mul<R> for Tensor<T> {
     type Output = Tensor<T>;
     fn mul(self, rhs: R) -> Self::Output {
         Tensor::mul(&self, rhs).expect("Tensor::mul failed")
@@ -463,14 +499,14 @@ impl<'a, T: NumDType, R: Into<TensorBinaryRhs<'a, T>>> Mul<R> for Tensor<T> {
 ///        Div
 //////////////////////////////////////////////////////////////////////////////
 
-impl<'a, T: NumDType, R: Into<TensorBinaryRhs<'a, T>>> Div<R> for &Tensor<T> {
+impl<'a, T: NumDType, R: Into<TensorOrScalar<T>>> Div<R> for &Tensor<T> {
     type Output = Tensor<T>;
     fn div(self, rhs: R) -> Self::Output {
         Tensor::div(self, rhs).expect("Tensor::div failed")
     }
 }
 
-impl<'a, T: NumDType, R: Into<TensorBinaryRhs<'a, T>>> Div<R> for Tensor<T> {
+impl<'a, T: NumDType, R: Into<TensorOrScalar<T>>> Div<R> for Tensor<T> {
     type Output = Tensor<T>;
     fn div(self, rhs: R) -> Self::Output {
         Tensor::div(&self, rhs).expect("Tensor::div failed")
@@ -481,42 +517,42 @@ impl<'a, T: NumDType, R: Into<TensorBinaryRhs<'a, T>>> Div<R> for Tensor<T> {
 ///        Bool
 //////////////////////////////////////////////////////////////////////////////
 
-impl<'a, R: Into<TensorBinaryRhs<'a, bool>>> BitAnd<R> for &Tensor<bool> {
+impl<'a, R: Into<TensorOrScalar<bool>>> BitAnd<R> for &Tensor<bool> {
     type Output = Tensor<bool>;
     fn bitand(self, rhs: R) -> Self::Output {
         self.and(rhs).expect("Tensor::and failed")
     }
 }
 
-impl<'a, R: Into<TensorBinaryRhs<'a, bool>>> BitAnd<R> for Tensor<bool> {
+impl<'a, R: Into<TensorOrScalar<bool>>> BitAnd<R> for Tensor<bool> {
     type Output = Tensor<bool>;
     fn bitand(self, rhs: R) -> Self::Output {
         self.and(rhs).expect("Tensor::and failed")
     }
 }
 
-impl<'a, R: Into<TensorBinaryRhs<'a, bool>>> BitOr<R> for &Tensor<bool> {
+impl<'a, R: Into<TensorOrScalar<bool>>> BitOr<R> for &Tensor<bool> {
     type Output = Tensor<bool>;
     fn bitor(self, rhs: R) -> Self::Output {
         self.or(rhs).expect("Tensor::or failed")
     }
 }
 
-impl<'a, R: Into<TensorBinaryRhs<'a, bool>>> BitOr<R> for Tensor<bool> {
+impl<'a, R: Into<TensorOrScalar<bool>>> BitOr<R> for Tensor<bool> {
     type Output = Tensor<bool>;
     fn bitor(self, rhs: R) -> Self::Output {
         self.or(rhs).expect("Tensor::or failed")
     }
 }
 
-impl<'a, R: Into<TensorBinaryRhs<'a, bool>>> BitXor<R> for &Tensor<bool> {
+impl<'a, R: Into<TensorOrScalar<bool>>> BitXor<R> for &Tensor<bool> {
     type Output = Tensor<bool>;
     fn bitxor(self, rhs: R) -> Self::Output {
         self.xor(rhs).expect("Tensor::xor failed")
     }
 }
 
-impl<'a, R: Into<TensorBinaryRhs<'a, bool>>> BitXor<R> for Tensor<bool> {
+impl<'a, R: Into<TensorOrScalar<bool>>> BitXor<R> for Tensor<bool> {
     type Output = Tensor<bool>;
     fn bitxor(self, rhs: R) -> Self::Output {
         self.xor(rhs).expect("Tensor::xor failed")
@@ -597,7 +633,7 @@ macro_rules! impl_scalar_tensor_binary {
     };
 }
 
-impl_scalar_tensor_binary!(f32, f64, u8, i8, i16, u16, i32, u32, usize);
+impl_scalar_tensor_binary!(f32, f64, u8, i32, u32, usize);
 
 #[cfg(test)]
 mod tests {

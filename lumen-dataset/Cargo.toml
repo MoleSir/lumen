@@ -1,0 +1,16 @@
+[package]
+name = "lumen-dataset"
+version = { workspace = true }
+edition = { workspace = true }
+description = { workspace = true }
+keywords = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+lumen-core = { workspace = true }
+thiserror = { workspace = true }
+dirs = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
+indicatif = { workspace = true }
+flate2 = { workspace = true }
+rand = { workspace = true }

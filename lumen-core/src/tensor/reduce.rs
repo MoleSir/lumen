@@ -18,6 +18,10 @@ macro_rules! reduce_impl {
                 let meta = T::AutogradMeta::on_reduce_op(self, &dims, crate::ReduceOp::$op);
                 Ok(Self::build(storage, dims, meta))
             }
+
+            pub fn [< $fn_name _all >](&self) -> Result<Self> {
+                self.flatten_all()?.$fn_name(0)
+            }
         }
     };
 }
@@ -40,6 +44,10 @@ impl<T: NumDType> Tensor<T> {
         let v = self.var_keepdim(axis)?;
         let v = v.squeeze(axis)?;
         Ok(v)
+    }
+
+    pub fn var_all(&self) -> Result<Self> {
+        self.flatten_all()?.var(0)
     }
 
     pub fn argmin_keepdim<D: Dim>(&self, axis: D) -> Result<Tensor<usize>> {
@@ -358,17 +366,6 @@ mod tests {
     }
 
     #[test]
-    fn test_aragmin_matrix_axis0() {
-        // [[1, 2, 3],
-        //  [3, 1, 0]]
-        // min_all(axis=0) -> [1, 1, 0]
-        let arr = Tensor::new(&[[1, 2, 3], [3, 1, 0]]).unwrap();
-        let m = arr.argmin(0).unwrap();
-        let expected = Tensor::new(&[0, 1, 1]).unwrap();
-        assert!(m.allclose(&expected, 1e-5, 1e-8));
-    }
-
-    #[test]
     fn test_max_matrix_axis1() {
         // [[1, 2, 3],
         //  [3, 1, 0]]
@@ -380,6 +377,52 @@ mod tests {
     }
 
     #[test]
+    fn test_aragmin_matrix_axis0() {
+        // [[1, 2, 3],
+        //  [3, 1, 0]]
+        // min_all(axis=0) -> [1, 1, 0]
+        let arr = Tensor::new(&[[1, 2, 3], [3, 1, 0]]).unwrap();
+        let m = arr.argmin(0).unwrap();
+        let expected = Tensor::new(&[0, 1, 1]).unwrap();
+        assert!(m.allclose(&expected, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_sum_all() {
+        // [[1, 2], [3, 4]] -> 1+2+3+4 = 10
+        let arr = Tensor::new(&[[1, 2], [3, 4]]).unwrap();
+        let s = arr.sum_all().unwrap();        
+        let expected = Tensor::new(10).unwrap(); 
+        assert!(s.allclose(&expected, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_mean_all() {
+        // [[1.0, 2.0], [3.0, 4.0]] -> Sum=10.0, Count=4 -> Mean=2.5
+        let arr = Tensor::new(&[[1.0, 2.0], [3.0, 4.0]]).unwrap();
+        let m = arr.mean_all().unwrap();
+        let expected = Tensor::new(2.5).unwrap();
+        assert!(m.allclose(&expected, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_min_max_all() {
+        // [[10, 2, 5], [8, 1, 9]]
+        // Global Min: 1
+        // Global Max: 10
+        let arr = Tensor::new(&[[10, 2, 5], [8, 1, 9]]).unwrap();
+        
+        let min_val = arr.min_all().unwrap();
+        let max_val = arr.max_all().unwrap();
+        
+        let expected_min = Tensor::new(1).unwrap();
+        let expected_max = Tensor::new(10).unwrap();
+        
+        assert!(min_val.allclose(&expected_min, 1e-5, 1e-8));
+        assert!(max_val.allclose(&expected_max, 1e-5, 1e-8));
+    }
+    
+    #[test]
     fn test_argmax_matrix_axis1() {
         // [[1, 2, 3],
         //  [3, 1, 0]]
@@ -388,5 +431,21 @@ mod tests {
         let m = arr.argmax(1).unwrap();
         let expected = Tensor::new(&[2, 0]).unwrap();
         assert!(m.allclose(&expected, 1e-5, 1e-8));
+    }
+
+    #[test]
+    fn test_reductions_with_negatives() {
+        // [[-2.0, 0.0, 2.0]]
+        // sum_all = 0.0
+        // mean_all = 0.0
+        // var(axis=1) -> 4.0 (unbiased: (4+0+4)/2)
+        
+        let arr = Tensor::new(&[[-2.0, 0.0, 2.0]]).unwrap();
+        
+        assert!(arr.sum_all().unwrap().allclose(&Tensor::new(0.0).unwrap(), 1e-5, 1e-8));
+        assert!(arr.mean_all().unwrap().allclose(&Tensor::new(0.0).unwrap(), 1e-5, 1e-8));
+        
+        let expected_var = Tensor::new(2.66666666666666666).unwrap();
+        assert!(arr.var_all().unwrap().allclose(&expected_var, 1e-5, 1e-8));
     }
 }

@@ -9,6 +9,7 @@ mod error;
 mod op;
 mod variable;
 mod scalar;
+mod dynamic;
 
 pub use shape::*;
 pub use layout::*;
@@ -19,3 +20,4 @@ pub use error::*;
 pub use op::*;
 pub use variable::*;
 pub use scalar::*;
+pub use dynamic::*;
