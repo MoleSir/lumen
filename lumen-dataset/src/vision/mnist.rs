@@ -62,16 +62,16 @@ impl Dataset<MnistItem> for MnistDataset {
 }
 
 impl MnistDataset {
-    pub fn train() -> MnistResult<Self> {
-        Self::new(MnistSplit::Train)
+    pub fn train<P: AsRef<Path>>(cache_dir: Option<P>) -> MnistResult<Self> {
+        Self::new(MnistSplit::Train, cache_dir)
     }
 
-    pub fn test() -> MnistResult<Self> {
-        Self::new(MnistSplit::Test)
+    pub fn test<P: AsRef<Path>>(cache_dir: Option<P>) -> MnistResult<Self> {
+        Self::new(MnistSplit::Test, cache_dir)
     }
 
-    fn new(split: MnistSplit) -> MnistResult<Self> {
-        let root = Self::download(split)?;
+    fn new<P: AsRef<Path>>(split: MnistSplit, cache_dir: Option<P>) -> MnistResult<Self> {
+        let root = Self::download(split, cache_dir)?;
         let images = Self::read_images(&root, split)?;
         let labels = Self::read_labels(&root, split)?;
 
@@ -126,11 +126,20 @@ impl MnistDataset {
         Ok(buf_labels)
     }
 
-    fn download(split: MnistSplit) -> MnistResult<PathBuf> {
-        let cache_dir = dirs::home_dir()
-            .expect("Could not get home directory")
-            .join(".cache")
-            .join("lumen-dataset");
+    fn download<P: AsRef<Path>>(split: MnistSplit, cache_dir: Option<P>) -> MnistResult<PathBuf> {
+        match cache_dir {
+            Some(p) => Self::do_download(split, p.as_ref()),
+            None => {
+                let cache_dir = dirs::home_dir()
+                    .expect("Could not get home directory")
+                    .join(".cache")
+                    .join("lumen-dataset");
+                Self::do_download(split, &cache_dir)
+            }
+        }
+    }
+
+    fn do_download(split: MnistSplit, cache_dir: &Path) -> MnistResult<PathBuf> {
         let split_dir = cache_dir.join("mnist").join(split.as_str());
 
         match split {

@@ -1,6 +1,6 @@
 [workspace]
 members = [ 
     # "function_fitting", 
-    # "iris",
+    "iris",
     "logic_gate",
 ]
