@@ -9,7 +9,7 @@ impl Tanh {
         Self {}
     }
 
-    pub fn forward<T: FloatDType>(&self, input: Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    pub fn forward<T: FloatDType>(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
         Ok(input.tanh())
     }
 }

@@ -192,14 +192,12 @@ impl Batcher<MnistItem, MnistBatch> for MnistBatch {
             let image = image.reshape((1, HEIGHT, WIDTH))?;
             let image = ((image / 255.0) - 0.1307) / 0.3081;
             images.push(image);
-
-            let target = Tensor::new(item.label as u32)?;
-            let target = target.reshape((1,))?;
-            targets.push(target); 
+            targets.push(item.label as u32); 
         }
 
         let images = Tensor::cat(&images, 0)?;
-        let targets = Tensor::cat(&targets, 0)?;
+        let len = targets.len();
+        let targets = Tensor::new(targets)?.reshape((len, 1))?;
 
         Ok(MnistBatch { images, targets })
     }

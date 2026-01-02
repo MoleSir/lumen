@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
-use lumen_nn::{init::Initialize, linear, optim::{Optimizer, SGD}, CrossEntropy, Linear, Module, Relu};
+use lumen_nn::{init::Initialize, linear, optim::{Optimizer, SGD}, CrossEntropyLoss, Linear, Module, Relu};
 use lumen_dataset::{common::{IrisBatcher, IrisDataset}, DataLoader};
 
 #[derive(Module)]
@@ -40,7 +40,7 @@ impl<T: FloatDType> Mlp<T> {
             x = layer.forward(&x)?;
             
             if i < self.activates.len() {
-                x = self.activates[i].forward(x)?;
+                x = self.activates[i].forward(&x)?;
             }
         }
 
@@ -52,7 +52,7 @@ fn result_main() -> Result<(), Box<dyn std::error::Error>> {
     let dataset = IrisDataset::load(Some("../cache"))?;
     let dataloader = DataLoader::new(dataset, IrisBatcher, 16, true);
     let model = Mlp::<f32>::from_archs([4, 10, 3])?;
-    let criterion = CrossEntropy;
+    let criterion = CrossEntropyLoss;
     let mut optimizer = SGD::new(model.params(), 0.1);
     
     const EPOCHS: usize = 2500;
