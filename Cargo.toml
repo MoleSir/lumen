@@ -4,6 +4,7 @@ members = [
     "lumen-nn", 
     "lumen-macros",
     "lumen-dataset",
+    "lumen-transformer",
 ]
 
 [workspace.package]
@@ -15,10 +16,11 @@ keywords = ["machine-learning", "auto-grad"]
 license = "MIT"
 
 [workspace.dependencies]
-lumen-core = { path = "./lumen-core", package = "lumen-core" }
-lumen-nn = { path = "./lumen-nn", package = "lumen-nn" }
-lumen-macros = { path = "./lumen-macros", package = "lumen-macros" }
-lumen-dataset = { path = "./lumen-dataset", package = "lumen-dataset" }
+lumen-core = { path = "./lumen-core", package = "lumen-core", version = "0.2.0" }
+lumen-nn = { path = "./lumen-nn", package = "lumen-nn", version = "0.2.0" }
+lumen-macros = { path = "./lumen-macros", package = "lumen-macros", version = "0.2.0" }
+lumen-dataset = { path = "./lumen-dataset", package = "lumen-dataset", version = "0.2.0" }
+lumen-transformer = { path = "./lumen-transformer", package = "lumen-transformer", version = "0.2.0" }
 
 approx = "0.5.1"
 derive_builder = "0.20.2"
