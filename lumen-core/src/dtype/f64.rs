@@ -13,7 +13,7 @@ impl WithDType for f64 {
 
 impl NumDType for f64 {
     type Category = FloatCategory;
-
+    
     fn from_f64(v: f64) -> Self {
         v as f64
     }
@@ -54,6 +54,10 @@ impl NumDType for f64 {
 }
 
 impl FloatDType for f64 {
+    fn min_value() -> Self {    
+        f64::MIN
+    }
+    
     #[inline]
     fn sqr(self) -> Self {
         self * self

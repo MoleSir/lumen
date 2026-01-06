@@ -144,6 +144,8 @@ pub trait FloatDType:
     fn pi() -> Self;
     fn half() -> Self;
 
+    fn min_value() -> Self;
+
     fn random_normal_vec(count: usize, mean: Self, std: Self) -> crate::Result<Vec<Self>>;
 }
 
