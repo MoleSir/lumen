@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "lumen-core", 
+    "lumen-io",
     "lumen-nn", 
     "lumen-macros",
     "lumen-dataset",
@@ -17,6 +18,7 @@ license = "MIT"
 
 [workspace.dependencies]
 lumen-core = { path = "./lumen-core", package = "lumen-core", version = "0.2.0" }
+lumen-io = { path = "./lumen-io", package = "lumen-io", version = "0.2.0" }
 lumen-nn = { path = "./lumen-nn", package = "lumen-nn", version = "0.2.0" }
 lumen-macros = { path = "./lumen-macros", package = "lumen-macros", version = "0.2.0" }
 lumen-dataset = { path = "./lumen-dataset", package = "lumen-dataset", version = "0.2.0" }
@@ -44,3 +46,4 @@ dirs = "6.0"
 reqwest = "0.12"
 indicatif = "0.18"
 flate2 = "1.1"
+memmap2 = "0.9.9"

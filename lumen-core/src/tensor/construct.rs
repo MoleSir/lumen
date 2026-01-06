@@ -136,6 +136,9 @@ impl<T: NumDType> Tensor<T> {
         let shape = storage.len();
         Ok(Self::build(storage, shape, meta))
     }
+}
+
+impl<T: WithDType> Tensor<T> {
 
     /// Creates an array from a flat `Vec<T>` and explicit shape.
     ///
@@ -165,7 +168,7 @@ impl<T: NumDType> Tensor<T> {
 
     pub(crate) fn diag_impl(diag: &[T], meta: T::AutogradMeta) -> Result<Self> {
         let size = diag.len();
-        let mut vec = vec![T::zero(); size * size];
+        let mut vec = vec![T::false_value(); size * size];
         for n in 0..size {
             vec[n * size + n] = diag[n];
         }

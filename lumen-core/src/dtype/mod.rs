@@ -1,7 +1,6 @@
 mod f32;
 mod f64;
 mod u32;
-mod usize;
 mod i32;
 mod bool;
 mod u8;
@@ -28,12 +27,8 @@ pub trait WithDType:
 pub enum DType {
     Bool,  // boolean
     U8,    // unsigned 8-bit
-    I8,    // signed 8-bit
-    U16,   // unsigned 16-bit
-    I16,   // signed 16-bit
     U32,   // unsigned 32-bit
     I32,   // signed 32-bit
-    USize, // unsigned size
     F32,   // 32-bit float
     F64,   // 64-bit float
 }
@@ -43,12 +38,8 @@ impl DType {
         match self {
             DType::Bool => std::mem::size_of::<bool>(),
             DType::U8 => std::mem::size_of::<u8>(),
-            DType::I8 => std::mem::size_of::<i8>(),
-            DType::I16 => std::mem::size_of::<i16>(),
-            DType::U16 => std::mem::size_of::<u16>(),
             DType::I32 => std::mem::size_of::<i32>(),
             DType::U32 => std::mem::size_of::<u32>(),
-            DType::USize => std::mem::size_of::<usize>(),
             DType::F32 => std::mem::size_of::<f32>(),
             DType::F64 => std::mem::size_of::<f64>(),
         }
@@ -68,12 +59,8 @@ impl std::fmt::Display for DType {
         match self {
             Self::Bool => write!(f, "boolean"),
             Self::U8   => write!(f, "uint8"),
-            Self::I8   => write!(f, "int8"),
-            Self::I16 => write!(f, "int16"),
-            Self::U16 => write!(f, "uint16"),
             Self::I32 => write!(f, "int32"),
             Self::U32 => write!(f, "uint32"),
-            Self::USize => write!(f, "usize"),
             Self::F32 => write!(f, "float32"),
             Self::F64 => write!(f, "float64"),
         }
@@ -184,12 +171,11 @@ macro_rules! impl_dtype_convert_from {
     };
 }
 
-impl_dtype_convert_from!(u8,  { u8, i32, u32, usize, f32, f64 });
-impl_dtype_convert_from!(i32, { u8, i32, u32, usize, f32, f64 });
-impl_dtype_convert_from!(u32, { u8, i32, u32, usize, f32, f64 });
-impl_dtype_convert_from!(f32, { u8, i32, u32, usize, f32, f64 });
-impl_dtype_convert_from!(f64, { u8, i32, u32, usize, f32, f64 });
-impl_dtype_convert_from!(usize, { u8, i32, u32, usize, f32, f64 });
+impl_dtype_convert_from!(u8,  { u8, i32, u32, f32, f64 });
+impl_dtype_convert_from!(i32, { u8, i32, u32, f32, f64 });
+impl_dtype_convert_from!(u32, { u8, i32, u32, f32, f64 });
+impl_dtype_convert_from!(f32, { u8, i32, u32, f32, f64 });
+impl_dtype_convert_from!(f64, { u8, i32, u32, f32, f64 });
 
 impl<T: NumDType> DTypeConvert<T> for bool {
     fn convert(self) -> T {
@@ -240,7 +226,7 @@ macro_rules! impl_boolean_for_float {
     };
 }
 
-impl_boolean_for_int!(i8, u8, i32, u32, usize);
+impl_boolean_for_int!(u8, i32, u32);
 impl_boolean_for_float!(f32, f64);
 
 impl Boolean for bool {

@@ -1,4 +1,4 @@
-use lumen_core::{FloatDType, NumDType, Tensor};
+use lumen_core::{FloatDType, IntTensor, NumDType, Tensor};
 use lumen_macros::Module;
 use crate::init::Initialize;
 
@@ -22,7 +22,8 @@ impl<T: NumDType> Embedding<T> {
         }
     }
 
-    pub fn forward(&self, indexes: &Tensor<usize>) -> lumen_core::Result<Tensor<T>> {
+    pub fn forward(&self, indexes: impl Into<IntTensor>) -> lumen_core::Result<Tensor<T>> {
+        let indexes = indexes.into();
         let mut final_dims = indexes.dims().to_vec();
         final_dims.push(self.embedding_dim);
         let indexes = indexes.flatten_all()?;

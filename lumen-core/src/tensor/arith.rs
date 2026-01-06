@@ -633,7 +633,7 @@ macro_rules! impl_scalar_tensor_binary {
     };
 }
 
-impl_scalar_tensor_binary!(f32, f64, u8, i32, u32, usize);
+impl_scalar_tensor_binary!(f32, f64, u8, i32, u32);
 
 #[cfg(test)]
 mod tests {

@@ -45,12 +45,6 @@ impl<T: WithDType> Tensor<T> {
                 indexes.layout(),
                 dim,
             )?,
-            IntTensor::USize(indexes) => self.storage_read().index_select(
-                self.layout(),
-                &indexes.storage_read(),
-                indexes.layout(),
-                dim,
-            )?,
         };
 
         Ok(Self::build(storage, dims, meta))
@@ -96,7 +90,6 @@ impl<T: WithDType> Tensor<T> {
             IntTensor::I32(idx) => self.storage_read().gather(self.layout(), &idx.storage_read(), idx.layout(), dim)?,
             IntTensor::U32(idx) => self.storage_read().gather(self.layout(), &idx.storage_read(), idx.layout(), dim)?,
             IntTensor::U8(idx) => self.storage_read().gather(self.layout(), &idx.storage_read(), idx.layout(), dim)?,
-            IntTensor::USize(idx) => self.storage_read().gather(self.layout(), &idx.storage_read(), idx.layout(), dim)?,
         };
 
         let meta = T::AutogradMeta::on_gather_op(self, &indexes, dim);
@@ -155,14 +148,6 @@ impl<T: NumDType> Tensor<T> {
                 source.layout(),
                 dim,
             )?,
-            IntTensor::USize(idx) => self.storage_read().index_add(
-                self.layout(),
-                &idx.storage_read(),
-                idx.layout(),
-                &source.storage_read(),
-                source.layout(),
-                dim,
-            )?,
         };
 
         let meta = T::AutogradMeta::on_index_add_op(self, &indexes, source, dim);
@@ -192,14 +177,6 @@ impl<T: NumDType> Tensor<T> {
                 dim,
             )?,
             IntTensor::U8(idx) => self.storage_read().scatter_add(
-                self.layout(),
-                &idx.storage_read(),
-                idx.layout(),
-                &source.storage_read(),
-                source.layout(),
-                dim,
-            )?,
-            IntTensor::USize(idx) => self.storage_read().scatter_add(
                 self.layout(),
                 &idx.storage_read(),
                 idx.layout(),
