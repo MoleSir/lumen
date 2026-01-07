@@ -11,6 +11,7 @@ pub enum UtilError {
     Io(#[from] std::io::Error),
 }   
 
+#[allow(unused)]
 /// Download the file at the specified url.
 /// File download progress is reported with the help of a [progress bar](indicatif).
 ///

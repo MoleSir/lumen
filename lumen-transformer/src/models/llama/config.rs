@@ -41,6 +41,7 @@ impl LlamaConfig {
         }
     }
 
+    #[allow(unused)]
     pub(crate) fn test() -> Self {
         Self {
             hidden_size: 32,

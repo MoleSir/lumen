@@ -476,7 +476,6 @@ impl<T: FloatDType> LlamaCache<T> {
     }
 }
 
-
 fn calculate_default_inv_freq<T: FloatDType>(config: &LlamaConfig) -> Vec<T> {
     let head_size = config.hidden_size / config.num_attention_heads;
     (0..head_size)
