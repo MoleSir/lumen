@@ -1,2 +1,2 @@
-mod llama;
-pub use llama::*;
+pub mod llama;
+pub mod gpt2;

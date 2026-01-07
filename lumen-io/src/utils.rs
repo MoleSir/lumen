@@ -48,7 +48,7 @@ pub fn load_tensor(dtype: DType, shape: impl Into<Shape>, bytes: &[u8]) -> lumen
             "Byte length mismatch. Expected {}, got {}", 
             element_count * type_size, 
             bytes.len()
-        )));
+        )))?;
     }
 
     match dtype {

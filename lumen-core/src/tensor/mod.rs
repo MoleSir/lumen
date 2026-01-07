@@ -60,7 +60,7 @@ impl<T: WithDType> Tensor<T> {
 
     pub fn check_scalar(&self) -> Result<()> {
         if !self.is_scalar() {
-            Err(Error::NotScalar)
+            Err(Error::NotScalar)?
         } else {
             Ok(())
         }

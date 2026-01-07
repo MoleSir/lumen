@@ -15,7 +15,7 @@ impl<T: WithDType> Tensor<T> {
                 lhs: lhs.clone(),
                 rhs: rhs.clone(),
                 op,
-            })
+            })?
         } else {
             Ok(lhs)
         }

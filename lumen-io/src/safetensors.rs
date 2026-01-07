@@ -157,7 +157,7 @@ pub fn load<R: std::io::Read>(reader: &mut R) -> SafeTensorsResult<SafeTensorsCo
         let info: SafeTensorsInfo = serde_json::from_value(value)?;
         let (start, end) = info.data_offsets;
         if end > data_buffer.len() {
-            return Err(SafeTensorsError::DataOffsetOutOfRange(data_buffer.len(), end));
+            return Err(SafeTensorsError::DataOffsetOutOfRange(data_buffer.len(), end))?;
         }
 
         let raw_bytes = &data_buffer[start..end];
@@ -230,10 +230,10 @@ impl SafeTensorsContent {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[thiserrorctx::Error]
 pub enum SafeTensorsError {
     #[error(transparent)]
-    Lumen(#[from] lumen_core::Error),
+    Lumen(#[from] lumen_core::ErrorCtx),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -253,8 +253,6 @@ pub enum SafeTensorsError {
     #[error("Data offset out of range, total {0}, but try get {1}")]
     DataOffsetOutOfRange(usize, usize),
 }
-
-pub type SafeTensorsResult<T> = Result<T, SafeTensorsError>;
 
 #[cfg(test)]
 mod test {

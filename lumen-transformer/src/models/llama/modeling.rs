@@ -4,7 +4,6 @@ use lumen_macros::Module;
 use lumen_nn::{init::Initialize, Embedding, Linear};
 use super::{LlamaConfig, LlamaResult};
 
-
 // ========================================================================= //
 //                For Causal LM
 // ========================================================================= //
@@ -151,35 +150,6 @@ impl<T: FloatDType> LlamaLayer<T> {
         let hidden_states = residual + hidden_states;
 
         Ok(hidden_states)
-    }
-}
-
-// ========================================================================= //
-//                RmsNorm
-// ========================================================================= //
-
-#[derive(Module)]
-pub struct LlamaRMSNorm<T: FloatDType> {
-    pub weight: Tensor<T>,
-    #[module(skip)]
-    pub variance_epsilon: T,
-}
-
-impl<T: FloatDType> LlamaRMSNorm<T> {
-    pub fn init(config: &LlamaConfig) -> LlamaResult<Self> {
-        let weight = Var::ones((config.hidden_size,))?;
-        let variance_epsilon = T::from_f64(config.rms_norm_eps);
-        Ok(Self { weight, variance_epsilon })
-    }
-
-    pub fn forward(&self, hidden_states: &Tensor<T>) -> LlamaResult<Tensor<T>> {
-        // (xxx, hidden_size) => (xxx, hidden_size)
-        let variance = hidden_states.pow(T::two()).mean_keepdim(D::Minus1)?;
-        // (xxx, hidden_size) => (xxx, hidden_size) 
-        let hidden_states = hidden_states * (variance + self.variance_epsilon).sqr();
-        // (xxx, hidden_size) => (xxx, hidden_size)
-        let out = self.weight.broadcast_mul(&hidden_states)?;
-        Ok(out)
     }
 }
 
@@ -429,6 +399,35 @@ impl<T: FloatDType> LlamaAttention<T> {
 }
 
 // ========================================================================= //
+//                RmsNorm
+// ========================================================================= //
+
+#[derive(Module)]
+pub struct LlamaRMSNorm<T: FloatDType> {
+    pub weight: Tensor<T>,
+    #[module(skip)]
+    pub variance_epsilon: T,
+}
+
+impl<T: FloatDType> LlamaRMSNorm<T> {
+    pub fn init(config: &LlamaConfig) -> LlamaResult<Self> {
+        let weight = Var::ones((config.hidden_size,))?;
+        let variance_epsilon = T::from_f64(config.rms_norm_eps);
+        Ok(Self { weight, variance_epsilon })
+    }
+
+    pub fn forward(&self, hidden_states: &Tensor<T>) -> LlamaResult<Tensor<T>> {
+        // (xxx, hidden_size) => (xxx, hidden_size)
+        let variance = hidden_states.pow(T::two()).mean_keepdim(D::Minus1)?;
+        // (xxx, hidden_size) => (xxx, hidden_size) 
+        let hidden_states = hidden_states * (variance + self.variance_epsilon).sqr();
+        // (xxx, hidden_size) => (xxx, hidden_size)
+        let out = self.weight.broadcast_mul(&hidden_states)?;
+        Ok(out)
+    }
+}
+
+// ========================================================================= //
 //                Cache
 // ========================================================================= //
 
@@ -487,7 +486,7 @@ fn calculate_default_inv_freq<T: FloatDType>(config: &LlamaConfig) -> Vec<T> {
 #[cfg(test)]
 mod test {
     use lumen_nn::{init::Initialize, Module};
-    use crate::LlamaConfig;
+    use crate::llama::LlamaConfig;
     use super::LlamaForCausalLM;
 
     #[test]

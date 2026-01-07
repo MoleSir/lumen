@@ -14,7 +14,7 @@ impl<T: FloatDType> SGD<T> {
 }
 
 impl<T: FloatDType> Optimizer<T> for SGD<T> {
-    type Error = lumen_core::Error;
+    type Error = lumen_core::ErrorCtx;
     fn step(&mut self, grads: &GradStore<T>) -> lumen_core::Result<()> {
         for var in self.params.iter() {
             if let Some(grad) = grads.get(var) {

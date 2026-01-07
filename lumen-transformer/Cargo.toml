@@ -11,5 +11,6 @@ lumen-core = { workspace = true }
 lumen-nn = { workspace = true }
 lumen-macros = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+thiserrorctx = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }

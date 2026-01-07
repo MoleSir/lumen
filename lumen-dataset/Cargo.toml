@@ -8,6 +8,7 @@ license = { workspace = true }
 
 [dependencies]
 lumen-core = { workspace = true }
+thiserrorctx = { workspace = true }
 thiserror = { workspace = true }
 dirs = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
