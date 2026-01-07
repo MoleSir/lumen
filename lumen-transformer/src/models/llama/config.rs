@@ -40,4 +40,18 @@ impl LlamaConfig {
             max_position_embeddings: 4096,
         }
     }
+
+    pub(crate) fn test() -> Self {
+        Self {
+            hidden_size: 32,
+            intermediate_size: 128,
+            vocab_size: 32000,
+            num_hidden_layers: 8,
+            num_attention_heads: 4,
+            num_kv_heads: 4,
+            rms_norm_eps: 1e-5,
+            rope_theta: 10_0000.0,
+            max_position_embeddings: 64,
+        }   
+    }
 }

@@ -1,9 +1,216 @@
 use std::collections::HashMap;
-use lumen_core::{FloatDType, Tensor};
+use lumen_core::{FloatDType, IntTensor, Tensor, Var, D};
 use lumen_macros::Module;
-use lumen_nn::Linear;
+use lumen_nn::{init::Initialize, Embedding, Linear};
 use super::{LlamaConfig, LlamaResult};
 
+
+// ========================================================================= //
+//                For Causal LM
+// ========================================================================= //
+
+#[derive(Module)]
+pub struct LlamaForCausalLM<T: FloatDType> {
+    pub model: LlamaModel<T>,
+    pub lm_head: Linear<T>, 
+}
+
+impl<T: FloatDType> LlamaForCausalLM<T> {
+    pub fn init(config: &LlamaConfig, initialize: &Initialize<T>) -> LlamaResult<Self> {
+        let model = LlamaModel::init(config, initialize)?;
+        let lm_head = lumen_nn::linear(config.hidden_size, config.vocab_size, false, initialize)?;
+        
+        Ok(Self { model, lm_head })
+    }
+
+    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut LlamaCache<T>) -> LlamaResult<Tensor<T>> {
+        // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
+        let hidden_states = self.model.forward(input_ids, start_pos, cache)?;
+        // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
+        let logits = self.lm_head.forward(&hidden_states)?;
+        Ok(logits)
+    }
+}
+
+// ========================================================================= //
+//                          Model 
+// ========================================================================= //
+
+#[derive(Module)]
+pub struct LlamaModel<T: FloatDType> {
+    pub embed: Embedding<T>,
+    pub layers: Vec<LlamaLayer<T>>,
+    pub norm: LlamaRMSNorm<T>,
+}
+
+impl<T: FloatDType> LlamaModel<T> {
+    pub fn init(config: &LlamaConfig, initialize: &Initialize<T>) -> LlamaResult<Self> {
+        let embed = lumen_nn::embedding(config.vocab_size, config.hidden_size, initialize)?;
+        
+        let mut layers = Vec::new();
+        for _ in 0..config.num_hidden_layers {
+            layers.push(LlamaLayer::init(config, initialize)?);
+        }
+        
+        let norm = LlamaRMSNorm::init(config)?;
+
+        Ok(Self { embed, layers, norm })
+    }
+
+    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut LlamaCache<T>) -> LlamaResult<Tensor<T>> {
+        // embedding: (batch_size, seq_len) -> (batch_size, seq_len, hidden_size)
+        let mut hidden_states = self.embed.forward(input_ids)?;
+
+        for (i, layer) in self.layers.iter().enumerate() {
+            // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, hidden_size)
+            hidden_states = layer.forward(&hidden_states, start_pos, i, cache)?;
+        }
+        
+        // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, hidden_size)
+        hidden_states = self.norm.forward(&hidden_states)?;
+
+        Ok(hidden_states)
+    }
+}
+
+// ========================================================================= //
+//                Layer
+// ========================================================================= //
+
+#[derive(Module)]
+pub struct LlamaLayer<T: FloatDType> {
+    pub self_attn: LlamaAttention<T>,
+    pub mlp: LlamaMlp<T>,
+    pub input_layernorm: LlamaRMSNorm<T>,
+    pub post_attention_layernorm: LlamaRMSNorm<T>,
+}
+
+impl<T: FloatDType> LlamaLayer<T> {
+    pub fn init(config: &LlamaConfig, initialize: &Initialize<T>) -> LlamaResult<Self> {
+        let self_attn = LlamaAttention::init(config, initialize)?;
+        let mlp = LlamaMlp::init(config, initialize)?;
+        let input_layernorm = LlamaRMSNorm::init(config)?;
+        let post_attention_layernorm = LlamaRMSNorm::init(config)?;
+        Ok(Self {
+            self_attn, mlp, input_layernorm, post_attention_layernorm,
+        })
+    }
+
+    /*
+
+                |
+                +---------------+
+                ^               |
+                |               |
+    +-----------------------+   |
+    |                       |   |
+    |           Mlp         |   |
+    |                       |   |
+    +-----------------------+   |
+                ^               |
+                |               |
+        +---------------+       |
+        |    RMSNorm    |       |
+        +---------------+       |
+                ^               |
+                |               |
+                +---------------+
+                |
+                |
+                |
+                +---------------+
+                ^               |
+                |               |
+    +-----------------------+   |
+    |                       |   |
+    |        Attention      |   |
+    |                       |   |
+    +-----------------------+   |
+                ^               |
+                |               |
+        +---------------+       |
+        |    RMSNorm    |       |
+        +---------------+       |
+                ^               |
+                |               |
+                +---------------+
+                |
+    
+    */
+    pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut LlamaCache<T>) -> LlamaResult<Tensor<T>> {    
+        // Self Attention
+        let residual = hidden_states.clone();
+        let hidden_states = self.input_layernorm.forward(hidden_states)?;
+        let hidden_states = self.self_attn.forward(&hidden_states, index_pos, layer_idx, cache)?;
+        let hidden_states = residual + hidden_states;
+
+        // Mlp
+        let residual = hidden_states.clone();
+        let hidden_states = self.post_attention_layernorm.forward(&hidden_states)?;
+        let hidden_states = self.mlp.forward(&hidden_states)?;
+        let hidden_states = residual + hidden_states;
+
+        Ok(hidden_states)
+    }
+}
+
+// ========================================================================= //
+//                RmsNorm
+// ========================================================================= //
+
+#[derive(Module)]
+pub struct LlamaRMSNorm<T: FloatDType> {
+    pub weight: Tensor<T>,
+    #[module(skip)]
+    pub variance_epsilon: T,
+}
+
+impl<T: FloatDType> LlamaRMSNorm<T> {
+    pub fn init(config: &LlamaConfig) -> LlamaResult<Self> {
+        let weight = Var::ones((config.hidden_size,))?;
+        let variance_epsilon = T::from_f64(config.rms_norm_eps);
+        Ok(Self { weight, variance_epsilon })
+    }
+
+    pub fn forward(&self, hidden_states: &Tensor<T>) -> LlamaResult<Tensor<T>> {
+        // (xxx, hidden_size) => (xxx, hidden_size)
+        let variance = hidden_states.pow(T::two()).mean_keepdim(D::Minus1)?;
+        // (xxx, hidden_size) => (xxx, hidden_size) 
+        let hidden_states = hidden_states * (variance + self.variance_epsilon).sqr();
+        // (xxx, hidden_size) => (xxx, hidden_size)
+        let out = self.weight.broadcast_mul(&hidden_states)?;
+        Ok(out)
+    }
+}
+
+// ========================================================================= //
+//                MLP
+// ========================================================================= //
+
+#[derive(Module)]
+pub struct LlamaMlp<T: FloatDType> {
+    pub up_proj: Linear<T>,
+    pub gate_proj: Linear<T>,
+    pub down_proj: Linear<T>,
+}
+
+impl<T: FloatDType> LlamaMlp<T> {
+    pub fn init(config: &LlamaConfig, initialize: &Initialize<T>) -> LlamaResult<Self> {
+        let up_proj = lumen_nn::linear(config.hidden_size, config.intermediate_size, false, initialize)?;
+        let gate_proj = lumen_nn::linear(config.hidden_size, config.intermediate_size, false, initialize)?;
+        let down_proj = lumen_nn::linear(config.intermediate_size, config.hidden_size, false, initialize)?;
+    
+        Ok(Self { up_proj, down_proj, gate_proj })
+    }
+
+    pub fn forward(&self, x: &Tensor<T>) -> LlamaResult<Tensor<T>> {
+        let up = self.up_proj.forward(x)?;
+        let gate = self.gate_proj.forward(x)?;
+        let up_gate = (up * gate).silu();
+        let out = self.down_proj.forward(&up_gate)?;
+        Ok(out)
+    }
+}
 
 // ========================================================================= //
 //                Attention
@@ -21,48 +228,64 @@ pub struct LlamaAttention<T: FloatDType> {
     #[module(skip)]
     pub num_kv_heads: usize,
     #[module(skip)]
-    pub head_dim: usize,
+    pub head_size: usize,
     #[module(skip)]
     pub max_position_embeddings: usize,
 }
 
 impl<T: FloatDType> LlamaAttention<T> {
-    pub fn forward(&self, x: &Tensor<T>, index_pos: usize, block_idx: usize, cache: &mut LlamaCache<T>) -> LlamaResult<Tensor<T>> {
-        let (batch_size, seq_len, hidden_size) = x.dims3()?;
-        let q = self.q_proj.forward(x)?; // (batch_size, seq_len, head_dim * num_attn_heads)
-        let k = self.k_proj.forward(x)?; // (batch_size, seq_len, head_dim * num_kv_heads)
-        let v = self.v_proj.forward(x)?; // (batch_size, seq_len, head_dim * num_kv_heads)
+    pub fn init(config: &LlamaConfig, initialize: &Initialize<T>) -> LlamaResult<Self> {
+        let head_size = config.hidden_size / config.num_attention_heads;
+        let q_proj = lumen_nn::linear(config.hidden_size, config.hidden_size, false, initialize)?;
+        let k_proj = lumen_nn::linear(config.hidden_size, config.num_kv_heads * head_size, false, initialize)?;
+        let v_proj = lumen_nn::linear(config.hidden_size, config.num_kv_heads * head_size, false, initialize)?;
+        let o_proj = lumen_nn::linear(config.hidden_size, config.hidden_size, false, initialize)?;
 
-        // (batch_size, seq_len, head_dim * num_attn_heads) => 
-        // (batch_size, seq_len, num_attn_heads, head_dim) => 
-        // (batch_size, num_attn_heads, seq_len, head_dim)
-        let q = q.reshape((batch_size, seq_len, self.num_attention_heads, self.head_dim))?
+        Ok(Self {
+            q_proj, k_proj, v_proj, o_proj,
+            num_attention_heads: config.num_attention_heads,
+            num_kv_heads: config.num_kv_heads,
+            head_size,
+            max_position_embeddings: config.max_position_embeddings,
+        })
+    }  
+
+    pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut LlamaCache<T>) -> LlamaResult<Tensor<T>> {
+        let (batch_size, seq_len, hidden_size) = hidden_states.dims3()?;
+        let q = self.q_proj.forward(hidden_states)?; // (batch_size, seq_len, head_size * num_attn_heads)
+        let k = self.k_proj.forward(hidden_states)?; // (batch_size, seq_len, head_size * num_kv_heads)
+        let v = self.v_proj.forward(hidden_states)?; // (batch_size, seq_len, head_size * num_kv_heads)
+
+        // (batch_size, seq_len, head_size * num_attn_heads) => 
+        // (batch_size, seq_len, num_attn_heads, head_size) => 
+        // (batch_size, num_attn_heads, seq_len, head_size)
+        let q = q.reshape((batch_size, seq_len, self.num_attention_heads, self.head_size))?
             .transpose(1, 2)?
             .contiguous();
 
-        // (batch_size, seq_len, head_dim * num_kv_heads) => 
-        // (batch_size, seq_len, num_kv_heads, head_dim) => 
-        // (batch_size, num_kv_heads, seq_len, head_dim)
+        // (batch_size, seq_len, head_size * num_kv_heads) => 
+        // (batch_size, seq_len, num_kv_heads, head_size) => 
+        // (batch_size, num_kv_heads, seq_len, head_size)
         let k = k
-            .reshape((batch_size, seq_len, self.num_kv_heads, self.head_dim))?
+            .reshape((batch_size, seq_len, self.num_kv_heads, self.head_size))?
             .transpose(1, 2)?
             .contiguous();
 
-        // (batch_size, seq_len, head_dim * num_kv_heads) => 
-        // (batch_size, seq_len, num_kv_heads, head_dim) => 
-        // (batch_size, num_kv_heads, seq_len, head_dim)
+        // (batch_size, seq_len, head_size * num_kv_heads) => 
+        // (batch_size, seq_len, num_kv_heads, head_size) => 
+        // (batch_size, num_kv_heads, seq_len, head_size)
         let mut v = v
-            .reshape((batch_size, seq_len, self.num_kv_heads, self.head_dim))?
+            .reshape((batch_size, seq_len, self.num_kv_heads, self.head_size))?
             .transpose(1, 2)?
             .contiguous();
 
-        let q = self.apply_rotary_emb(&q, index_pos, cache)?; // (batch_size, num_attn_heads, seq_len, head_dim)
-        let mut k = self.apply_rotary_emb(&k, index_pos, cache)?; // (batch_size, num_kv_heads, seq_len, head_dim)
+        let q = self.apply_rotary_emb(&q, index_pos, cache)?; // (batch_size, num_attn_heads, seq_len, head_size)
+        let mut k = self.apply_rotary_emb(&k, index_pos, cache)?; // (batch_size, num_kv_heads, seq_len, head_size)
     
         if cache.use_kv_cache {
-            if let Some((cache_k, cache_v)) = &cache.kvs[block_idx] {
-                // cat [(batch_size, num_kv_heads, cache_seq_len, head_dim), (batch_size, num_kv_heads, seq_len, head_dim)]
-                // => (batch_size, num_kv_heads, total_seq_len, head_dim)
+            if let Some((cache_k, cache_v)) = &cache.kvs[layer_idx] {
+                // cat [(batch_size, num_kv_heads, cache_seq_len, head_size), (batch_size, num_kv_heads, seq_len, head_size)]
+                // => (batch_size, num_kv_heads, total_seq_len, head_size)
                 k = Tensor::cat(&[cache_k, &k], 2)?.contiguous();
                 v = Tensor::cat(&[cache_v, &v], 2)?.contiguous();
                 
@@ -81,20 +304,20 @@ impl<T: FloatDType> LlamaAttention<T> {
                         .contiguous();
                 }
             }
-            cache.kvs[block_idx] = Some((k.clone(), v.clone()))
+            cache.kvs[layer_idx] = Some((k.clone(), v.clone()))
         }
 
-        // (batch_size, num_attn_heads, total_seq_len, head_dim)
+        // (batch_size, num_attn_heads, total_seq_len, head_size)
         let (k, v) = self.repeat_kv(&k, &v)?;
 
-        // q: (batch_size, num_attn_heads, seq_len, head_dim)
-        // k: (batch_size, num_attn_heads, total_seq_len, head_dim)
-        // v: (batch_size, num_attn_heads, total_seq_len, head_dim)
+        // q: (batch_size, num_attn_heads, seq_len, head_size)
+        // k: (batch_size, num_attn_heads, total_seq_len, head_size)
+        // v: (batch_size, num_attn_heads, total_seq_len, head_size)
 
-        // (batch_size, num_attn_heads, seq_len, head_dim) @ (batch_size, num_attn_heads, total_seq_len, head_dim).T 
+        // (batch_size, num_attn_heads, seq_len, head_size) @ (batch_size, num_attn_heads, total_seq_len, head_size).T 
         // => (batch_size, num_attn_heads, seq_len, total_seq_len)
         // for each token in seq_len, get attn_weight for all total_seq_len
-        let attn_weight = q.matmul(&k.transpose_last()?)? / T::from_f64((self.head_dim as f64).sqrt());
+        let attn_weight = q.matmul(&k.transpose_last()?)? / T::from_f64((self.head_size as f64).sqrt());
         let attn_weight_masked = if seq_len > 1 {
             /*
             
@@ -138,11 +361,11 @@ impl<T: FloatDType> LlamaAttention<T> {
         // (batch_size, num_attn_heads, seq_len, total_seq_len)
         let attn_score = lumen_nn::functional::softmax(&attn_weight_masked, 3)?;
 
-        // (batch_size, num_attn_heads, seq_len, total_seq_len) @ (batch_size, num_attn_heads, total_seq_len, head_dim)
-        // => (batch_size, num_attn_heads, seq_len, head_dim)
+        // (batch_size, num_attn_heads, seq_len, total_seq_len) @ (batch_size, num_attn_heads, total_seq_len, head_size)
+        // => (batch_size, num_attn_heads, seq_len, head_size)
         let attn_value = attn_score.matmul(&v)?;
-        // (batch_size, num_attn_heads, seq_len, head_dim) => 
-        // (batch_size, seq_len, num_attn_heads, head_dim) => 
+        // (batch_size, num_attn_heads, seq_len, head_size) => 
+        // (batch_size, seq_len, num_attn_heads, head_size) => 
         // (batch_size, seq_len, hidden_size)
         let attn_value = attn_value.transpose(1, 2)?.reshape((batch_size, seq_len, hidden_size))?;
 
@@ -153,31 +376,31 @@ impl<T: FloatDType> LlamaAttention<T> {
     }
 
     fn apply_rotary_emb(&self, x: &Tensor<T>, index_pos: usize, cache: &LlamaCache<T>) -> LlamaResult<Tensor<T>> {
-        // (batch_size, _n_heads, seq_len, head_dim)
-        let (_batch_size, _n_heads, seq_len, head_dim) = x.dims4()?;
+        // (batch_size, _n_heads, seq_len, head_size)
+        let (_batch_size, _n_heads, seq_len, head_size) = x.dims4()?;
 
-        let cos = cache.cos.narrow(0, index_pos, seq_len)?; // (seq_len, head_dim/2)
-        let sin = cache.sin.narrow(0, index_pos, seq_len)?; // (seq_len, head_dim/2)
+        let cos = cache.cos.narrow(0, index_pos, seq_len)?; // (seq_len, head_size/2)
+        let sin = cache.sin.narrow(0, index_pos, seq_len)?; // (seq_len, head_size/2)
         let (cos_seq_len, cos_n_embd) = cos.dims2()?;
         let (sin_seq_len, sin_n_embd) = sin.dims2()?;
 
-        assert_eq!(2 * cos_n_embd, head_dim);
-        assert_eq!(2 * sin_n_embd, head_dim);
+        assert_eq!(2 * cos_n_embd, head_size);
+        assert_eq!(2 * sin_n_embd, head_size);
         assert!(seq_len <= cos_seq_len);
         assert!(seq_len <= sin_seq_len);
 
-        let cos = Tensor::cat(&[&cos, &cos], 1)?; // (seq_len, head_dim)
-        let sin = Tensor::cat(&[&sin, &sin], 1)?; // (seq_len, head_dim)
-        let cos = cos.reshape((1, 1, seq_len, head_dim))?; // (1, 1, seq_len, head_dim)
-        let sin = sin.reshape((1, 1, seq_len, head_dim))?; // (1, 1, seq_len, head_dim)
+        let cos = Tensor::cat(&[&cos, &cos], 1)?; // (seq_len, head_size)
+        let sin = Tensor::cat(&[&sin, &sin], 1)?; // (seq_len, head_size)
+        let cos = cos.reshape((1, 1, seq_len, head_size))?; // (1, 1, seq_len, head_size)
+        let sin = sin.reshape((1, 1, seq_len, head_size))?; // (1, 1, seq_len, head_size)
 
         // rotate_half: [-x2, x1]
         let x_rotated = self.rotate_half(x)?;
 
-        // x: (batch_size, _n_heads, seq_len, head_dim)
-        // x_rotated: (batch_size, _n_heads, seq_len, head_dim)
-        // cos: (1, 1, seq_len, head_dim)
-        // sin: (1, 1, seq_len, head_dim)
+        // x: (batch_size, _n_heads, seq_len, head_size)
+        // x_rotated: (batch_size, _n_heads, seq_len, head_size)
+        // cos: (1, 1, seq_len, head_size)
+        // sin: (1, 1, seq_len, head_size)
         let x_out = x.broadcast_mul(&cos)? + x_rotated.broadcast_mul(&sin)?;
 
         Ok(x_out)
@@ -205,6 +428,10 @@ impl<T: FloatDType> LlamaAttention<T> {
     }
 }
 
+// ========================================================================= //
+//                Cache
+// ========================================================================= //
+
 pub struct LlamaCache<T: FloatDType> {
     pub use_kv_cache: bool,
 
@@ -219,16 +446,16 @@ impl<T: FloatDType> LlamaCache<T> {
         let theta = calculate_default_inv_freq::<T>(config);
         
         //    [0, 2, 4, ...] 
-        // => [ 1/rope_theta^{0/head_dim}, 1/rope_theta^{2/head_dim}, ... ]
-        let theta = Tensor::new(theta)?;  // (head_dim//2, )
-        let theta = theta.reshape((1, theta.element_count()))?; // (1, head_dim//2, )
+        // => [ 1/rope_theta^{0/head_size}, 1/rope_theta^{2/head_size}, ... ]
+        let theta = Tensor::new(theta)?;  // (head_size//2, )
+        let theta = theta.reshape((1, theta.element_count()))?; // (1, head_size//2, )
 
         let idx_theta = Tensor::arange(T::zero(), T::from_usize(config.max_position_embeddings))?;
         let idx_theta = idx_theta.reshape((config.max_position_embeddings, 1))?; // (max_position_embeddings, 1)
-        let idx_theta = idx_theta.matmul(&theta)?; // (max_position_embeddings, head_dim//2)
+        let idx_theta = idx_theta.matmul(&theta)?; // (max_position_embeddings, head_size//2)
 
-        let cos = idx_theta.cos(); // (max_position_embeddings, head_dim//2)
-        let sin = idx_theta.sin(); // (max_position_embeddings, head_dim//2)
+        let cos = idx_theta.cos(); // (max_position_embeddings, head_size//2)
+        let sin = idx_theta.sin(); // (max_position_embeddings, head_size//2)
 
         Ok(Self { 
             use_kv_cache,
@@ -251,10 +478,27 @@ impl<T: FloatDType> LlamaCache<T> {
 
 
 fn calculate_default_inv_freq<T: FloatDType>(config: &LlamaConfig) -> Vec<T> {
-    let head_dim = config.hidden_size / config.num_attention_heads;
-    (0..head_dim)
+    let head_size = config.hidden_size / config.num_attention_heads;
+    (0..head_size)
         .step_by(2)
-        .map(|i| T::one() / T::from_f64(config.rope_theta.powf(i as f64 / head_dim as f64)))
+        .map(|i| T::one() / T::from_f64(config.rope_theta.powf(i as f64 / head_size as f64)))
         .collect()
 }
 
+#[cfg(test)]
+mod test {
+    use lumen_nn::{init::Initialize, Module};
+    use crate::LlamaConfig;
+    use super::LlamaForCausalLM;
+
+    #[test]
+    fn test_init() {
+        let initialize = Initialize::<f32>::standard_normal();
+        let config = LlamaConfig::test();
+        let layer = LlamaForCausalLM::init(&config, &initialize).unwrap();
+
+        for (name, param) in layer.named_params() {
+            println!("{}: {}", name, param.shape());
+        }
+    }
+}
