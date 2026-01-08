@@ -3,7 +3,7 @@ use lumen_core::{FloatDType, IntTensor, Tensor, Var, D};
 use lumen_macros::Module;
 use lumen_nn::{init::Initialize, Embedding, Linear};
 use thiserrorctx::Context;
-use super::{LlamaConfig, LlamaResult};
+use super::{LlamaConfig, LlamaError, LlamaResult};
 
 // ========================================================================= //
 //                For Causal LM
@@ -17,8 +17,10 @@ pub struct LlamaForCausalLM<T: FloatDType> {
 
 impl<T: FloatDType> LlamaForCausalLM<T> {
     pub fn init(config: &LlamaConfig, initialize: &Initialize<T>) -> LlamaResult<Self> {
-        let model = LlamaModel::init(config, initialize)?;
-        let lm_head = lumen_nn::linear(config.hidden_size, config.vocab_size, false, initialize)?;
+        let model = LlamaModel::init(config, initialize).context("init llama model")?;
+        let lm_head = lumen_nn::linear(config.hidden_size, config.vocab_size, false, initialize)
+            .map_err(LlamaError::Core)
+            .context("init lm head")?;
         
         Ok(Self { model, lm_head })
     }
@@ -27,7 +29,9 @@ impl<T: FloatDType> LlamaForCausalLM<T> {
         // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
         let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
         // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
-        let logits = self.lm_head.forward(&hidden_states)?;
+        let logits = self.lm_head.forward(&hidden_states)
+            .map_err(LlamaError::Core)
+            .context("lm head forward")?;
         Ok(logits)
     }
 }
@@ -45,29 +49,34 @@ pub struct LlamaModel<T: FloatDType> {
 
 impl<T: FloatDType> LlamaModel<T> {
     pub fn init(config: &LlamaConfig, initialize: &Initialize<T>) -> LlamaResult<Self> {
-        let embed = lumen_nn::embedding(config.vocab_size, config.hidden_size, initialize)?;
+        let embed = lumen_nn::embedding(config.vocab_size, config.hidden_size, initialize)
+            .map_err(LlamaError::Core)
+            .context("init embed")?;
         
         let mut layers = Vec::new();
         for _ in 0..config.num_hidden_layers {
             layers.push(LlamaLayer::init(config, initialize)?);
         }
         
-        let norm = LlamaRMSNorm::init(config)?;
+        let norm = LlamaRMSNorm::init(config).context("init rms norm")?;
 
         Ok(Self { embed, layers, norm })
     }
 
     pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut LlamaCache<T>) -> LlamaResult<Tensor<T>> {
         // embedding: (batch_size, seq_len) -> (batch_size, seq_len, hidden_size)
-        let mut hidden_states = self.embed.forward(input_ids)?;
+        let mut hidden_states = self.embed.forward(input_ids)
+            .map_err(LlamaError::Core)
+            .context("embed forward")?;
 
         for (i, layer) in self.layers.iter().enumerate() {
             // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, hidden_size)
-            hidden_states = layer.forward(&hidden_states, start_pos, i, cache)?;
+            hidden_states = layer.forward(&hidden_states, start_pos, i, cache)
+                .with_context(|| format!("layer {i} forward"))?;
         }
         
         // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, hidden_size)
-        hidden_states = self.norm.forward(&hidden_states)?;
+        hidden_states = self.norm.forward(&hidden_states).context("norm forward")?;
 
         Ok(hidden_states)
     }
@@ -87,10 +96,10 @@ pub struct LlamaLayer<T: FloatDType> {
 
 impl<T: FloatDType> LlamaLayer<T> {
     pub fn init(config: &LlamaConfig, initialize: &Initialize<T>) -> LlamaResult<Self> {
-        let self_attn = LlamaAttention::init(config, initialize)?;
-        let mlp = LlamaMlp::init(config, initialize)?;
-        let input_layernorm = LlamaRMSNorm::init(config)?;
-        let post_attention_layernorm = LlamaRMSNorm::init(config)?;
+        let self_attn = LlamaAttention::init(config, initialize).context("init attention")?;
+        let mlp = LlamaMlp::init(config, initialize).context("init mlp")?;
+        let input_layernorm = LlamaRMSNorm::init(config).context("init input layernorm")?;
+        let post_attention_layernorm = LlamaRMSNorm::init(config).context("init post atten layernorm")?;
         Ok(Self {
             self_attn, mlp, input_layernorm, post_attention_layernorm,
         })
@@ -140,14 +149,14 @@ impl<T: FloatDType> LlamaLayer<T> {
     pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut LlamaCache<T>) -> LlamaResult<Tensor<T>> {    
         // Self Attention
         let residual = hidden_states.clone();
-        let hidden_states = self.input_layernorm.forward(hidden_states)?;
-        let hidden_states = self.self_attn.forward(&hidden_states, index_pos, layer_idx, cache)?;
+        let hidden_states = self.input_layernorm.forward(hidden_states).context("input layernorm forward")?;
+        let hidden_states = self.self_attn.forward(&hidden_states, index_pos, layer_idx, cache).context("self attn forward")?;
         let hidden_states = residual + hidden_states;
 
         // Mlp
         let residual = hidden_states.clone();
-        let hidden_states = self.post_attention_layernorm.forward(&hidden_states)?;
-        let hidden_states = self.mlp.forward(&hidden_states)?;
+        let hidden_states = self.post_attention_layernorm.forward(&hidden_states).context("post attention layer norm forward")?;
+        let hidden_states = self.mlp.forward(&hidden_states).context("mlp forward")?;
         let hidden_states = residual + hidden_states;
 
         Ok(hidden_states)

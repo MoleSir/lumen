@@ -1,7 +1,7 @@
 use std::str::Utf8Error;
 use crate::{DType, Slice, Shape};
 
-#[thiserrorctx::context_error]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
     // === DType Errors ===
     #[error("{msg}, expected: {expected:?}, got: {got:?}")]
@@ -202,13 +202,6 @@ pub enum Error {
     #[error(transparent)]
     Utf8(#[from] Utf8Error),
 
-    // === Utils ===
-    #[error("{context}\n{inner}")]
-    Context {
-        inner: Box<Self>,
-        context: String,
-    },
-
     /// User generated error message
     #[error("{0}")]
     Msg(String),
@@ -216,6 +209,8 @@ pub enum Error {
     #[error("unwrap none")]
     UnwrapNone,
 }
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[macro_export]
 macro_rules! bail {

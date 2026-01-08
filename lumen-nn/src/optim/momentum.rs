@@ -51,7 +51,7 @@ impl<T: FloatDType> Momentum<T> {
 }
 
 impl<T: FloatDType> Optimizer<T> for Momentum<T> {
-    type Error = lumen_core::CtxError;
+    type Error = lumen_core::Error;
 
     fn step(&mut self, grads: &GradStore<T>) -> Result<(), Self::Error> {
         let lr = self.config.lr;
