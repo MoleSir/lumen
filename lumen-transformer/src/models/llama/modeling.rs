@@ -29,10 +29,10 @@ impl<T: FloatDType> LlamaForCausalLM<T> {
         // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
         let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
         // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
-        let logits = self.lm_head.forward(&hidden_states)
+        let hidden_states = self.lm_head.forward(&hidden_states)
             .map_err(LlamaError::Core)
             .context("lm head forward")?;
-        Ok(logits)
+        Ok(hidden_states)
     }
 }
 
@@ -68,7 +68,7 @@ impl<T: FloatDType> LlamaModel<T> {
         let mut hidden_states = self.embed.forward(input_ids)
             .map_err(LlamaError::Core)
             .context("embed forward")?;
-
+        
         for (i, layer) in self.layers.iter().enumerate() {
             // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, hidden_size)
             hidden_states = layer.forward(&hidden_states, start_pos, i, cache)
@@ -176,7 +176,7 @@ pub struct LlamaMlp<T: FloatDType> {
 
 impl<T: FloatDType> LlamaMlp<T> {
     pub fn init(config: &LlamaConfig, initialize: &Initialize<T>) -> LlamaResult<Self> {
-        let up_proj = lumen_nn::linear(config.hidden_size, config.intermediate_size, false, initialize)?;
+        let up_proj   = lumen_nn::linear(config.hidden_size, config.intermediate_size, false, initialize)?;
         let gate_proj = lumen_nn::linear(config.hidden_size, config.intermediate_size, false, initialize)?;
         let down_proj = lumen_nn::linear(config.intermediate_size, config.hidden_size, false, initialize)?;
     
@@ -333,6 +333,9 @@ impl<T: FloatDType> LlamaAttention<T> {
             } else {
                 causal_mask
             };
+
+            // (seq_len, total_seq_len) => (batch_size, num_attn_heads, seq_len, total_seq_len)
+            let mask = mask.broadcast_as(attn_weight.shape())?;
             mask.if_else(<T as FloatDType>::min_value(), attn_weight)?
         } else {
             attn_weight
@@ -430,7 +433,7 @@ impl<T: FloatDType> LlamaRMSNorm<T> {
         // (xxx, hidden_size) => (xxx, hidden_size)
         let variance = hidden_states.pow(T::two()).mean_keepdim(D::Minus1)?;
         // (xxx, hidden_size) => (xxx, hidden_size) 
-        let hidden_states = hidden_states * (variance + self.variance_epsilon).sqr();
+        let hidden_states = hidden_states.broadcast_mul(&(variance + self.variance_epsilon))?.sqr();
         // (xxx, hidden_size) => (xxx, hidden_size)
         let out = self.weight.broadcast_mul(&hidden_states)?;
         Ok(out)
@@ -495,18 +498,44 @@ fn calculate_default_inv_freq<T: FloatDType>(config: &LlamaConfig) -> Vec<T> {
 
 #[cfg(test)]
 mod test {
+    use lumen_core::Tensor;
     use lumen_nn::{init::Initialize, Module};
-    use crate::llama::LlamaConfig;
-    use super::LlamaForCausalLM;
+    use crate::llama::{LlamaConfig, LlamaResult};
+    use super::{LlamaCache, LlamaForCausalLM};
 
     #[test]
     fn test_init() {
         let initialize = Initialize::<f32>::standard_normal();
         let config = LlamaConfig::test();
-        let layer = LlamaForCausalLM::init(&config, &initialize).unwrap();
+        let model = LlamaForCausalLM::init(&config, &initialize).unwrap();
 
-        for (name, param) in layer.named_params() {
+        for (name, param) in model.named_params() {
             println!("{}: {}", name, param.shape());
+        }
+    }
+
+    #[test]
+    fn test_forward() {
+        fn test() -> LlamaResult<()> {
+            let initialize = Initialize::<f32>::uniform(0.0, 0.02);
+            let config = LlamaConfig::test();
+            let model = LlamaForCausalLM::init(&config, &initialize)?;
+    
+            let input_ids = Tensor::<u32>::new(&[
+                [23, 89, 11, 2],
+                [90, 12, 43, 29],
+            ])?; // (2, 4)
+    
+            let mut cache = LlamaCache::<f32>::new(true, &config)?;
+
+            println!("{}", input_ids);
+            let result = model.forward(input_ids.clone(), 0, &mut cache)?;
+            println!("{}", result);
+            Ok(())
+        }
+
+        if let Err(e) = test() {
+            println!("{}", e);
         }
     }
 }

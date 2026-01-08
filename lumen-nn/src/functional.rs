@@ -1,4 +1,41 @@
-use lumen_core::{Dim, FloatDType, IntTensor, Tensor, D};
+use lumen_core::{Dim, FloatDType, IntTensor, NumDType, Tensor, D};
+
+pub fn linear<T: NumDType>(input: &Tensor<T>, weight: &Tensor<T>, bias: Option<&Tensor<T>>) -> lumen_core::Result<Tensor<T>> {
+    let x = match input.dims() {
+        &[b1, b2, m, k] => {
+            let (out_dim, in_dim) = weight.dims2()?;
+            if input.is_contiguous() {
+                let w = weight.transpose_last()?;
+                input.reshape((b1 * b2 * m, k))?
+                    .matmul(&w)?
+                    .reshape((b1, b2, m, out_dim))?
+            } else {
+                let w = weight.broadcast_as((b1, b2, out_dim, in_dim))?;
+                input.matmul(&w)?
+            }
+        }
+        &[bsize, m, k] => {
+            let (out_dim, in_dim) = weight.dims2()?;
+            if input.is_contiguous() {
+                let w = weight.transpose_last()?;
+                input.reshape((bsize * m, k))?
+                    .matmul(&w)?
+                    .reshape((bsize, m, out_dim))?
+            } else {
+                let w = weight.broadcast_as((bsize, out_dim, in_dim))?;
+                input.matmul(&w)?
+            }
+        }
+        _ => {
+            let w = weight.transpose_last()?;
+            input.matmul(&w)?
+        }
+    };
+    match bias {
+        None => Ok(x),
+        Some(bias) => x.broadcast_add(bias),
+    }
+}
 
 /// Applies the softmax function to the input tensor, rescaling the element so that elements on
 /// a slice of fixed index on dimension `dim` are between 0 and 1 and sum to 1.

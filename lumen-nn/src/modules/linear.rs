@@ -30,17 +30,14 @@ impl<T: NumDType> Linear<T> {
     }
     
     pub fn forward(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
-        // input: (batch, in_features)
-        let output = input.matmul(&self.weight.transpose_last()?)?;
-        match self.bias.as_ref() {
-            Some(bias) => output.broadcast_add(bias),
-            None => Ok(output)
-        }
+        crate::functional::linear(input, &self.weight, self.bias.as_ref())
     }
 }
 
 #[cfg(test)]
 mod test {
+    use lumen_core::Tensor;
+
     use crate::init::Initialize;
     use crate::modules::{linear, Module};
 
@@ -61,5 +58,13 @@ mod test {
         for (name, _) in params {
             println!("{}", name);
         }
+    }
+
+    #[test]
+    fn test_forward() {
+        let l = linear::<f32>(30, 20, false, &Initialize::standard_normal()).unwrap();
+
+        let input = Tensor::<f32>::rand(0.0, 1.0, (1, 30, 30)).unwrap();
+        println!("{}", l.forward(&input).unwrap().shape());
     }
 }

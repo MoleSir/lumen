@@ -46,7 +46,7 @@ impl LlamaConfig {
         Self {
             hidden_size: 32,
             intermediate_size: 128,
-            vocab_size: 32000,
+            vocab_size: 100,
             num_hidden_layers: 8,
             num_attention_heads: 4,
             num_kv_heads: 4,
