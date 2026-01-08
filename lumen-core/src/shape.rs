@@ -374,7 +374,7 @@ macro_rules! extract_dims {
         }
 
         impl std::convert::TryInto<$out_type> for Shape {
-            type Error = crate::ErrorCtx;
+            type Error = crate::CtxError;
             fn try_into(self) -> crate::Result<$out_type> {
                 self.$fn_name()
             }

@@ -1,7 +1,7 @@
 use std::str::Utf8Error;
 use crate::{DType, Slice, Shape};
 
-#[thiserrorctx::Error]
+#[thiserrorctx::context_error]
 pub enum Error {
     // === DType Errors ===
     #[error("{msg}, expected: {expected:?}, got: {got:?}")]

@@ -1,6 +1,6 @@
 
-#[thiserrorctx::Error]
+#[thiserrorctx::context_error]
 pub enum LlamaError {
     #[error(transparent)]
-    Core(#[from] lumen_core::ErrorCtx),
+    Core(#[from] lumen_core::CtxError),
 }

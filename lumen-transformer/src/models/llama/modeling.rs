@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use lumen_core::{FloatDType, IntTensor, Tensor, Var, D};
 use lumen_macros::Module;
 use lumen_nn::{init::Initialize, Embedding, Linear};
+use thiserrorctx::Context;
 use super::{LlamaConfig, LlamaResult};
 
 // ========================================================================= //
@@ -24,7 +25,7 @@ impl<T: FloatDType> LlamaForCausalLM<T> {
 
     pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut LlamaCache<T>) -> LlamaResult<Tensor<T>> {
         // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
-        let hidden_states = self.model.forward(input_ids, start_pos, cache)?;
+        let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
         // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
         let logits = self.lm_head.forward(&hidden_states)?;
         Ok(logits)

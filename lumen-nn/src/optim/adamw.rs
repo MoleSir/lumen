@@ -53,7 +53,7 @@ impl<T: FloatDType> AdamW<T> {
 }
 
 impl<T: FloatDType> Optimizer<T> for AdamW<T> {
-    type Error = lumen_core::ErrorCtx;
+    type Error = lumen_core::CtxError;
     fn step(&mut self, grads: &GradStore<T>) -> Result<(), Self::Error> {
         self.step_t += 1;
         let lr = self.config.lr;

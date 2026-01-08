@@ -4,6 +4,7 @@ use std::path::Path;
 use lumen_core::{DType, DynTensor};
 use memmap2::MmapOptions;
 use serde::{Deserialize, Serialize};
+use thiserrorctx::Context;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::utils;
@@ -95,7 +96,10 @@ pub struct SafeTensorsContent {
 }
 
 pub fn load_file<P: AsRef<Path>>(path: P) -> SafeTensorsResult<SafeTensorsContent> {
-    let file = File::open(path)?;
+    let file = File::open(path)
+        .map_err(SafeTensorsError::Io)
+        .context("read file")?;    
+    
     let mmap = unsafe { MmapOptions::new().map(&file)? };
 
     // len of header
@@ -230,10 +234,10 @@ impl SafeTensorsContent {
     }
 }
 
-#[thiserrorctx::Error]
+#[thiserrorctx::context_error]
 pub enum SafeTensorsError {
     #[error(transparent)]
-    Lumen(#[from] lumen_core::ErrorCtx),
+    Core(#[from] lumen_core::CtxError),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
