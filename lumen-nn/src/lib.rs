@@ -7,3 +7,5 @@ pub mod loss;
 pub use modules::*;
 pub use activation::*;
 pub use loss::*;
+
+pub use lumen_macros::Module;

@@ -51,14 +51,14 @@ impl<I, O, E> DataLoader<I, O, E> {
 
     fn get_iter_indices(&self) -> Vec<usize> {
         let len = self.dataset.len();
+        let mut indices: Vec<usize> = (0..len).collect();
+        
         if self.shuffle {
-            (0..len).collect()
-        } else {
             let mut rng = rand::rng();
-            let mut indices: Vec<usize> = (0..len).collect();
             indices.shuffle(&mut rng);
-            indices
         }
+
+        indices
     }
 }
 
@@ -95,7 +95,7 @@ fn iter_next<I, O, E>(loader: &DataLoader<I, O, E>, cursor: &mut usize, indices:
         None
     } else {
         let end = *cursor + loader.batch_size;
-        let end = end.max(loader.dataset.len());
+        let end = end.min(loader.dataset.len());
         let mut items = vec![];
         for index in begin..end {
             let index = indices[index];
