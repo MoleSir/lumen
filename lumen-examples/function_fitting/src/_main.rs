@@ -1,151 +1,181 @@
-use lumen_core::*;
-use lumen_dataset::{DataSet, DataLoader};
-use lumen_nn::criterion::MSELoss;
-use lumen_nn::model::{Linear, RNN};
-use lumen_nn::optim::{Adam, AdamConfig};
-use lumen_nn::{Criterion, Model, Optim};
+use lumen_core::{FloatDType, Tensor};
+use lumen_dataset::{Batcher, DataLoader, Dataset};
+use lumen_nn::{init::Initialize, optim::{AdamW, AdamWConfig, Optimizer}, Linear, Module, MseLoss, Rnn, Tanh};
 use plotlib::page::Page;
 use plotlib::repr::Plot;
 use plotlib::style::LineStyle;
 use plotlib::view::ContinuousView;
-use anyhow::Result;
 
-struct FunctionDataSet {
-    func: fn(f64) -> f64,
-    num_samples: usize,
+#[derive(Module)]
+pub struct FunctionModel<T: FloatDType> {
+    pub rnn: Rnn<T>,
+    pub fc1: Linear<T>,
+    pub act: Tanh,
+    pub fc2: Linear<T>,
 }
 
-impl FunctionDataSet {
-    pub fn new(func: fn(f64) -> f64, num_samples: usize) -> Self {
-        Self { func, num_samples }
+impl<T: FloatDType> FunctionModel<T> {
+    pub fn init(hidden_size: usize) -> lumen_core::Result<Self> {
+        let initialize = Initialize::<T>::standard_uniform();
+        // Input dim is 1 (x value)
+        let rnn = lumen_nn::rnn(1, hidden_size, &initialize)?;
+        let fc1 = lumen_nn::linear(hidden_size, 2 * hidden_size, true, &initialize)?;
+        let fc2 = lumen_nn::linear(2 * hidden_size, 1, true, &initialize)?;
+        Ok(Self {
+            rnn, fc1, act: Tanh::new(), fc2
+        })
+    }
+
+    pub fn forward(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+        // input: (batch_size, seq_len, 1)
+        
+        // RNN Output: (batch_size, seq_len, hidden_size)
+        let (rnn_output, _state) = self.rnn.forward(input, None)?;
+
+        // FC1: (batch_size, seq_len, 2 * hidden_size)
+        // Note: Removed the extra .tanh() call here because self.act does it next
+        let out = self.fc1.forward(&rnn_output)?;
+        
+        // Activation: (batch_size, seq_len, 2 * hidden_size)
+        let out = self.act.forward(&out)?;
+        
+        // FC2: (batch_size, seq_len, 1)
+        let out = self.fc2.forward(&out)?;
+
+        Ok(out)
     }
 }
 
-impl DataSet for FunctionDataSet {
+pub struct FunctionDataset {
+    xs: Vec<f64>,
+    ys: Vec<f64>,
+    num_samples: usize,
+}
+
+impl FunctionDataset {
+    pub fn new(func: fn(f64) -> f64, num_samples: usize, seq_len: usize, min_x: f64, max_x: f64) -> Self {
+        let step = (max_x - min_x) / seq_len as f64;
+        let xs = (0..seq_len)
+            .map(|i| min_x + step * i as f64 )
+            .collect();
+        let ys = (0..seq_len)
+            .map(|i| func(min_x + step * i as f64) )
+            .collect();
+        Self { xs, ys, num_samples }
+    }
+}
+
+impl Dataset<(Tensor<f64>, Tensor<f64>)> for FunctionDataset {
     fn len(&self) -> usize {
         self.num_samples
     }
 
-    fn get(&self, _: usize) -> (Tensor, Tensor) {
-        const MIN_FUNC_X: f64 = 0.;
-        const MAX_FUNC_X: f64 = 2. * std::f64::consts::PI;
-        
-        let seq_len = 100;
-        let x = Tensor::linspace(MIN_FUNC_X, MAX_FUNC_X, seq_len);
-        let y = x.map(self.func);
-
-        (x.view([seq_len, 1]).unwrap(), y.view([seq_len, 1]).unwrap())
+    fn get(&self, _index: usize) -> Option<(Tensor<f64>, Tensor<f64>)> {
+        Some((
+            Tensor::new(self.xs.as_slice()).unwrap(),
+            Tensor::new(self.ys.as_slice()).unwrap(),
+        ))
     }
-}
+}   
 
-#[allow(unused)]
-struct FunctionModel {
-    input_size: usize,
-    hidden_size: usize,
-    output_size: usize,
-    rnn: RNN,
-    fc1: Linear,
-    fc2: Linear,
-}
+pub struct FunctionBatcher;
 
-impl FunctionModel {
-    pub fn new(hidden_size: usize) -> Self {
-        let input_size = 1;
-        let output_size = 1;
-        Self {
-            input_size,
-            hidden_size,
-            output_size,
-            rnn: RNN::new(input_size, hidden_size),
-            fc1: Linear::new(hidden_size, 2*hidden_size, true),
-            fc2: Linear::new(2*hidden_size, output_size, true)
+impl Batcher<(Tensor<f64>, Tensor<f64>), (Tensor<f64>, Tensor<f64>)> for FunctionBatcher {
+    type Error = lumen_core::Error;
+    fn batch(&self, items: Vec<(Tensor<f64>, Tensor<f64>)>) -> Result<(Tensor<f64>, Tensor<f64>), Self::Error> {
+        let mut xs = vec![];
+        let mut ys = vec![];
+        
+        for item in items {
+            xs.push(item.0);
+            ys.push(item.1);
         }
-    }    
 
-    fn step(&self, r_out: &Tensor) -> Result<Tensor> {
-        // r_out: each seq after rnn (batch_size, hidden_size)
-        let out = op::tanh(&self.fc1.forward(r_out)?);
-        self.fc2.forward(&out)
+        let xs = Tensor::stack(&xs, 0)?.unsqueeze(2)?; // (batch_size, seq_len=1, input_dim=1)
+        let ys = Tensor::stack(&ys, 0)?.unsqueeze(2)?; // (batch_size, seq_len=1, output_dim=1)
+
+        Ok((xs, ys))
     }
-}
+} 
 
-impl Model for FunctionModel {
-    fn forward(&self, input: &Tensor) -> Result<Tensor> {
-        // input: (batch_size, seq_len, hidden_size)
-        let seq_len = input.shape()[1];
+type FunctionDataLoader = DataLoader<(Tensor<f64>, Tensor<f64>), (Tensor<f64>, Tensor<f64>), lumen_core::Error>;
 
-        let r_outs = self.rnn.forward(&input, None)?;
-        assert!(r_outs.requires_grad());
+pub fn get_dataloader(train_samples: usize, test_sample: usize, batch_size: usize) -> (FunctionDataLoader, FunctionDataLoader) {
+    const MIN_FUNC_X: f64 = 0.;
+    const MAX_FUNC_X: f64 = 2. * std::f64::consts::PI;
+    const SEQ_LEN: usize = 100;
+    
+    let func = f64::cos;
 
-        let outs: Vec<_> = (0..seq_len).map(|time| {
-            let view = r_outs.slice(rngs!(time)).unwrap().require_grad();
-            self.step(&view).unwrap()
-        }).collect();
-        
-        // output: (seq_len, batch_size, output_size)
-        op::stack(&outs)
-    }
+    let train_dataset = FunctionDataset::new(func, train_samples, SEQ_LEN, MIN_FUNC_X, MAX_FUNC_X);
+    // Enable shuffle for training
+    let train_dataloader = FunctionDataLoader::new(train_dataset, FunctionBatcher, batch_size, true);
 
-    fn parameters(&self) -> impl Iterator<Item = &Tensor> {
-        self.rnn.parameters().chain(self.fc1.parameters()).chain(self.fc2.parameters())
-    }
-}
-
-type FunctionDataLoader = DataLoader<FunctionDataSet>;
-
-fn get_dataloader(func: fn(f64)->f64, train_samples: usize, test_sample: usize) 
-    -> (FunctionDataLoader, FunctionDataLoader)
-{
-    let train_dataset = FunctionDataSet::new(func, train_samples);
-    let train_dataloader = FunctionDataLoader::new(train_dataset, 1, true);
-
-    let test_dataset = FunctionDataSet::new(func, test_sample);
-    let test_dataloader = FunctionDataLoader::new(test_dataset, 1, true);
+    let test_dataset = FunctionDataset::new(func, test_sample, SEQ_LEN, MIN_FUNC_X, MAX_FUNC_X);
+    let test_dataloader = FunctionDataLoader::new(test_dataset, FunctionBatcher, batch_size, false);
 
     (train_dataloader, test_dataloader)
 }
 
-fn main_result() -> Result<()> {
+fn result_main() -> anyhow::Result<()> {
     println!("Function fitting~");
-    const TRAIN_SMAPLES: usize = 20000;
+    const TRAIN_SAMPLES: usize = 9000;
     const TEST_SAMPLES: usize = 1;
+    const BATCH_SIZE: usize = 1;
+    const EPOCHS: usize = 1;
+    const HIDDEN_SIZE: usize = 5;
 
-    fn func(x: f64) -> f64 {
-        x.cos()
-    }
+    println!("Prepare data!");
+    let (train_dataloader, test_dataloader) = get_dataloader(TRAIN_SAMPLES, TEST_SAMPLES, BATCH_SIZE);
+    println!("Init model!");
+    let model = FunctionModel::<f64>::init(HIDDEN_SIZE)?;
+    let criterion = MseLoss;
+    let mut optimizer = AdamW::new(model.params(), AdamWConfig::default())?;
 
-    let (train_dataloader, test_dataloader) = get_dataloader(func, TRAIN_SMAPLES, TEST_SAMPLES);
-    let model = FunctionModel::new(5);
-    let cirterion = MSELoss::new();
-    let mut optimizer = Adam::with_config(model.parameters(), AdamConfig::default());
+    println!("Start train!");
+    for epoch in 0..EPOCHS {
+        let mut epoch_loss = 0.0;
+        let mut count = 0;
 
-    for (i, (x, y)) in train_dataloader.iter().enumerate() {
-        let seq_len = x.shape()[1];
-        let y = y.view([seq_len, 1, 1]).unwrap();
-        let pred = model.forward(&x).unwrap();
-        let loss = cirterion.loss(&pred, &y).unwrap();
+        for (i, batch) in train_dataloader.iter().enumerate() {
+            let (xs, ys) = batch?;
+            
+            // Forward pass
+            let pred = model.forward(&xs)?; 
+            
+            // Calculate loss
+            let loss = criterion.forward(&pred, &ys)?;
 
-        optimizer.zero_grad();
-        loss.backward();
-        optimizer.step();
+            // Backward and Optimize
+            let grads = loss.backward()?;
+            optimizer.step(&grads)?;
 
-        if i % 100 == 0 {
-            print!("Loss: {:?}\n", loss.mean());
+            // Accumulate loss for logging
+            let loss_mean = loss.mean_all()?.to_scalar()?;
+            epoch_loss += loss_mean;
+            count += 1;
+
+            if i % 100 == 0 {
+                print!("Iter {} Loss: {:?}\n", i, loss_mean);
+            }
         }
+        
+        println!("Epoch [{}/{}], Average Loss: {:.6}", epoch + 1, EPOCHS, epoch_loss / count as f64);
     }
 
-    let (x, _) = test_dataloader.iter().next().unwrap();
-    let pred = model.forward(&x).unwrap();
-    let data = x.iter().zip(pred.iter()).map(|(&a, &b)| (a, b)).collect();
+    let (x, _) = test_dataloader.iter().next().unwrap()?;
+    let pred = model.forward(&x)?;
+    let data = x.iter().zip(pred.iter()).map(|(a, b)| (a, b)).collect();
     let plot = Plot::new(data).line_style(LineStyle::new().colour("red"));
     let view = ContinuousView::new().add(plot);
     Page::single(&view).save("image/plot.svg").unwrap();
+
 
     Ok(())
 }
 
 fn main() {
-    if let Err(err) = main_result() {
-        eprintln!("{:?}", err);
+    if let Err(e) = result_main() {
+        eprintln!("Err: {}", e);
     }
 }

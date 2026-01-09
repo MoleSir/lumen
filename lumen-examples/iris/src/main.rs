@@ -1,5 +1,4 @@
 use lumen_core::{FloatDType, Tensor};
-use lumen_macros::Module;
 use lumen_nn::{init::Initialize, linear, optim::{Optimizer, SGD}, CrossEntropyLoss, Linear, Module, Relu};
 use lumen_dataset::{common::{IrisBatcher, IrisDataset}, DataLoader};
 

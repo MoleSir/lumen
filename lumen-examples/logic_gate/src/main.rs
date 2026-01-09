@@ -1,5 +1,4 @@
 use lumen_core::{FloatDType, Tensor};
-use lumen_macros::Module;
 use lumen_nn::{init::Initialize, linear, optim::{Optimizer, SGD}, Linear, Module, MseLoss, Sigmoid};
 
 #[derive(Module)]
