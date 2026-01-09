@@ -55,6 +55,8 @@ impl<T: FloatDType> AdamW<T> {
 impl<T: FloatDType> Optimizer<T> for AdamW<T> {
     type Error = lumen_core::Error;
     fn step(&mut self, grads: &GradStore<T>) -> Result<(), Self::Error> {
+        let _guard = lumen_core::NoGradGuard::new();
+
         self.step_t += 1;
         let lr = self.config.lr;
         let lambda = self.config.weight_decay;
@@ -67,8 +69,8 @@ impl<T: FloatDType> Optimizer<T> for AdamW<T> {
             let m = &param.first_moment;
             let v = &param.second_moment;
             if let Some(g) = grads.get(&param.param) {
-                let next_m = (m * beta1) + (g * (T::one() - beta1)).detach();
-                let next_v = (v * beta2) + (g.sqr() * (T::one() - beta2)).detach();
+                let next_m = (m * beta1) + (g * (T::one() - beta1));
+                let next_v = (v * beta2) + (g.sqr() * (T::one() - beta2));
                 let m_hat = &next_m * scale_m;
                 let v_hat = &next_v * scale_v;
                 let adjusted_grad = m_hat / (v_hat.sqrt() + self.config.eps);

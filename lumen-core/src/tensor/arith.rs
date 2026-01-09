@@ -1,4 +1,4 @@
-use crate::{TensorOrScalar, op::BinaryOp, AutogradMetaT, CmpOp, Error, FloatDType, NumDType, Result, Shape, Storage, UnaryOp, WithDType};
+use crate::{TensorOrScalar, backprop::BinaryOp, AutogradMetaT, CmpOp, Error, FloatDType, NumDType, Result, Shape, Storage, UnaryOp, WithDType};
 use super::Tensor;
 use paste::paste;
 

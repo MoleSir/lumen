@@ -167,6 +167,7 @@ fn result_main() -> anyhow::Result<()> {
     }
 
     println!("Starting Evaluation...");
+    let _guard = lumen_core::NoGradGuard::new();
     let mut total_test_loss = 0.0;
     let mut test_count = 0;
     

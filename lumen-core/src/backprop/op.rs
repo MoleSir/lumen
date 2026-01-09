@@ -1,10 +1,4 @@
 use crate::{FloatDType, IntTensor, Tensor, WithDType};
-mod gradmeta;
-mod gradstore;
-pub use gradmeta::*;
-pub use gradstore::*;
-mod backprop;
-mod test;
 
 #[derive(Clone)]
 pub enum Op<T: FloatDType> {
