@@ -4,10 +4,14 @@ mod linear;
 mod dropout;
 mod embedding;
 mod rnn;
+mod attention;
+mod softmax;
 pub use linear::*;
 pub use dropout::*;
 pub use embedding::*;
 pub use rnn::*;
+pub use attention::*;
+pub use softmax::*;
 
 pub trait Module<T: NumDType> {
     #[allow(unused_variables)]
