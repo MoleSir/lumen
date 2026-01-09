@@ -116,9 +116,7 @@ impl<T: FloatDType> Rnn<T> {
 #[cfg(test)]
 mod test {
     use lumen_core::Tensor;
-
     use crate::{init::Initialize, Module};
-
     use super::rnn;
 
     #[test]
