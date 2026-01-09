@@ -1,6 +1,5 @@
 [workspace]
-members = [ 
-    # "function_fitting", 
+members = [ "function_fitting", 
     "iris",
     "logic_gate",
 ]

@@ -3,13 +3,11 @@ use lumen_core::{Tensor, NumDType};
 mod linear;
 mod dropout;
 mod embedding;
-mod activation;
-mod loss;
-pub use loss::*;
-pub use activation::*;
+mod rnn;
 pub use linear::*;
 pub use dropout::*;
 pub use embedding::*;
+pub use rnn::*;
 
 pub trait Module<T: NumDType> {
     #[allow(unused_variables)]

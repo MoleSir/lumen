@@ -25,7 +25,7 @@ pub struct Linear<T: NumDType> {
 }
 
 impl<T: NumDType> Linear<T> {
-    fn new(weight: Tensor<T>, bias: Option<Tensor<T>>, in_dim: usize, out_dim: usize) -> Self {
+    pub fn new(weight: Tensor<T>, bias: Option<Tensor<T>>, in_dim: usize, out_dim: usize) -> Self {
         Self { weight, bias, in_dim, out_dim }
     }
     
