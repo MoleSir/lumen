@@ -1,7 +1,7 @@
 use std::{fs::File, io::{Read, Seek, SeekFrom}, path::{Path, PathBuf}};
 use flate2::bufread::GzDecoder;
 use lumen_core::Tensor;
-use crate::{transform::{Map, MapDataset}, utils, Batcher, Dataset, InMemoryDataset};
+use crate::{transform::{Map, MapDataset}, utils, Batcher, DataLoader, Dataset, VecDataset};
 
 // CVDF mirror of http://yann.lecun.com/exdb/mnist/
 const URL: &str = "https://storage.googleapis.com/cvdf-datasets/mnist/";
@@ -27,8 +27,11 @@ struct MnistItemRaw {
 
 struct BytesToImage;
 
-impl Map<MnistItemRaw, MnistItem> for BytesToImage {
-    fn map(&self, item: &MnistItemRaw) -> MnistItem {
+impl Map for BytesToImage {
+    type Item = MnistItemRaw;
+    type Output = MnistItem;
+
+    fn map(&self, item: MnistItemRaw) -> MnistItem {
         assert_eq!(item.image_bytes.len(), WIDTH * HEIGHT);
         
         let mut image_array = [[0f32; WIDTH]; HEIGHT];
@@ -45,13 +48,15 @@ impl Map<MnistItemRaw, MnistItem> for BytesToImage {
     }
 }
 
-type MnistDatasetImpl = MapDataset<InMemoryDataset<MnistItemRaw>, BytesToImage, MnistItemRaw>;
+type MnistDatasetImpl = MapDataset<VecDataset<MnistItemRaw>, BytesToImage>;
 
 pub struct MnistDataset {
     dataset: MnistDatasetImpl,
 }
 
-impl Dataset<MnistItem> for MnistDataset {
+impl Dataset for MnistDataset {
+    type Item = MnistItem;
+
     fn get(&self, index: usize) -> Option<MnistItem> {
         self.dataset.get(index)
     }
@@ -81,7 +86,7 @@ impl MnistDataset {
             .map(|(image_bytes, label)| MnistItemRaw { image_bytes, label })
             .collect();
 
-        let dataset = InMemoryDataset::new(items);
+        let dataset = VecDataset::new(items);
         let dataset = MapDataset::new(dataset, BytesToImage);
     
         Ok( Self { dataset } )
@@ -179,10 +184,14 @@ pub struct MnistBatch {
     pub targets: Tensor<u32>,
 }
 
+#[derive(Default)]
 pub struct MnistBatcher;
 
-impl Batcher<MnistItem, MnistBatch> for MnistBatch {
+impl Batcher for MnistBatch {
+    type Item = MnistItem;
+    type Output = MnistBatch;
     type Error = MnistError;
+ 
     fn batch(&self, items: Vec<MnistItem>) -> MnistResult<MnistBatch> {
         let mut images = vec![];
         let mut targets = vec![];
@@ -202,6 +211,8 @@ impl Batcher<MnistItem, MnistBatch> for MnistBatch {
         Ok(MnistBatch { images, targets })
     }
 }
+
+pub type MnistDataLoader = DataLoader<MnistDataset, MnistBatch>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MnistSplit {

@@ -1,6 +1,6 @@
 use std::{fs::File, io::{BufRead, BufReader}, path::{Path, PathBuf}};
 use lumen_core::Tensor;
-use crate::{utils, Batcher, Dataset, InMemoryDataset};
+use crate::{utils, Batcher, DataLoader, Dataset, VecDataset};
 
 // UCI Machine Learning Repository mirror
 const URL: &str = "https://archive.ics.uci.edu/ml/machine-learning-databases/iris/";
@@ -17,10 +17,11 @@ pub struct IrisItem {
 }
 
 pub struct IrisDataset {
-    dataset: InMemoryDataset<IrisItem>,
+    dataset: VecDataset<IrisItem>,
 }
 
-impl Dataset<IrisItem> for IrisDataset {
+impl Dataset for IrisDataset {
+    type Item = IrisItem;
     fn get(&self, index: usize) -> Option<IrisItem> {
         self.dataset.get(index)
     }
@@ -35,7 +36,7 @@ impl IrisDataset {
         let file_path = Self::download(cache_dir)?;
         let items = Self::read_data(&file_path)?;
         
-        let dataset = InMemoryDataset::new(items);
+        let dataset = VecDataset::new(items);
         Ok(Self { dataset })
     }
 
@@ -113,9 +114,12 @@ pub struct IrisBatch {
     pub targets: Tensor<u32>,
 }
 
+#[derive(Default)]
 pub struct IrisBatcher;
 
-impl Batcher<IrisItem, IrisBatch> for IrisBatcher {
+impl Batcher for IrisBatcher {
+    type Item = IrisItem;
+    type Output = IrisBatch;
     type Error = IrisError;
     
     fn batch(&self, items: Vec<IrisItem>) -> IrisResult<IrisBatch> {
@@ -136,6 +140,8 @@ impl Batcher<IrisItem, IrisBatch> for IrisBatcher {
         Ok(IrisBatch { features, targets })
     }
 }
+
+pub type IrisDataLoader = DataLoader<IrisDataset, IrisBatcher>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum IrisError {

@@ -1,5 +1,5 @@
 use lumen_core::{FloatDType, IndexOp, Tensor};
-use lumen_dataset::{Batcher, DataLoader, Dataset};
+use lumen_dataset::{DataLoader, Dataset, TensorPairBatcher};
 use lumen_nn::{init::Initialize, optim::{AdamW, AdamWConfig, Optimizer}, Linear, Module, MseLoss, Rnn, Tanh};
 use plotlib::page::Page;
 use plotlib::repr::Plot;
@@ -36,7 +36,6 @@ impl<T: FloatDType> FunctionModel<T> {
     }
 }
 
-// 修改后的 Dataset
 pub struct FunctionDataset {
     func: fn(f64) -> f64,
     num_samples: usize,
@@ -52,7 +51,9 @@ impl FunctionDataset {
     }
 }
 
-impl Dataset<(Tensor<f64>, Tensor<f64>)> for FunctionDataset {
+impl Dataset for FunctionDataset {
+    type Item = (Tensor<f64>, Tensor<f64>);
+
     fn len(&self) -> usize {
         self.num_samples
     }
@@ -83,33 +84,13 @@ impl Dataset<(Tensor<f64>, Tensor<f64>)> for FunctionDataset {
             .collect();
 
         Some((
-            Tensor::new(normalized_xs.as_slice()).unwrap(),
-            Tensor::new(ys.as_slice()).unwrap(),
+            Tensor::new(normalized_xs.as_slice()).unwrap().unsqueeze(1).unwrap(),
+            Tensor::new(ys.as_slice()).unwrap().unsqueeze(1).unwrap(),
         ))
     }
 }
 
-pub struct FunctionBatcher;
-
-impl Batcher<(Tensor<f64>, Tensor<f64>), (Tensor<f64>, Tensor<f64>)> for FunctionBatcher {
-    type Error = lumen_core::Error;
-    fn batch(&self, items: Vec<(Tensor<f64>, Tensor<f64>)>) -> Result<(Tensor<f64>, Tensor<f64>), Self::Error> {
-        let mut xs = vec![];
-        let mut ys = vec![];
-        
-        for item in items {
-            xs.push(item.0);
-            ys.push(item.1);
-        }
-
-        let xs = Tensor::stack(&xs, 0)?.unsqueeze(2)?; 
-        let ys = Tensor::stack(&ys, 0)?.unsqueeze(2)?; 
-
-        Ok((xs, ys))
-    }
-} 
-
-type FunctionDataLoader = DataLoader<(Tensor<f64>, Tensor<f64>), (Tensor<f64>, Tensor<f64>), lumen_core::Error>;
+type FunctionDataLoader = DataLoader<FunctionDataset, TensorPairBatcher<f64>>;
 
 pub fn get_dataloader(train_samples: usize, test_sample: usize, batch_size: usize) -> (FunctionDataLoader, FunctionDataLoader) {
     const MIN_FUNC_X: f64 = 0.;
@@ -119,10 +100,10 @@ pub fn get_dataloader(train_samples: usize, test_sample: usize, batch_size: usiz
     let func = f64::cos;
 
     let train_dataset = FunctionDataset::new(func, train_samples, SEQ_LEN, MIN_FUNC_X, MAX_FUNC_X, true);
-    let train_dataloader = FunctionDataLoader::new(train_dataset, FunctionBatcher, batch_size, true);
+    let train_dataloader = FunctionDataLoader::from_dataset(train_dataset, batch_size, true);
 
     let test_dataset = FunctionDataset::new(func, test_sample, SEQ_LEN, MIN_FUNC_X, MAX_FUNC_X, false);
-    let test_dataloader = FunctionDataLoader::new(test_dataset, FunctionBatcher, batch_size, false);
+    let test_dataloader = FunctionDataLoader::from_dataset(test_dataset, batch_size, false);
 
     (train_dataloader, test_dataloader)
 }
