@@ -84,7 +84,7 @@ where
     D: Dataset,
     B: Batcher<Item = D::Item> 
 {
-    type Item = Result<B::Output, B::Error>;
+    type Item = B::Output;
     fn next(&mut self) -> Option<Self::Item> {
         iter_next(&self.loader, &mut self.cursor, &self.indices)
     }
@@ -95,7 +95,7 @@ where
     D: Dataset,
     B: Batcher<Item = D::Item> 
 {
-    type Item = Result<B::Output, B::Error>;
+    type Item = B::Output;
     fn next(&mut self) -> Option<Self::Item> {
         iter_next(&self.loader, &mut self.cursor, &self.indices)
     }
@@ -107,7 +107,7 @@ where
     B: Batcher<Item = D::Item> 
 {
     type IntoIter = DataLoaderIntoIter<D, B>;
-    type Item = Result<B::Output, B::Error>;
+    type Item = B::Output;
     fn into_iter(self) -> Self::IntoIter {
         let indices = self.get_iter_indices();
         DataLoaderIntoIter {
@@ -118,7 +118,7 @@ where
     }
 }
 
-fn iter_next<D, B>(loader: &DataLoader<D, B>, cursor: &mut usize, indices: &[usize]) -> Option<Result<B::Output, B::Error>> 
+fn iter_next<D, B>(loader: &DataLoader<D, B>, cursor: &mut usize, indices: &[usize]) -> Option<B::Output> 
 where 
     D: Dataset,
     B: Batcher<Item = D::Item> 

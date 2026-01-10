@@ -119,8 +119,7 @@ pub struct IrisBatcher;
 
 impl Batcher for IrisBatcher {
     type Item = IrisItem;
-    type Output = IrisBatch;
-    type Error = IrisError;
+    type Output = Result<IrisBatch, IrisError>;
     
     fn batch(&self, items: Vec<IrisItem>) -> IrisResult<IrisBatch> {
         let mut features_vec = vec![];

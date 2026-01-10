@@ -189,8 +189,7 @@ pub struct MnistBatcher;
 
 impl Batcher for MnistBatch {
     type Item = MnistItem;
-    type Output = MnistBatch;
-    type Error = MnistError;
+    type Output = MnistResult<MnistBatch>;
  
     fn batch(&self, items: Vec<MnistItem>) -> MnistResult<MnistBatch> {
         let mut images = vec![];

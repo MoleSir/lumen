@@ -2,11 +2,12 @@ mod dataloader;
 mod batcher;
 mod error;
 mod utils;
+mod datasets;
 pub mod transform;
-
 pub use dataloader::*;
 pub use batcher::*;
 pub use error::*;
+pub use datasets::*;
 
 pub trait Dataset {
     type Item;
