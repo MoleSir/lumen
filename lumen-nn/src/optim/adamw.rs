@@ -33,7 +33,7 @@ struct AdamWParam<T: FloatDType> {
 pub struct AdamW<T: FloatDType> {
     params: Vec<AdamWParam<T>>,
     step_t: usize,
-    config: AdamWConfig<T>,
+    pub config: AdamWConfig<T>,
 }
 
 impl<T: FloatDType> AdamW<T> {
