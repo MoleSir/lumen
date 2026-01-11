@@ -1,4 +1,4 @@
-use std::{collections::HashMap, convert::Infallible, marker::PhantomData};
+use std::{collections::HashMap, convert::Infallible, path::Path};
 use lumen_core::{DynTensor, FloatDType, NumDType, Tensor, WithDType};
 mod linear;
 mod dropout;
@@ -15,7 +15,7 @@ pub use softmax::*;
 use thiserrorctx::Context;
 use crate::{init::Initialize, NnCtxError, NnError, NnResult};
 
-pub trait Module<T: FloatDType> {
+pub trait Module<T: FloatDType> : Sized {
     #[allow(unused_variables)]
     fn visit<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         Ok(())
@@ -38,13 +38,25 @@ pub trait Module<T: FloatDType> {
         visitor.map
     }
 
+    fn named_dyn_params(&self) -> HashMap<String, DynTensor> {
+        let mut visitor = NamedDynParamsCountVisitor::new();
+        self.visit(&mut visitor).unwrap();
+        visitor.map
+    }
+
     fn params(&self) -> Vec<Tensor<T>> {
         let mut visitor = ParamsVisitor::new();
         self.visit(&mut visitor).unwrap();
         visitor.params
     }
 
-    fn resign(&mut self, init: &Initialize<T>) -> NnResult<()> {
+    fn dyn_params(&self) -> Vec<DynTensor> {
+        let mut visitor = DynParamsVisitor::new();
+        self.visit(&mut visitor).unwrap();
+        visitor.params
+    }
+
+    fn reset_with(&mut self, init: &Initialize<T>) -> NnResult<()> {
         let mut visitor = InitVisitor::new(init);
         self.visit_mut(&mut visitor)
     }
@@ -54,7 +66,40 @@ pub trait Module<T: FloatDType> {
         self.visit_mut(&mut visitor)
     }
 
+    fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> NnResult<()> {
+        let named_params = self.named_dyn_params();
+        lumen_io::safetensors::save_file(&named_params, None, path)
+            .map_err(NnError::SafeTensors)
+            .context("save model to safetensors")?;
+        Ok(())
+    }
 
+    fn load_safetensors<P: AsRef<Path>>(&mut self, path: P, strict: bool) -> NnResult<()> {
+        let params = lumen_io::safetensors::load_file(path)
+            .map_err(NnError::SafeTensors)
+            .context("load model param")?;
+        self.load_named_params(&params.tensors, strict)
+    }
+}
+
+pub trait ModuleInit<T: FloatDType> : Sized + Module<T> {
+    type Error: From<NnCtxError>;
+    type Config;
+
+    fn default_initialize() -> Initialize<T>;
+    
+    fn init_with(config: &Self::Config, initialize: &Initialize<T>) -> Result<Self, Self::Error>;
+
+    fn init(config: &Self::Config) -> Result<Self, Self::Error> {
+        Self::init_with(config, &Self::default_initialize())
+    }
+
+    fn load_safetensors<P: AsRef<Path>>(config: &Self::Config, path: P) -> Result<Self, Self::Error> {
+        // empty init!
+        let mut model = Self::init_with(config, &Initialize::Empty)?;
+        model.load_safetensors(path, true)?;
+        Ok(model)
+    }
 }
 
 pub trait ModuleVisitor<T: WithDType> {
@@ -139,10 +184,11 @@ impl<T: FloatDType, M: Module<T>> Module<T> for Vec<M> {
     }
 }
 
-//==================================================//
+//===========================================================================//
 //         Util Visitor
-//==================================================//
+//===========================================================================//
 
+/// ParamCount
 struct ParamCountVisitor {
     count: usize,
 }
@@ -161,6 +207,7 @@ impl<T: NumDType> ModuleVisitor<T> for ParamCountVisitor {
     }
 }
 
+/// NamedParams
 struct NamedParamsCountVisitor<T: NumDType> {
     map: HashMap<String, Tensor<T>>,
     path: Vec<String>,
@@ -187,9 +234,38 @@ impl<T: NumDType> ModuleVisitor<T> for NamedParamsCountVisitor<T> {
     fn exit_module(&mut self, _: &str) {
         self.path.pop();
     }
-
 }
 
+/// NamedParams
+struct NamedDynParamsCountVisitor {
+    map: HashMap<String, DynTensor>,
+    path: Vec<String>,
+}
+
+impl NamedDynParamsCountVisitor {
+    fn new() -> Self {
+        Self { map: HashMap::new(), path: vec![] }
+    }
+}
+
+impl<T: NumDType> ModuleVisitor<T> for NamedDynParamsCountVisitor {
+    type Error = Infallible;
+
+    fn visit(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
+        self.map.insert(self.path.join("."), T::into_dyn(param.clone()));
+        Ok(())
+    }
+
+    fn enter_module(&mut self, name: &str) {
+        self.path.push(name.to_string());
+    }
+
+    fn exit_module(&mut self, _: &str) {
+        self.path.pop();
+    }
+}
+
+/// ParamsVisitor
 struct ParamsVisitor<T: NumDType> {
     params: Vec<Tensor<T>>,
 }
@@ -209,6 +285,27 @@ impl<T: NumDType> ModuleVisitor<T> for ParamsVisitor<T> {
     }
 }
 
+/// ParamsVisitor
+struct DynParamsVisitor {
+    params: Vec<DynTensor>,
+}
+
+impl DynParamsVisitor {
+    fn new() -> Self {
+        Self { params: vec![] }
+    }
+}
+
+impl<T: NumDType> ModuleVisitor<T> for DynParamsVisitor {
+    type Error = Infallible;
+
+    fn visit(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
+        self.params.push(T::into_dyn(param.clone()));
+        Ok(())
+    }
+}
+
+/// InitVisitor
 struct InitVisitor<'a, T: FloatDType> {
     init: &'a Initialize<T>,
 }
@@ -229,25 +326,23 @@ impl<'a, T: FloatDType> ModuleVisitorMut<T> for InitVisitor<'a, T> {
     }
 }
 
-struct LoadParamsVisitor<'a, T: FloatDType> {
+struct LoadParamsVisitor<'a> {
     params: &'a HashMap<String, DynTensor>,
     path: Vec<String>,
     strict: bool,
-    _data: PhantomData<T>,
 }
 
-impl<'a, T: FloatDType> LoadParamsVisitor<'a, T> {
+impl<'a> LoadParamsVisitor<'a> {
     fn new(params: &'a HashMap<String, DynTensor>, strict: bool,) -> Self {
         Self {
             params,
             path: Vec::new(),
             strict,
-            _data: PhantomData::default(),
         }
     }
 }
 
-impl<'a, T: FloatDType> ModuleVisitorMut<T> for LoadParamsVisitor<'a, T> {
+impl<'a, T: FloatDType> ModuleVisitorMut<T> for LoadParamsVisitor<'a> {
     type Error = NnCtxError;
 
     fn enter_module(&mut self, name: &str) {
@@ -264,6 +359,7 @@ impl<'a, T: FloatDType> ModuleVisitorMut<T> for LoadParamsVisitor<'a, T> {
         match self.params.get(&name) {
             Some(src) => {
                 let src_tensor = src.as_tensor::<T>()
+                    .map_err(NnError::Core)
                     .with_context(|| format!("loading param {}", name))?;
                 if param.shape() != src.shape() {
                     Err(NnError::ShapeUnmatchWhenLoadParam(param.shape().clone(), src.shape().clone()))?;

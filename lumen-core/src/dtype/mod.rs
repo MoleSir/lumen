@@ -22,6 +22,7 @@ pub trait WithDType:
     const DTYPE: DType;
     type AutogradMeta: AutogradMetaT<Self>;
     fn from_dyn(tensor: &DynTensor) -> crate::Result<Tensor<Self>>;
+    fn into_dyn(tensor: Tensor<Self>) -> DynTensor;
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

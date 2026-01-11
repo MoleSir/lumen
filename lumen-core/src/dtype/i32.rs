@@ -5,12 +5,14 @@ impl WithDType for i32 {
     const DTYPE: DType = DType::I32;
     type AutogradMeta = NoAutograd;
 
+    #[inline]
     fn from_dyn(tensor: &DynTensor) -> crate::Result<Tensor<Self>> {
-        if let DynTensor::I32(t) = tensor {
-            Ok(t.clone())
-        } else {
-            Err(crate::Error::UnexpectedDType { msg: "convert from dyn tensor", expected: Self::DTYPE, got: tensor.dtype() })
-        }
+        <Tensor<Self> as TryFrom::<DynTensor>>::try_from(tensor.clone())
+    }
+
+    #[inline]
+    fn into_dyn(tensor: Tensor<Self>) -> DynTensor {
+        tensor.into()
     }
 }
 

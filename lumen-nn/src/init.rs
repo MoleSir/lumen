@@ -156,10 +156,14 @@ impl<T: FloatDType> Initialize<T> {
     ///
     /// - shape: Shape of the initiated tensor.
     pub fn init(&self, shape: impl Into<Shape>) -> lumen_core::Result<Tensor<T>> {
-        self.init_with(shape, None, None)
+        self.do_init_with(shape, None, None)
     }
 
-    pub fn init_with(&self, shape: impl Into<Shape>, fan_in: Option<usize>, fan_out: Option<usize>) -> lumen_core::Result<Tensor<T>> {
+    pub fn init_with(&self, shape: impl Into<Shape>, fan_in: usize, fan_out: usize) -> lumen_core::Result<Tensor<T>> {
+        self.do_init_with(shape, Some(fan_in), Some(fan_out))
+    }
+
+    fn do_init_with(&self, shape: impl Into<Shape>, fan_in: Option<usize>, fan_out: Option<usize>) -> lumen_core::Result<Tensor<T>> {
         let shape = shape.into();
         match self {
             Initialize::Uninit => Var::uninit(shape),

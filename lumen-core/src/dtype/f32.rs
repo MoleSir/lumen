@@ -11,12 +11,14 @@ impl WithDType for f32 {
     const DTYPE: DType = DType::F32;
     type AutogradMeta = AutogradInfo<f32>;
 
+    #[inline]
     fn from_dyn(tensor: &DynTensor) -> crate::Result<Tensor<Self>> {
-        if let DynTensor::F32(t) = tensor {
-            Ok(t.clone())
-        } else {
-            Err(crate::Error::UnexpectedDType { msg: "convert from dyn tensor", expected: Self::DTYPE, got: tensor.dtype() })
-        }
+        <Tensor<Self> as TryFrom::<DynTensor>>::try_from(tensor.clone())
+    }
+
+    #[inline]
+    fn into_dyn(tensor: Tensor<Self>) -> DynTensor {
+        tensor.into()
     }
 }
 

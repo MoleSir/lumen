@@ -5,6 +5,7 @@ pub use integer::*;
 use crate::{DType, Shape, Tensor, WithDType};
 use paste::paste;
 
+#[derive(Clone)]
 pub enum DynTensor {
     Bool(Tensor<bool>),
     F32(Tensor<f32>),
@@ -64,6 +65,12 @@ macro_rules! impl_convert_with_type {
             impl From<Tensor<$inner>> for DynTensor {
                 fn from(t: Tensor<$inner>) -> Self {
                     DynTensor::$variant(t)
+                }
+            }
+
+            impl From<&Tensor<$inner>> for DynTensor {
+                fn from(t: &Tensor<$inner>) -> Self {
+                    DynTensor::$variant(t.clone())
                 }
             }
     

@@ -1,6 +1,5 @@
 use lumen_core::Shape;
 
-
 #[thiserrorctx::context_error]
 pub enum NnError {
     #[error(transparent)]
@@ -11,4 +10,7 @@ pub enum NnError {
 
     #[error("shape unmatch when load param: expect {0}, but got {1}")]
     ShapeUnmatchWhenLoadParam(Shape, Shape),
+
+    #[error(transparent)]
+    SafeTensors(#[from] lumen_io::safetensors::SafeTensorsCtxError),
 }
