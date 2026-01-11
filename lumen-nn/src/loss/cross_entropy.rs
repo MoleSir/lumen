@@ -1,4 +1,4 @@
-use lumen_core::{FloatDType, IntTensor, NumDType, Tensor};
+use lumen_core::{FloatDType, IntTensor, Tensor};
 use crate::Module;
 
 pub struct CrossEntropyLoss;
@@ -9,5 +9,5 @@ impl CrossEntropyLoss {
     }
 }
 
-impl<T: NumDType> Module<T> for CrossEntropyLoss {
+impl<T: FloatDType> Module<T> for CrossEntropyLoss {
 }

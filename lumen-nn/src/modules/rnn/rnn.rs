@@ -1,4 +1,4 @@
-use lumen_core::{FloatDType, IndexOp, NumDType, Tensor, Var};
+use lumen_core::{FloatDType, IndexOp, Tensor, Var};
 use lumen_macros::Module;
 use crate::{init::Initialize, linear, Linear};
 
@@ -20,7 +20,7 @@ pub fn rnn<T: FloatDType>(input_size: usize, hidden_size: usize, init: &Initiali
 }
 
 #[derive(Module)]
-pub struct Rnn<T: NumDType> {
+pub struct Rnn<T: FloatDType> {
     pub input_proj: Linear<T>,
     pub hidden_proj: Linear<T>,
     pub bias: Tensor<T>,

@@ -1,4 +1,4 @@
-use lumen_core::{FloatDType, NumDType, Tensor};
+use lumen_core::{FloatDType, Tensor};
 use crate::functional as F;
 use super::Module;
 
@@ -20,5 +20,5 @@ impl Dropout {
     }
 }
 
-impl<T: NumDType> Module<T> for Dropout {
+impl<T: FloatDType> Module<T> for Dropout {
 }

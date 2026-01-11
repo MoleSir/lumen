@@ -1,4 +1,4 @@
-use lumen_core::{FloatDType, NumDType, Tensor};
+use lumen_core::{FloatDType, Tensor};
 use crate::modules::Module;
 
 pub struct Sigmoid;
@@ -14,5 +14,5 @@ impl Sigmoid {
     }
 }
 
-impl<T: NumDType> Module<T> for Sigmoid {
+impl<T: FloatDType> Module<T> for Sigmoid {
 }

@@ -1,4 +1,4 @@
-use lumen_core::{FloatDType, NumDType, Tensor, D};
+use lumen_core::{FloatDType, Tensor, D};
 use lumen_macros::Module;
 use crate::{init::Initialize, linear, Linear};
 
@@ -11,7 +11,7 @@ pub fn multi_head_attention<T: FloatDType>(hidden_size: usize, num_head: usize, 
 }
 
 #[derive(Module)]
-pub struct MultiHeadAttention<T: NumDType> {
+pub struct MultiHeadAttention<T: FloatDType> {
     pub q_proj: Linear<T>,
     pub k_proj: Linear<T>,
     pub v_proj: Linear<T>,

@@ -1,4 +1,4 @@
-use lumen_core::{FloatDType, NumDType, Tensor};
+use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
 use crate::init::Initialize;
 
@@ -14,7 +14,7 @@ pub fn linear<T: FloatDType>(in_dim: usize, out_dim: usize, bias: bool, init: &I
 }
 
 #[derive(Module)]
-pub struct Linear<T: NumDType> {
+pub struct Linear<T: FloatDType> {
     pub weight: Tensor<T>,  // (out_features, in_features)
     pub bias: Option<Tensor<T>>, // (out_features)
 
@@ -24,7 +24,7 @@ pub struct Linear<T: NumDType> {
     pub out_dim: usize,
 }
 
-impl<T: NumDType> Linear<T> {
+impl<T: FloatDType> Linear<T> {
     pub fn new(weight: Tensor<T>, bias: Option<Tensor<T>>, in_dim: usize, out_dim: usize) -> Self {
         Self { weight, bias, in_dim, out_dim }
     }

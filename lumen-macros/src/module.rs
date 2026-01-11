@@ -20,6 +20,7 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
 
     // generate visit filed
     let mut body = quote! {};
+    let mut body_mut = quote! {};
     match &ast.data {
         syn::Data::Struct(struct_data) => {
             for field in struct_data.fields.iter() {
@@ -47,10 +48,17 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
                 let name_str = name.to_string();
                 let field_code = quote! {
                     visitor.enter_module(#name_str);
-                    #lumen::modules::Module::visit(&self.#name, visitor);
+                    #lumen::modules::Module::visit(&self.#name, visitor)?;
                     visitor.exit_module(#name_str);
                 };
                 body.extend(field_code);
+
+                let field_code = quote! {
+                    visitor.enter_module(#name_str);
+                    #lumen::modules::Module::visit_mut(&mut self.#name, visitor)?;
+                    visitor.exit_module(#name_str);
+                };
+                body_mut.extend(field_code);
             }
         }
         syn::Data::Enum(_) => panic!("Only struct can be derived"),
@@ -59,13 +67,17 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
 
     let codegen = quote! {
         impl #generics_module #lumen::modules::Module<T> for #name #generics_ty #generics_where {
-            fn visit<Visitor: #lumen::modules::ModuleVisitor<T>>(&self, visitor: &mut Visitor) {
+            fn visit<Visitor: #lumen::modules::ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
                 #body
+                Ok(())
+            }
+
+            fn visit_mut<Visitor: #lumen::modules::ModuleVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+                #body_mut
+                Ok(())
             }
         }
     };
-
-    // panic!("{}", codegen);
     
     codegen
 }

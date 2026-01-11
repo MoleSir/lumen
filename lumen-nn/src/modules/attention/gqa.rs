@@ -1,4 +1,4 @@
-use lumen_core::{FloatDType, NumDType, Tensor, D};
+use lumen_core::{FloatDType, Tensor, D};
 use lumen_macros::Module;
 use crate::{init::Initialize, linear, Linear};
 
@@ -23,7 +23,7 @@ pub fn group_query_attention<T: FloatDType>(
 }
 
 #[derive(Module)]
-pub struct GroupQueryAttention<T: NumDType> {
+pub struct GroupQueryAttention<T: FloatDType> {
     pub q_proj: Linear<T>,
     pub k_proj: Linear<T>,
     pub v_proj: Linear<T>,

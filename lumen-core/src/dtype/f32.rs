@@ -4,12 +4,20 @@ use approx::relative_eq;
 use libm;
 use rand::rng;
 use rand_distr::Distribution;
-use crate::{Result, Storage};
+use crate::{DynTensor, Result, Storage, Tensor};
 use super::{AutogradInfo, DType, FloatCategory, FloatDType, NumDType, WithDType};
 
 impl WithDType for f32 {
     const DTYPE: DType = DType::F32;
     type AutogradMeta = AutogradInfo<f32>;
+
+    fn from_dyn(tensor: &DynTensor) -> crate::Result<Tensor<Self>> {
+        if let DynTensor::F32(t) = tensor {
+            Ok(t.clone())
+        } else {
+            Err(crate::Error::UnexpectedDType { msg: "convert from dyn tensor", expected: Self::DTYPE, got: tensor.dtype() })
+        }
+    }
 }
 
 impl NumDType for f32 {

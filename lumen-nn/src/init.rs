@@ -1,6 +1,9 @@
 use lumen_core::{FloatDType, Shape, Tensor, Var};
 
 pub enum Initialize<T: FloatDType> {
+    Uninit,
+    Empty,
+
     /// Fills tensor with specified value everywhere
     Constant {
         /// The value to fill the tensor with
@@ -159,6 +162,8 @@ impl<T: FloatDType> Initialize<T> {
     pub fn init_with(&self, shape: impl Into<Shape>, fan_in: Option<usize>, fan_out: Option<usize>) -> lumen_core::Result<Tensor<T>> {
         let shape = shape.into();
         match self {
+            Initialize::Uninit => Var::uninit(shape),
+            Initialize::Empty => Var::empty(shape),
             Initialize::Constant { value } => Var::full(shape, *value),
             Initialize::Ones => Var::ones(shape),
             Initialize::Zeros => Var::zeros(shape),

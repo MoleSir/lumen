@@ -1,4 +1,4 @@
-use lumen_core::{FloatDType, NumDType, Tensor, D};
+use lumen_core::{FloatDType, Tensor, D};
 use lumen_macros::Module;
 use crate::{init::Initialize, linear, Linear};
 
@@ -11,7 +11,7 @@ pub fn self_attention<T: FloatDType>(hidden_size: usize, init: &Initialize<T>) -
 }
 
 #[derive(Module)]
-pub struct SelfAttention<T: NumDType> {
+pub struct SelfAttention<T: FloatDType> {
     pub q_proj: Linear<T>,
     pub k_proj: Linear<T>,
     pub v_proj: Linear<T>,

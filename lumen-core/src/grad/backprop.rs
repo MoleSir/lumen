@@ -1,15 +1,7 @@
-mod gradmeta;
-mod gradstore;
-mod op;
-mod global;
-pub use gradmeta::*;
-pub use gradstore::*;
-pub use op::*;
-pub use global::*;
-mod test;
-
 use std::collections::HashMap;
 use crate::{FloatDType, Tensor, TensorId};
+
+use super::{BinaryOp, GradStore, Op, ReduceOp, UnaryOp};
 
 impl<T: FloatDType> Tensor<T> {
 

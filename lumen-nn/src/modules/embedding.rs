@@ -1,4 +1,4 @@
-use lumen_core::{FloatDType, IntTensor, NumDType, Tensor};
+use lumen_core::{FloatDType, IntTensor, Tensor};
 use lumen_macros::Module;
 use crate::init::Initialize;
 
@@ -8,13 +8,13 @@ pub fn embedding<T: FloatDType>(num_embeddings: usize, embedding_dim: usize, ini
 }
 
 #[derive(Module)]
-pub struct Embedding<T: NumDType> {
+pub struct Embedding<T: FloatDType> {
     pub embeddings: Tensor<T>,
     #[module(skip)]
     pub embedding_dim: usize,
 }
 
-impl<T: NumDType> Embedding<T> {
+impl<T: FloatDType> Embedding<T> {
     pub fn new(embeddings: Tensor<T>, embedding_dim: usize) -> Self {
         Self {
             embeddings,

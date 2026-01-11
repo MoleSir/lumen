@@ -1,4 +1,4 @@
-use lumen_core::{FloatDType, IndexOp, NumDType, Tensor};
+use lumen_core::{FloatDType, IndexOp, Tensor};
 use lumen_macros::Module;
 use crate::{init::Initialize, linear, Linear};
 
@@ -22,7 +22,7 @@ pub fn gru<T: FloatDType>(input_size: usize, hidden_size: usize, init: &Initiali
 }
 
 #[derive(Module)]
-pub struct Gru<T: NumDType> {
+pub struct Gru<T: FloatDType> {
     pub input_proj: Linear<T>,
     pub hidden_proj: Linear<T>,
 

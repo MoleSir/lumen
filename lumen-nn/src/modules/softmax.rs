@@ -1,4 +1,4 @@
-use lumen_core::{FloatDType, NumDType, Tensor};
+use lumen_core::{FloatDType, Tensor};
 use crate::{functional as F, modules::Module};
 
 /// Applies the Softmax function to an n-dimensional input Tensor
@@ -24,5 +24,5 @@ impl Softmax {
     }
 }
 
-impl<T: NumDType> Module<T> for Softmax {
+impl<T: FloatDType> Module<T> for Softmax {
 }

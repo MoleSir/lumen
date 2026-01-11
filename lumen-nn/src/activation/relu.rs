@@ -1,4 +1,4 @@
-use lumen_core::{FloatDType, NumDType, Tensor};
+use lumen_core::{FloatDType, Tensor};
 use crate::modules::Module;
 
 pub struct Relu;
@@ -14,5 +14,5 @@ impl Relu {
     }
 }
 
-impl<T: NumDType> Module<T> for Relu {
+impl<T: FloatDType> Module<T> for Relu {
 }

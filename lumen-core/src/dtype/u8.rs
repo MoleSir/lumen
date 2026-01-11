@@ -1,10 +1,18 @@
-use crate::{Result, Storage};
+use crate::{DynTensor, Result, Storage, Tensor};
 
 use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, UnsignedIntDType, WithDType};
 
 impl WithDType for u8 {
     const DTYPE: DType = DType::U8;
     type AutogradMeta = NoAutograd;
+
+    fn from_dyn(tensor: &DynTensor) -> crate::Result<Tensor<Self>> {
+        if let DynTensor::U8(t) = tensor {
+            Ok(t.clone())
+        } else {
+            Err(crate::Error::UnexpectedDType { msg: "convert from dyn tensor", expected: Self::DTYPE, got: tensor.dtype() })
+        }
+    }
 }
 
 impl NumDType for u8 {

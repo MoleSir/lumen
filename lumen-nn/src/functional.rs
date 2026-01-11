@@ -108,9 +108,25 @@ pub fn mse_loss<T: FloatDType>(input: &Tensor<T>, target: &Tensor<T>) -> lumen_c
     input.sub(target)?.sqr().mean_all()
 }
 
+/// Computes the Cross Entropy Loss between input logits and target probabilities.
+///
+/// This function expects the `target` to be a probability distribution (e.g., one-hot vectors)
+/// rather than class indices. It applies `log_softmax` on the input implicitly.
+///
+/// The result is averaged over the batch (reduction: mean).
+///
+/// ## Arguments
+///
+/// * `input` - The input tensor containing unnormalized scores (logits).
+///   **Shape:** `(batch_size, num_classes)`
+///
+/// * `target` - The target tensor containing probabilities (0.0 to 1.0).
+///   **Shape:** `(batch_size, num_classes)` (Must match `input` shape).
+///
+/// ## Returns
+///
+/// * A scalar Tensor representing the mean loss over the batch.
 pub fn cross_entropy<T: FloatDType>(input: &Tensor<T>, target: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
-    // Input Shape: [Batch, Classes] (logits)
-    // Target Shape: [Batch, Classes] (probabilities, 0.0~1.0)
     let dim = 1; 
     let log_probs = log_softmax(input, dim)?;
     let weighted_log_probs = target.broadcast_mul(&log_probs)?;
@@ -119,7 +135,28 @@ pub fn cross_entropy<T: FloatDType>(input: &Tensor<T>, target: &Tensor<T>) -> lu
     loss.mean_all()
 }
 
+/// Computes the Cross Entropy Loss using integer class indices as targets.
+///
+/// This is the most common form of Cross Entropy used for classification.
+/// It combines `log_softmax` and `nll_loss` (Negative Log Likelihood) for numerical stability.
+///
+/// The result is averaged over the batch (reduction: mean).
+///
+/// ## Arguments
+///
+/// * `input` - The input tensor containing unnormalized scores (logits).
+///   **Shape:** `(batch_size, num_classes)`
+///
+/// * `target` - The target tensor containing class indices.
+///   **Shape:** `(batch_size)` or `(batch_size, 1)`
+///   Values must be integers in the range `[0, num_classes - 1]`.
+///
+/// ## Returns
+///
+/// * A scalar Tensor representing the mean loss over the batch.
 pub fn cross_entropy_indices<T: FloatDType>(input: &Tensor<T>, target: impl Into<IntTensor>) -> lumen_core::Result<Tensor<T>> {
+    // Input: [samples, classes] (logits)
+    // Target: [samples, 1] (probabilities, 0.0~1.0)
     let log_probs = log_softmax(input, 1)?;
     nll_loss(&log_probs, target)
 }

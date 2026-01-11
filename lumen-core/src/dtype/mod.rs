@@ -5,7 +5,7 @@ mod i32;
 mod bool;
 mod u8;
 
-use crate::{backprop::{AutogradInfo, AutogradMetaT, NoAutograd}, Result, Tensor};
+use crate::{grad::{AutogradInfo, AutogradMetaT, NoAutograd}, DynTensor, Result, Tensor};
 use super::Storage;
 
 pub trait WithDType:
@@ -21,6 +21,7 @@ pub trait WithDType:
 {
     const DTYPE: DType;
     type AutogradMeta: AutogradMetaT<Self>;
+    fn from_dyn(tensor: &DynTensor) -> crate::Result<Tensor<Self>>;
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

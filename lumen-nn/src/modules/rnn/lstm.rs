@@ -24,7 +24,7 @@ pub fn lstm<T: FloatDType>(input_size: usize, hidden_size: usize, init: &Initial
 }
 
 #[derive(Module)]
-pub struct Lstm<T: NumDType> {
+pub struct Lstm<T: FloatDType> {
     pub input_proj: Linear<T>,
     pub hidden_proj: Linear<T>,
 

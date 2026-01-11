@@ -2,7 +2,7 @@ mod float;
 mod integer;
 pub use float::*;
 pub use integer::*;
-use crate::{DType, Shape, Tensor};
+use crate::{DType, Shape, Tensor, WithDType};
 use paste::paste;
 
 pub enum DynTensor {
@@ -35,6 +35,10 @@ impl DynTensor {
             Self::I32(t) => t.shape(),
             Self::U32(t) => t.shape(),
         }
+    }
+
+    pub fn as_tensor<T: WithDType>(&self) -> crate::Result<Tensor<T>> {
+        T::from_dyn(self)
     }
 }
 

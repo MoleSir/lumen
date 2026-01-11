@@ -1,4 +1,4 @@
-use lumen_core::{FloatDType, NumDType, Tensor};
+use lumen_core::{FloatDType, Tensor};
 use crate::Module;
 
 pub struct MseLoss;
@@ -9,5 +9,5 @@ impl MseLoss {
     }
 }
 
-impl<T: NumDType> Module<T> for MseLoss {
+impl<T: FloatDType> Module<T> for MseLoss {
 }
