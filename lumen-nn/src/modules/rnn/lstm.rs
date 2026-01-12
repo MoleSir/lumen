@@ -1,27 +1,6 @@
 use lumen_core::{FloatDType, IndexOp, NumDType, Tensor};
 use lumen_macros::Module;
-use crate::{init::Initialize, linear, Linear};
-
-/// Creates an LSTM module.
-///
-/// This factory function initializes the linear layers.
-///
-/// ## Arguments
-///
-/// * `input_size` - The number of features in the input `x`.
-/// * `hidden_size` - The number of features in the hidden state `h` and cell state `c`.
-/// * `init` - The initialization scheme.
-pub fn lstm<T: FloatDType>(input_size: usize, hidden_size: usize, init: &Initialize<T>) -> lumen_core::Result<Lstm<T>> {
-    // LSTM needs 4 parts: Input(i), Forget(f), Gate/Cell(g), Output(o).
-    // Total dimension: 4 * hidden_size
-    let gate_size = 4 * hidden_size;
-    
-    // linear(..., true, ...) enables internal bias (b_ih, b_hh)
-    let input_proj = linear(input_size, gate_size, true, init)?;
-    let hidden_proj = linear(hidden_size, gate_size, true, init)?;
-    
-    Ok(Lstm::new(input_proj, hidden_proj, input_size, hidden_size))
-}
+use crate::{init::Init, Linear, ModuleInit, NnCtxError, NnResult};
 
 #[derive(Module)]
 pub struct Lstm<T: FloatDType> {
@@ -34,6 +13,12 @@ pub struct Lstm<T: FloatDType> {
     pub hidden_size: usize,
 }
 
+#[derive(Debug, derive_new::new)]
+pub struct LstmConfig {
+    pub input_size: usize,
+    pub hidden_size: usize,
+}
+
 /// Helper struct to manage the LSTM state tuple.
 /// This isn't strictly necessary but makes signatures cleaner.
 #[derive(Clone)]
@@ -42,14 +27,37 @@ pub struct LstmState<T: NumDType> {
     pub c: Tensor<T>,
 }
 
+impl<T: FloatDType> ModuleInit<T> for Lstm<T> {
+    type Config = LstmConfig;
+    type Error = NnCtxError;
+
+    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
+        let input_size = config.input_size;
+        let hidden_size = config.hidden_size;
+        let gate_size = 4 * hidden_size;
+
+        // PyTorch default init: uniform(-std, std) where std = 1 / sqrt(hidden_size)
+        let std = T::one() / T::from_usize(hidden_size).sqrt();
+        let default_init = Init::uniform(-std, std);
+        let init = init.unwrap_or(default_init);
+
+        // Linear layers with bias enabled
+        let input_proj = Linear::new(input_size, gate_size, true, Some(init))?;
+        let hidden_proj = Linear::new(hidden_size, gate_size, true, Some(init))?;
+
+        Ok(Lstm { 
+            input_proj, 
+            hidden_proj, 
+            input_size, 
+            hidden_size 
+        })
+    }
+}
+
 impl<T: FloatDType> Lstm<T> {
-    fn new(
-        input_proj: Linear<T>, 
-        hidden_proj: Linear<T>, 
-        input_size: usize, 
-        hidden_size: usize
-    ) -> Self {
-        Self { input_proj, hidden_proj, input_size, hidden_size }
+    #[inline]
+    pub fn new(input_size: usize, hidden_size: usize, init: Option<Init<T>>) -> NnResult<Self> {
+        Self::init(&LstmConfig::new(input_size, hidden_size), init)
     }
 
     /// Performs the forward pass for an entire sequence.
@@ -66,7 +74,7 @@ impl<T: FloatDType> Lstm<T> {
     pub fn forward(&self, input: &Tensor<T>, state: Option<&LstmState<T>>) -> lumen_core::Result<(Tensor<T>, LstmState<T>)> {
         let (batch_size, seq_length, _input_size) = input.dims3()?;
         
-        // Initialize states
+        // Init states
         let (mut h_t, mut c_t) = match state {
             Some(s) => (s.h.clone(), s.c.clone()),
             None => {
@@ -170,13 +178,14 @@ impl<T: FloatDType> Lstm<T> {
 #[cfg(test)]
 mod test {
     use lumen_core::Tensor;
-    use crate::{init::Initialize, Module};
-    use super::lstm;
+    use crate::{init::Init, Module};
+
+    use super::Lstm;
 
     #[test]
     fn test_init() {
-        let init = Initialize::<f64>::standard_uniform();
-        let rnn = lstm(4, 8, &init).unwrap();
+        let init = Init::standard_normal();
+        let rnn = Lstm::<f64>::new(4, 8, Some(init)).unwrap();
         for (name, tensor) in rnn.named_params() {
             println!("{}: {}", name, tensor.shape());
         }
@@ -184,8 +193,7 @@ mod test {
 
     #[test]
     fn test_forward() {
-        let init = Initialize::<f64>::standard_uniform();
-        let rnn = lstm(4, 8, &init).unwrap();
+        let rnn = Lstm::<f64>::new(4, 8, None).unwrap();
         let input = Tensor::randn(0.0, 1.0, (1, 10, 4)).unwrap();
         let (output, state) = rnn.forward(&input, None).unwrap();
         println!("{}", output.shape());
@@ -195,8 +203,7 @@ mod test {
 
     #[test]
     fn test_step() {
-        let init = Initialize::<f64>::standard_uniform();
-        let rnn = lstm(4, 8, &init).unwrap();
+        let rnn = Lstm::<f64>::new(4, 8, None).unwrap();
         let input = Tensor::randn(0.0, 1.0, (1, 4)).unwrap();
         let state = rnn.step(&input, None).unwrap();
         println!("{}", state.c.shape());

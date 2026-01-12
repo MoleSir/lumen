@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use lumen_core::{FloatDType, IntTensor, Tensor, Var, D};
 use lumen_macros::Module;
-use lumen_nn::{init::Initialize, Embedding, Linear};
+use lumen_nn::{init::Init, Embedding, Linear, ModuleInit};
 use thiserrorctx::Context;
-use super::{LlamaConfig, LlamaError, LlamaResult};
+use super::{LlamaConfig, LlamaCtxError, LlamaError, LlamaResult};
 
 // ========================================================================= //
 //                For Causal LM
@@ -15,16 +15,22 @@ pub struct LlamaForCausalLM<T: FloatDType> {
     pub lm_head: Linear<T>, 
 }
 
-impl<T: FloatDType> LlamaForCausalLM<T> {
-    pub fn init(config: &LlamaConfig, initialize: &Initialize<T>) -> LlamaResult<Self> {
-        let model = LlamaModel::init(config, initialize).context("init llama model")?;
-        let lm_head = lumen_nn::linear(config.hidden_size, config.vocab_size, false, initialize)
-            .map_err(LlamaError::Core)
+impl<T: FloatDType> ModuleInit<T> for LlamaForCausalLM<T> {
+    type Config = LlamaConfig;
+    type Error = LlamaCtxError;
+
+    fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
+        let model = LlamaModel::init(config, init).context("init llama model")?;
+        let lm_head_init = init.unwrap_or_else(default_init_linear);
+        let lm_head = Linear::new(config.hidden_size, config.vocab_size, false, Some(lm_head_init))
+            .map_err(LlamaError::Nn)
             .context("init lm head")?;
         
         Ok(Self { model, lm_head })
     }
+}
 
+impl<T: FloatDType> LlamaForCausalLM<T> {
     pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut LlamaCache<T>) -> LlamaResult<Tensor<T>> {
         // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
         let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
@@ -47,22 +53,28 @@ pub struct LlamaModel<T: FloatDType> {
     pub norm: LlamaRMSNorm<T>,
 }
 
-impl<T: FloatDType> LlamaModel<T> {
-    pub fn init(config: &LlamaConfig, initialize: &Initialize<T>) -> LlamaResult<Self> {
-        let embed = lumen_nn::embedding(config.vocab_size, config.hidden_size, initialize)
-            .map_err(LlamaError::Core)
+impl<T: FloatDType> ModuleInit<T> for LlamaModel<T> {
+    type Config = LlamaConfig;
+    type Error = LlamaCtxError;
+
+    fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
+        let embed_init = init.unwrap_or_else(default_init_linear);
+        let embed = Embedding::new(config.vocab_size, config.hidden_size, Some(embed_init))
+            .map_err(LlamaError::Nn)
             .context("init embed")?;
         
         let mut layers = Vec::new();
         for _ in 0..config.num_hidden_layers {
-            layers.push(LlamaLayer::init(config, initialize)?);
+            layers.push(LlamaLayer::init(config, init)?);
         }
         
-        let norm = LlamaRMSNorm::init(config).context("init rms norm")?;
+        let norm = LlamaRMSNorm::init(config, init).context("init rms norm")?;
 
         Ok(Self { embed, layers, norm })
     }
+}
 
+impl<T: FloatDType> LlamaModel<T> {
     pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut LlamaCache<T>) -> LlamaResult<Tensor<T>> {
         // embedding: (batch_size, seq_len) -> (batch_size, seq_len, hidden_size)
         let mut hidden_states = self.embed.forward(input_ids)
@@ -94,17 +106,22 @@ pub struct LlamaLayer<T: FloatDType> {
     pub post_attention_layernorm: LlamaRMSNorm<T>,
 }
 
-impl<T: FloatDType> LlamaLayer<T> {
-    pub fn init(config: &LlamaConfig, initialize: &Initialize<T>) -> LlamaResult<Self> {
-        let self_attn = LlamaAttention::init(config, initialize).context("init attention")?;
-        let mlp = LlamaMlp::init(config, initialize).context("init mlp")?;
-        let input_layernorm = LlamaRMSNorm::init(config).context("init input layernorm")?;
-        let post_attention_layernorm = LlamaRMSNorm::init(config).context("init post atten layernorm")?;
+impl<T: FloatDType> ModuleInit<T> for LlamaLayer<T> {
+    type Config = LlamaConfig;
+    type Error = LlamaCtxError;
+
+    fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
+        let self_attn = LlamaAttention::init(config, init).context("init attention")?;
+        let mlp = LlamaMlp::init(config, init).context("init mlp")?;
+        let input_layernorm = LlamaRMSNorm::init(config, init).context("init input layernorm")?;
+        let post_attention_layernorm = LlamaRMSNorm::new(config).context("init post atten layernorm")?;
         Ok(Self {
             self_attn, mlp, input_layernorm, post_attention_layernorm,
         })
     }
+}
 
+impl<T: FloatDType> LlamaLayer<T> {
     /*
 
                 |
@@ -174,15 +191,22 @@ pub struct LlamaMlp<T: FloatDType> {
     pub down_proj: Linear<T>,
 }
 
-impl<T: FloatDType> LlamaMlp<T> {
-    pub fn init(config: &LlamaConfig, initialize: &Initialize<T>) -> LlamaResult<Self> {
-        let up_proj   = lumen_nn::linear(config.hidden_size, config.intermediate_size, false, initialize)?;
-        let gate_proj = lumen_nn::linear(config.hidden_size, config.intermediate_size, false, initialize)?;
-        let down_proj = lumen_nn::linear(config.intermediate_size, config.hidden_size, false, initialize)?;
+impl<T: FloatDType> ModuleInit<T> for LlamaMlp<T> {
+    type Config = LlamaConfig;
+    type Error = LlamaCtxError;
+
+    fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
+        let init = init.unwrap_or_else(default_init_linear);
+
+        let up_proj   = Linear::new(config.hidden_size, config.intermediate_size, false, Some(init))?;
+        let gate_proj = Linear::new(config.hidden_size, config.intermediate_size, false, Some(init))?;
+        let down_proj = Linear::new(config.intermediate_size, config.hidden_size, false, Some(init))?;
     
         Ok(Self { up_proj, down_proj, gate_proj })
     }
+}
 
+impl<T: FloatDType> LlamaMlp<T> {
     pub fn forward(&self, x: &Tensor<T>) -> LlamaResult<Tensor<T>> {
         let up = self.up_proj.forward(x)?;
         let gate = self.gate_proj.forward(x)?;
@@ -213,13 +237,19 @@ pub struct LlamaAttention<T: FloatDType> {
     pub max_position_embeddings: usize,
 }
 
-impl<T: FloatDType> LlamaAttention<T> {
-    pub fn init(config: &LlamaConfig, initialize: &Initialize<T>) -> LlamaResult<Self> {
+impl<T: FloatDType> ModuleInit<T> for LlamaAttention<T> {
+    type Config = LlamaConfig;
+    type Error = LlamaCtxError;
+
+    fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
+        // TODO: check 
         let head_size = config.hidden_size / config.num_attention_heads;
-        let q_proj = lumen_nn::linear(config.hidden_size, config.hidden_size, false, initialize)?;
-        let k_proj = lumen_nn::linear(config.hidden_size, config.num_kv_heads * head_size, false, initialize)?;
-        let v_proj = lumen_nn::linear(config.hidden_size, config.num_kv_heads * head_size, false, initialize)?;
-        let o_proj = lumen_nn::linear(config.hidden_size, config.hidden_size, false, initialize)?;
+        
+        let init = init.unwrap_or_else(default_init_linear);
+        let q_proj = Linear::new(config.hidden_size, config.hidden_size, false, Some(init))?;
+        let k_proj = Linear::new(config.hidden_size, config.num_kv_heads * head_size, false, Some(init))?;
+        let v_proj = Linear::new(config.hidden_size, config.num_kv_heads * head_size, false, Some(init))?;
+        let o_proj = Linear::new(config.hidden_size, config.hidden_size, false, Some(init))?;
 
         Ok(Self {
             q_proj, k_proj, v_proj, o_proj,
@@ -228,8 +258,10 @@ impl<T: FloatDType> LlamaAttention<T> {
             head_size,
             max_position_embeddings: config.max_position_embeddings,
         })
-    }  
+    }
+}
 
+impl<T: FloatDType> LlamaAttention<T> {
     pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut LlamaCache<T>) -> LlamaResult<Tensor<T>> {
         let (batch_size, seq_len, hidden_size) = hidden_states.dims3()?;
         let q = self.q_proj.forward(hidden_states)?; // (batch_size, seq_len, head_size * num_attn_heads)
@@ -422,8 +454,20 @@ pub struct LlamaRMSNorm<T: FloatDType> {
     pub variance_epsilon: T,
 }
 
+impl<T: FloatDType> ModuleInit<T> for LlamaRMSNorm<T> {
+    type Config = LlamaConfig;
+    type Error = LlamaCtxError;
+
+    fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
+        let init = init.unwrap_or(Init::ones());
+        let weight = init.init((config.hidden_size,))?;
+        let variance_epsilon = T::from_f64(config.rms_norm_eps);
+        Ok(Self { weight, variance_epsilon })
+    }
+}
+
 impl<T: FloatDType> LlamaRMSNorm<T> {
-    pub fn init(config: &LlamaConfig) -> LlamaResult<Self> {
+    pub fn new(config: &LlamaConfig) -> LlamaResult<Self> {
         let weight = Var::ones((config.hidden_size,))?;
         let variance_epsilon = T::from_f64(config.rms_norm_eps);
         Ok(Self { weight, variance_epsilon })
@@ -438,6 +482,15 @@ impl<T: FloatDType> LlamaRMSNorm<T> {
         let out = self.weight.broadcast_mul(&hidden_states)?;
         Ok(out)
     }
+}
+
+// ========================================================================= //
+//                Default
+// ========================================================================= //
+
+#[inline]
+fn default_init_linear<T: FloatDType>() -> Init<T> {
+    Init::normal(T::zero(), T::from_f64(0.02))
 }
 
 // ========================================================================= //
@@ -499,15 +552,15 @@ fn calculate_default_inv_freq<T: FloatDType>(config: &LlamaConfig) -> Vec<T> {
 #[cfg(test)]
 mod test {
     use lumen_core::Tensor;
-    use lumen_nn::{init::Initialize, Module};
+    use lumen_nn::{init::Init, Module, ModuleInit};
     use crate::llama::{LlamaConfig, LlamaResult};
     use super::{LlamaCache, LlamaForCausalLM};
 
     #[test]
     fn test_init() {
-        let initialize = Initialize::<f32>::standard_normal();
+        let init = Init::<f32>::standard_normal();
         let config = LlamaConfig::test();
-        let model = LlamaForCausalLM::init(&config, &initialize).unwrap();
+        let model = LlamaForCausalLM::init(&config, Some(init)).unwrap();
 
         for (name, param) in model.named_params() {
             println!("{}: {}", name, param.shape());
@@ -517,9 +570,8 @@ mod test {
     #[test]
     fn test_forward() {
         fn test() -> LlamaResult<()> {
-            let initialize = Initialize::<f32>::uniform(0.0, 0.02);
             let config = LlamaConfig::test();
-            let model = LlamaForCausalLM::init(&config, &initialize)?;
+            let model = LlamaForCausalLM::init_default(&config)?;
     
             let input_ids = Tensor::<u32>::new(&[
                 [23, 89, 11, 2],

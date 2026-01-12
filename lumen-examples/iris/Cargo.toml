@@ -7,3 +7,4 @@ edition = "2024"
 lumen-core = { path = "../../lumen-core" }
 lumen-nn = { path = "../../lumen-nn" }
 lumen-dataset = { path = "../../lumen-dataset" }
+anyhow = "1.0"

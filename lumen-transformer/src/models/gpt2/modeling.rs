@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use lumen_core::{FloatDType, IntTensor, Tensor, Var, D};
+use lumen_core::{FloatDType, IntTensor, Tensor, D};
 use lumen_macros::Module;
-use lumen_nn::{init::Initialize, Embedding, Linear};
+use lumen_nn::{init::Init, Embedding, Linear, ModuleInit};
 use thiserrorctx::Context;
-use super::{Gpt2Config, Gpt2Error, Gpt2Result};
+use super::{Gpt2Config, Gpt2CtxError, Gpt2Error, Gpt2Result};
 
 // ========================================================================= //
 //                For Causal LM
@@ -15,14 +15,20 @@ pub struct Gpt2ForCausalLM<T: FloatDType> {
     pub lm_head: Linear<T>, 
 }
 
-impl<T: FloatDType> Gpt2ForCausalLM<T> {
-    pub fn init(config: &Gpt2Config, initialize: &Initialize<T>) -> Gpt2Result<Self> {
-        let transformer = Gpt2Model::init(config, initialize).context("init transformer")?;
-        let lm_head = lumen_nn::linear(config.n_embd, config.vocab_size, false, initialize)?;
+impl<T: FloatDType> ModuleInit<T> for Gpt2ForCausalLM<T> {
+    type Config = Gpt2Config;
+    type Error = Gpt2CtxError;
+
+    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
+        let transformer = Gpt2Model::init(config, init).context("init transformer")?;
+        let lm_head_init = init.unwrap_or_else(default_init_linear);
+        let lm_head = Linear::new(config.n_embd, config.vocab_size, false, Some(lm_head_init))?;
         
         Ok(Self { transformer, lm_head })
     }
+}
 
+impl<T: FloatDType> Gpt2ForCausalLM<T> {
     pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Gpt2Cache<T>) -> Gpt2Result<Tensor<T>> {
         let hidden_states = self.transformer.forward(input_ids, start_pos, cache).context("transformer forward")?;
         let logits = self.lm_head.forward(&hidden_states).map_err(Gpt2Error::Core).context("lm head forward")?;
@@ -42,21 +48,27 @@ pub struct Gpt2Model<T: FloatDType> {
     pub ln_f: Gpt2LayerNorm<T>,
 }
 
-impl<T: FloatDType> Gpt2Model<T> {
-    pub fn init(config: &Gpt2Config, initialize: &Initialize<T>) -> Gpt2Result<Self> {
-        let wte = lumen_nn::embedding(config.vocab_size, config.n_embd, initialize)?;
-        let wpe = lumen_nn::embedding(config.n_positions, config.n_embd, initialize)?;
-        
+impl<T: FloatDType> ModuleInit<T> for Gpt2Model<T> {
+    type Config = Gpt2Config;
+    type Error = Gpt2CtxError;
+
+    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
+        let embed_init = init.unwrap_or_else(default_init_linear);
+        let wte = Embedding::new(config.vocab_size, config.n_embd, Some(embed_init))?;
+        let wpe = Embedding::new(config.n_positions, config.n_embd, Some(embed_init))?;
+
         let mut h = Vec::new();
         for i in 0..config.n_layer {
-            h.push(Gpt2Block::init(config, initialize).with_context(|| format!("init {i} block"))?);
+            h.push(Gpt2Block::init(config, init).with_context(|| format!("init {i} block"))?);
         }
         
-        let ln_f = Gpt2LayerNorm::init(config.n_embd, config.layer_norm_epsilon)?;
+        let ln_f = Gpt2LayerNorm::init(config, init).context("init ln f")?;
 
         Ok(Self { wte, wpe, h, ln_f })
     }
+}
 
+impl<T: FloatDType> Gpt2Model<T> {
     pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Gpt2Cache<T>) -> Gpt2Result<Tensor<T>> {
         let input_ids: IntTensor = input_ids.into();
         let seq_len = input_ids.dims()[1];
@@ -99,16 +111,21 @@ pub struct Gpt2Block<T: FloatDType> {
     pub mlp: Gpt2MLP<T>,
 }
 
-impl<T: FloatDType> Gpt2Block<T> {
-    pub fn init(config: &Gpt2Config, initialize: &Initialize<T>) -> Gpt2Result<Self> {
-        let ln_1 = Gpt2LayerNorm::init(config.n_embd, config.layer_norm_epsilon).context("ln 1 init")?;
-        let attn = Gpt2Attention::init(config, initialize).context("attn init")?;
-        let ln_2 = Gpt2LayerNorm::init(config.n_embd, config.layer_norm_epsilon).context("ln 2 init")?;
-        let mlp = Gpt2MLP::init(config, initialize).context("mlp init")?;
+impl<T: FloatDType> ModuleInit<T> for Gpt2Block<T> {
+    type Config = Gpt2Config;
+    type Error = Gpt2CtxError;
+
+    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
+        let ln_1 = Gpt2LayerNorm::init(config, init).context("ln 1 init")?;
+        let attn = Gpt2Attention::init(config, init).context("attn init")?;
+        let ln_2 = Gpt2LayerNorm::init(config, init).context("ln 2 init")?;
+        let mlp = Gpt2MLP::init(config, init).context("mlp init")?;
 
         Ok(Self { ln_1, attn, ln_2, mlp })
     }
+}
 
+impl<T: FloatDType> Gpt2Block<T> {
     pub fn forward(&self, hidden_states: &Tensor<T>, layer_idx: usize, cache: &mut Gpt2Cache<T>) -> Gpt2Result<Tensor<T>> {        
         let residual = hidden_states.clone();
         let normalized = self.ln_1.forward(hidden_states).context("ln_1 forward")?;
@@ -134,14 +151,22 @@ pub struct Gpt2MLP<T: FloatDType> {
     pub c_proj: Linear<T>, // Down projection
 }
 
-impl<T: FloatDType> Gpt2MLP<T> {
-    pub fn init(config: &Gpt2Config, initialize: &Initialize<T>) -> Gpt2Result<Self> {
+impl<T: FloatDType> ModuleInit<T> for Gpt2MLP<T> {
+    type Config = Gpt2Config;
+    type Error = Gpt2CtxError;
+
+    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let intermediate_size = 4 * config.n_embd;
-        let c_fc = lumen_nn::linear(config.n_embd, intermediate_size, true, initialize)?;
-        let c_proj = lumen_nn::linear(intermediate_size, config.n_embd, true, initialize)?;
+
+        let init = init.unwrap_or_else(default_init_linear);
+        let c_fc = Linear::new(config.n_embd, intermediate_size, true, Some(init))?;
+        let c_proj = Linear::new(intermediate_size, config.n_embd, true, Some(init))?;
+    
         Ok(Self { c_fc, c_proj })
     }
+}
 
+impl<T: FloatDType> Gpt2MLP<T> {
     pub fn forward(&self, x: &Tensor<T>) -> Gpt2Result<Tensor<T>> {
         let x = self.c_fc.forward(x)?;
         let x = x.gelu(); 
@@ -165,12 +190,20 @@ pub struct Gpt2Attention<T: FloatDType> {
     pub head_dim: usize,
 }
 
-impl<T: FloatDType> Gpt2Attention<T> {
-    pub fn init(config: &Gpt2Config, initialize: &Initialize<T>) -> Gpt2Result<Self> {
+impl<T: FloatDType> ModuleInit<T> for Gpt2Attention<T> {
+    type Config = Gpt2Config;
+    type Error = Gpt2CtxError;
+
+    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let head_dim = config.n_embd / config.n_head;
-        // 3 * n_embd for Q, K, V
-        let c_attn = lumen_nn::linear(config.n_embd, 3 * config.n_embd, true, initialize)?;
-        let c_proj = lumen_nn::linear(config.n_embd, config.n_embd, true, initialize)?;
+
+        let c_attn_init = init.unwrap_or_else(default_init_linear);
+        let c_attn = Linear::new(config.n_embd, 3 * config.n_embd, true, Some(c_attn_init))?;
+        
+        let scale = 1.0 / (2.0 * config.n_layer as f64).sqrt();
+        let scaled_std = 0.02 * scale;        
+        let c_proj_init = Init::normal(T::zero(), T::from_f64(scaled_std));
+        let c_proj = Linear::new(config.n_embd, config.n_embd, true, Some(c_proj_init))?;
 
         Ok(Self {
             c_attn,
@@ -179,7 +212,9 @@ impl<T: FloatDType> Gpt2Attention<T> {
             head_dim,
         })
     }
+}
 
+impl<T: FloatDType> Gpt2Attention<T> {
     pub fn forward(&self, hidden_state: &Tensor<T>, layer_idx: usize, cache: &mut Gpt2Cache<T>) -> Gpt2Result<Tensor<T>> {
         let (batch_size, seq_len, n_embd) = hidden_state.dims3()?;
 
@@ -208,7 +243,7 @@ impl<T: FloatDType> Gpt2Attention<T> {
         // k: (batch, n_head, total_seq, head_dim)
         // v: (batch, n_head, total_seq, head_dim)
         let attn_weights = q.matmul(&k.transpose_last()?)?;
-        let scale = T::from_f64(1.0 / self.head_dim as f64).sqr();
+        let scale = T::from_f64(1.0 / self.head_dim as f64).sqrt();
         let attn_weights = attn_weights * scale;
 
         // mask
@@ -265,14 +300,31 @@ pub struct Gpt2LayerNorm<T: FloatDType> {
     pub eps: T,
 }
 
-impl<T: FloatDType> Gpt2LayerNorm<T> {
-    pub fn init(size: usize, eps: f64) -> Gpt2Result<Self> {
-        let weight = Var::ones((size,))?;
-        let bias = Var::zeros((size,))?;
-        let eps = T::from_f64(eps);
+impl<T: FloatDType> ModuleInit<T> for Gpt2LayerNorm<T> {
+    type Config = Gpt2Config;
+    type Error = Gpt2CtxError;
+
+    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
+        let size = config.n_embd;
+        let eps = T::from_f64(config.layer_norm_epsilon);
+
+        let weight = init
+            .unwrap_or(Init::ones())
+            .init((size, ))
+            .map_err(Gpt2Error::Core)
+            .context("init weight")?;
+
+        let bias = init
+            .unwrap_or(Init::zeros())
+            .init((size, ))
+            .map_err(Gpt2Error::Core)
+            .context("init bias")?;
+
         Ok(Self { weight, bias, eps })
     }
+}
 
+impl<T: FloatDType> Gpt2LayerNorm<T> {
     pub fn forward(&self, x: &Tensor<T>) -> Gpt2Result<Tensor<T>> {
         // (batch_size, seq_len, n_dim) => (batch_size, seq_len, 1)
         let mean = x.mean_keepdim(D::Minus1)?;
@@ -292,6 +344,15 @@ impl<T: FloatDType> Gpt2LayerNorm<T> {
         let out = norm.broadcast_mul(&self.weight)?.broadcast_add(&self.bias)?;
         Ok(out)
     }
+}
+
+// ========================================================================= //
+//                Default
+// ========================================================================= //
+
+#[inline]
+fn default_init_linear<T: FloatDType>() -> Init<T> {
+    Init::normal(T::zero(), T::from_f64(0.02))
 }
 
 // ========================================================================= //
@@ -327,16 +388,16 @@ impl<T: FloatDType> Gpt2Cache<T> {
 #[cfg(test)]
 mod test {
     use lumen_core::Tensor;
-    use lumen_nn::{init::Initialize, Module};
+    use lumen_nn::{init::Init, Module, ModuleInit};
     use crate::gpt2::{Gpt2Cache, Gpt2Config, Gpt2Result};
 
     use super::Gpt2ForCausalLM;
 
     #[test]
     fn test_init() {
-        let initialize = Initialize::<f32>::standard_normal();
+        let init = Init::<f32>::standard_normal();
         let config = Gpt2Config::test();
-        let model = Gpt2ForCausalLM::init(&config, &initialize).unwrap();
+        let model = Gpt2ForCausalLM::init(&config, Some(init)).unwrap();
 
         for (name, param) in model.named_params() {
             println!("{}: {}", name, param.shape());
@@ -346,9 +407,8 @@ mod test {
     #[test]
     fn test_forward() {
         fn test() -> Gpt2Result<()> {
-            let initialize = Initialize::<f32>::uniform(0.0, 0.02);
             let config = Gpt2Config::test();
-            let model = Gpt2ForCausalLM::init(&config, &initialize)?;
+            let model = Gpt2ForCausalLM::init(&config, None)?;
     
             let input_ids = Tensor::<u32>::new(&[
                 [23, 89, 11, 2],

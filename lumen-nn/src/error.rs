@@ -13,4 +13,12 @@ pub enum NnError {
 
     #[error(transparent)]
     SafeTensors(#[from] lumen_io::safetensors::SafeTensorsCtxError),
+
+    // Module init
+    
+    #[error("head_size {0} can't divde by num_head {1}")]
+    HeadSizeCannotDivideByNumhead(usize, usize),
+
+    #[error("head_size {0} can't divde by kv_num_head {1}")]
+    HeadSizeCannotDivideByKvNumhead(usize, usize),
 }

@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, IndexOp, Tensor};
 use lumen_dataset::{DataLoader, Dataset, TensorPairBatcher};
-use lumen_nn::{init::Initialize, optim::{AdamW, AdamWConfig, Optimizer}, Linear, Module, MseLoss, Rnn, Tanh};
+use lumen_nn::{optim::{AdamW, AdamWConfig, Optimizer}, Linear, Module, MseLoss, Rnn, Tanh};
 use plotlib::page::Page;
 use plotlib::repr::Plot;
 use plotlib::style::LineStyle;
@@ -16,11 +16,10 @@ pub struct FunctionModel<T: FloatDType> {
 }
 
 impl<T: FloatDType> FunctionModel<T> {
-    pub fn init(hidden_size: usize) -> lumen_core::Result<Self> {
-        let initialize = Initialize::<T>::standard_uniform();
-        let rnn = lumen_nn::rnn(1, hidden_size, &initialize)?;
-        let fc1 = lumen_nn::linear(hidden_size, 2 * hidden_size, true, &initialize)?;
-        let fc2 = lumen_nn::linear(2 * hidden_size, 1, true, &initialize)?;
+    pub fn init(hidden_size: usize) -> anyhow::Result<Self> {
+        let rnn = Rnn::new(1, hidden_size, None)?;
+        let fc1 = Linear::new(hidden_size, 2 * hidden_size, true, None)?;
+        let fc2 = Linear::new(2 * hidden_size, 1, true, None)?;
         Ok(Self {
             rnn, fc1, act: Tanh::new(), fc2
         })

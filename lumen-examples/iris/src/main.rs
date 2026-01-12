@@ -1,5 +1,5 @@
 use lumen_core::{FloatDType, Tensor};
-use lumen_nn::{init::Initialize, linear, optim::{Optimizer, SGD}, CrossEntropyLoss, Linear, Module, Relu};
+use lumen_nn::{optim::{Optimizer, SGD}, CrossEntropyLoss, Linear, Module, Relu};
 use lumen_dataset::common::{IrisDataLoader, IrisDataset};
 
 #[derive(Module)]
@@ -9,11 +9,9 @@ pub struct Mlp<T: FloatDType> {
 }
 
 impl<T: FloatDType> Mlp<T> {
-    pub fn from_archs(arch: impl AsRef<[usize]>) -> lumen_core::Result<Self> {
+    pub fn from_archs(arch: impl AsRef<[usize]>) -> anyhow::Result<Self> {
         let arch = arch.as_ref();
         assert!(arch.len() >= 2);
-
-        let init = Initialize::<T>::standard_normal(); 
         
         let mut linears = vec![];
         let mut activates = vec![];
@@ -22,7 +20,7 @@ impl<T: FloatDType> Mlp<T> {
             let in_dim = arch[i];
             let out_dim = arch[i+1];
             
-            linears.push(linear(in_dim, out_dim, true, &init)?);
+            linears.push(Linear::new(in_dim, out_dim, true, None)?);
             
             if i < arch.len() - 2 {
                 activates.push(Relu::new());

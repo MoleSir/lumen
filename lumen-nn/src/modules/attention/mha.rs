@@ -1,14 +1,6 @@
 use lumen_core::{FloatDType, Tensor, D};
 use lumen_macros::Module;
-use crate::{init::Initialize, linear, Linear};
-
-pub fn multi_head_attention<T: FloatDType>(hidden_size: usize, num_head: usize, init: &Initialize<T>) -> lumen_core::Result<MultiHeadAttention<T>> {
-    let q_proj = linear(hidden_size, hidden_size, false, init)?;
-    let k_proj = linear(hidden_size, hidden_size, false, init)?;
-    let v_proj = linear(hidden_size, hidden_size, false, init)?;
-    let o_proj = linear(hidden_size, hidden_size, false, init)?;
-    Ok(MultiHeadAttention { q_proj, k_proj, v_proj, o_proj, hidden_size, num_head })
-}
+use crate::{init::Init, Linear, ModuleInit, NnCtxError, NnError, NnResult};
 
 #[derive(Module)]
 pub struct MultiHeadAttention<T: FloatDType> {
@@ -23,7 +15,46 @@ pub struct MultiHeadAttention<T: FloatDType> {
     pub num_head: usize,
 }
 
+#[derive(Debug, derive_new::new)]
+pub struct MultiHeadAttentionConfig {
+    hidden_size: usize, 
+    num_head: usize
+}
+
+impl<T: FloatDType> ModuleInit<T> for MultiHeadAttention<T> {
+    type Config = MultiHeadAttentionConfig;
+    type Error = NnCtxError;
+
+    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
+        let hidden_size = config.hidden_size;
+        let num_head = config.num_head;
+
+        if hidden_size % num_head != 0 {
+            return Err(NnError::HeadSizeCannotDivideByNumhead(hidden_size, num_head))?;
+        }
+
+        let init = init.unwrap_or_else(|| Init::xavier_uniform(T::one()));
+
+        let q_proj = Linear::new(hidden_size, hidden_size, false, Some(init))?;
+        let k_proj = Linear::new(hidden_size, hidden_size, false, Some(init))?;
+        let v_proj = Linear::new(hidden_size, hidden_size, false, Some(init))?;
+        let o_proj = Linear::new(hidden_size, hidden_size, false, Some(init))?;
+
+        Ok(MultiHeadAttention { q_proj, k_proj, v_proj, o_proj, hidden_size, num_head: config.num_head })
+    }
+}
+
 impl<T: FloatDType> MultiHeadAttention<T> {
+    #[inline]
+    pub fn new(hidden_size: usize, num_head: usize) -> NnResult<Self> {
+        Self::init(&MultiHeadAttentionConfig::new(hidden_size, num_head), None)
+    }
+
+    #[inline]
+    pub fn new_with(hidden_size: usize, num_head: usize, init: Init<T>) -> NnResult<Self> {
+        Self::init(&MultiHeadAttentionConfig::new(hidden_size, num_head), Some(init))
+    }
+
     pub fn forward(&self, hidden_state: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
         // hidden_state: (batch_size, seq_len, hidden_size)
         let (batch_size, seq_len, hidden_size) = hidden_state.dims3()?;

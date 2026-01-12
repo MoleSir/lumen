@@ -1,5 +1,5 @@
 use lumen_core::{FloatDType, Tensor};
-use lumen_nn::{init::Initialize, linear, optim::{Optimizer, SGD}, Linear, Module, MseLoss, Sigmoid};
+use lumen_nn::{optim::{Optimizer, SGD}, Linear, Module, MseLoss, Sigmoid};
 
 #[derive(Module)]
 pub struct Mlp<T: FloatDType> {
@@ -8,16 +8,14 @@ pub struct Mlp<T: FloatDType> {
 }
 
 impl<T: FloatDType> Mlp<T> {
-    pub fn from_archs(arch: impl AsRef<[usize]>) -> lumen_core::Result<Self> {
+    pub fn from_archs(arch: impl AsRef<[usize]>) -> anyhow::Result<Self> {
         let arch = arch.as_ref();
         assert!(arch.len() >= 2);
-
-        let init = Initialize::<T>::standard_normal();
         
         let mut linears = vec![];
         let mut activates = vec![];
         for (&in_dim, &out_dim) in arch.iter().zip(arch.iter().skip(1)) {
-            linears.push(linear(in_dim, out_dim, true, &init)?);
+            linears.push(Linear::new(in_dim, out_dim, true, None)?);
             activates.push(Sigmoid::new());
         }
         
@@ -39,7 +37,7 @@ impl<T: FloatDType> Mlp<T> {
     }
 }
 
-fn result_main() -> Result<(), Box<dyn std::error::Error>> {
+fn result_main() -> anyhow::Result<()> {
     let input = Tensor::new(&[
         [0., 0.],
         [0., 1.],

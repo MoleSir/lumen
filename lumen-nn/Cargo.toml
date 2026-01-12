@@ -14,3 +14,4 @@ rand = { workspace = true }
 rand_distr = { workspace = true }
 thiserrorctx = { workspace = true }
 thiserror = { workspace = true }
+derive-new = { workspace = true }

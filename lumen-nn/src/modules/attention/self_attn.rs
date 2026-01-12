@@ -1,14 +1,6 @@
 use lumen_core::{FloatDType, Tensor, D};
 use lumen_macros::Module;
-use crate::{init::Initialize, linear, Linear};
-
-pub fn self_attention<T: FloatDType>(hidden_size: usize, init: &Initialize<T>) -> lumen_core::Result<SelfAttention<T>> {
-    let q_proj = linear(hidden_size, hidden_size, false, init)?;
-    let k_proj = linear(hidden_size, hidden_size, false, init)?;
-    let v_proj = linear(hidden_size, hidden_size, false, init)?;
-    let o_proj = linear(hidden_size, hidden_size, false, init)?;
-    Ok(SelfAttention { q_proj, k_proj, v_proj, hidden_size, o_proj })
-}
+use crate::{init::Init, Linear, ModuleInit, NnCtxError, NnResult};
 
 #[derive(Module)]
 pub struct SelfAttention<T: FloatDType> {
@@ -21,7 +13,32 @@ pub struct SelfAttention<T: FloatDType> {
     pub hidden_size: usize,
 }
 
+impl<T: FloatDType> ModuleInit<T> for SelfAttention<T> {
+    type Config = usize;
+    type Error = NnCtxError;
+
+    fn init(hidden_size: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
+        let hidden_size = *hidden_size;
+        let init = init.unwrap_or_else(|| Init::xavier_uniform(T::one()));
+        let q_proj = Linear::new(hidden_size, hidden_size, false, Some(init))?;
+        let k_proj = Linear::new(hidden_size, hidden_size, false, Some(init))?;
+        let v_proj = Linear::new(hidden_size, hidden_size, false, Some(init))?;
+        let o_proj = Linear::new(hidden_size, hidden_size, false, Some(init))?;
+        Ok(SelfAttention { q_proj, k_proj, v_proj, hidden_size, o_proj })
+    }
+}
+
 impl<T: FloatDType> SelfAttention<T> {
+    #[inline]
+    pub fn new(hidden_size: usize) -> NnResult<Self> {
+        Self::init_default(&hidden_size)
+    }
+
+    #[inline]
+    pub fn new_with(hidden_size: usize, init: Init<T>) -> NnResult<Self> {
+        Self::init_with(&hidden_size, init)
+    }
+
     pub fn forward(&self, hidden_state: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
         // calculate q k v 
         let q = self.q_proj.forward(hidden_state)?;

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use lumen_core::{FloatDType, IntTensor, Tensor, Var, D};
 use lumen_macros::Module;
-use lumen_nn::{init::Initialize, Embedding, Linear};
+use lumen_nn::{init::Init, Embedding, Linear, ModuleInit};
 use thiserrorctx::Context;
-use super::{DeepSeekConfig, DeepSeekError, DeepSeekResult};
+use super::{DeepSeekConfig, DeepSeekCtxError, DeepSeekError, DeepSeekResult};
 
 
 // ========================================================================= //
@@ -16,16 +16,21 @@ pub struct DeepSeekForCausalLM<T: FloatDType> {
     pub lm_head: Linear<T>, 
 }
 
-impl<T: FloatDType> DeepSeekForCausalLM<T> {
-    pub fn init(config: &DeepSeekConfig, initialize: &Initialize<T>) -> DeepSeekResult<Self> {
-        let model = DeepSeekModel::init(config, initialize).context("init llama model")?;
-        let lm_head = lumen_nn::linear(config.hidden_size, config.vocab_size, false, initialize)
-            .map_err(DeepSeekError::Core)
+impl<T: FloatDType> ModuleInit<T> for DeepSeekForCausalLM<T> {
+    type Config = DeepSeekConfig;
+    type Error = DeepSeekCtxError;
+
+    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
+        let model = DeepSeekModel::init(config, init).context("init llama model")?;
+        let lm_head = Linear::new(config.hidden_size, config.vocab_size, false, Some(init.unwrap_or_else(default_init_linear)))
+            .map_err(DeepSeekError::Nn)
             .context("init lm head")?;
         
         Ok(Self { model, lm_head })
     }
+}
 
+impl<T: FloatDType> DeepSeekForCausalLM<T> {
     pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut DeepSeekCache<T>) -> DeepSeekResult<Tensor<T>> {
         // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
         let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
@@ -48,22 +53,28 @@ pub struct DeepSeekModel<T: FloatDType> {
     pub norm: DeepSeekRMSNorm<T>,
 }
 
-impl<T: FloatDType> DeepSeekModel<T> {
-    pub fn init(config: &DeepSeekConfig, initialize: &Initialize<T>) -> DeepSeekResult<Self> {
-        let embed = lumen_nn::embedding(config.vocab_size, config.hidden_size, initialize)
-            .map_err(DeepSeekError::Core)
+impl<T: FloatDType> ModuleInit<T> for DeepSeekModel<T> {
+    type Config = DeepSeekConfig;
+    type Error = DeepSeekCtxError;
+
+    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
+        let embed_init = init.unwrap_or_else(default_init_linear);
+        let embed = Embedding::new(config.vocab_size, config.hidden_size, Some(embed_init))
+            .map_err(DeepSeekError::Nn)
             .context("init embed")?;
         
         let mut layers = Vec::new();
         for _ in 0..config.num_hidden_layers {
-            layers.push(DeepSeekLayer::init(config, initialize)?);
+            layers.push(DeepSeekLayer::init(config, init)?);
         }
         
-        let norm = DeepSeekRMSNorm::init(config).context("init rms norm")?;
+        let norm = DeepSeekRMSNorm::init(config, init).context("init rms norm")?;
 
         Ok(Self { embed, layers, norm })
     }
+}
 
+impl<T: FloatDType> DeepSeekModel<T> {
     pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut DeepSeekCache<T>) -> DeepSeekResult<Tensor<T>> {
         // embedding: (batch_size, seq_len) -> (batch_size, seq_len, hidden_size)
         let mut hidden_states = self.embed.forward(input_ids)
@@ -95,17 +106,22 @@ pub struct DeepSeekLayer<T: FloatDType> {
     pub post_attention_layernorm: DeepSeekRMSNorm<T>,
 }
 
-impl<T: FloatDType> DeepSeekLayer<T> {
-    pub fn init(config: &DeepSeekConfig, initialize: &Initialize<T>) -> DeepSeekResult<Self> {
-        let self_attn = DeepSeekAttention::init(config, initialize).context("init attention")?;
-        let moe = DeepSeekMoE::init(config, initialize).context("init moe")?;
-        let input_layernorm = DeepSeekRMSNorm::init(config).context("init input layernorm")?;
-        let post_attention_layernorm = DeepSeekRMSNorm::init(config).context("init post atten layernorm")?;
+impl<T: FloatDType> ModuleInit<T> for DeepSeekLayer<T> {
+    type Config = DeepSeekConfig;
+    type Error = DeepSeekCtxError;
+
+    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
+        let self_attn = DeepSeekAttention::init(config, init).context("init attention")?;
+        let moe = DeepSeekMoE::init(config, init).context("init moe")?;
+        let input_layernorm = DeepSeekRMSNorm::init(config, init).context("init input layernorm")?;
+        let post_attention_layernorm = DeepSeekRMSNorm::init(config, init).context("init post atten layernorm")?;
         Ok(Self {
             self_attn, moe, input_layernorm, post_attention_layernorm,
         })
     }
+}
 
+impl<T: FloatDType> DeepSeekLayer<T> {
     pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut DeepSeekCache<T>) -> DeepSeekResult<Tensor<T>> {    
         // Self Attention
         let residual = hidden_states.clone();
@@ -140,18 +156,22 @@ pub struct DeepSeekMoE<T: FloatDType> {
     pub num_routed_experts: usize,
 }
 
-impl<T: FloatDType> DeepSeekMoE<T> {
-    pub fn init(config: &DeepSeekConfig, initialize: &Initialize<T>) -> DeepSeekResult<Self> {
-        let gate = lumen_nn::linear(config.hidden_size, config.num_routed_experts, false, initialize)
-            .map_err(DeepSeekError::Core)
+impl<T: FloatDType> ModuleInit<T> for DeepSeekMoE<T> {
+    type Config = DeepSeekConfig;
+    type Error = DeepSeekCtxError;
+
+    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
+        let gate_init = init.unwrap_or_else(default_init_linear);
+        let gate = Linear::new(config.hidden_size, config.num_routed_experts, false, Some(gate_init))
+            .map_err(DeepSeekError::Nn)
             .context("init moe gate")?;
-        
+    
         let mut experts = Vec::new();
         for i in 0..config.num_routed_experts {
             let expert = DeepSeekMlp::init(
                 config.hidden_size, 
                 config.intermediate_size, 
-                initialize
+                init
             ).with_context(|| format!("init expert {}", i))?;
             experts.push(expert);
         }
@@ -159,7 +179,7 @@ impl<T: FloatDType> DeepSeekMoE<T> {
         let shared_experts = DeepSeekMlp::init(
             config.hidden_size,
             config.shared_expert_intermediate_size,
-            initialize
+            init
         ).context("init shared experts")?;
 
         Ok(Self {
@@ -170,7 +190,9 @@ impl<T: FloatDType> DeepSeekMoE<T> {
             num_routed_experts: config.num_routed_experts,
         })
     }
+}
 
+impl<T: FloatDType> DeepSeekMoE<T> {
     #[allow(unused)]
     pub fn forward(&self, x: &Tensor<T>) -> DeepSeekResult<Tensor<T>> {
         // 1. Shared Experts Path
@@ -201,10 +223,11 @@ pub struct DeepSeekMlp<T: FloatDType> {
 }
 
 impl<T: FloatDType> DeepSeekMlp<T> {
-    pub fn init(hidden_size: usize, intermediate_size: usize, initialize: &Initialize<T>) -> DeepSeekResult<Self> {
-        let up_proj   = lumen_nn::linear(hidden_size, intermediate_size, false, initialize)?;
-        let gate_proj = lumen_nn::linear(hidden_size, intermediate_size, false, initialize)?;
-        let down_proj = lumen_nn::linear(intermediate_size, hidden_size, false, initialize)?;
+    pub fn init(hidden_size: usize, intermediate_size: usize, init: Option<Init<T>>) -> DeepSeekResult<Self> {
+        let init = init.unwrap_or_else(default_init_linear);
+        let up_proj   = Linear::new(hidden_size, intermediate_size, false, Some(init))?;
+        let gate_proj = Linear::new(hidden_size, intermediate_size, false, Some(init))?;
+        let down_proj = Linear::new(intermediate_size, hidden_size, false, Some(init))?;
     
         Ok(Self { up_proj, down_proj, gate_proj })
     }
@@ -239,13 +262,19 @@ pub struct DeepSeekAttention<T: FloatDType> {
     pub max_position_embeddings: usize,
 }
 
-impl<T: FloatDType> DeepSeekAttention<T> {
-    pub fn init(config: &DeepSeekConfig, initialize: &Initialize<T>) -> DeepSeekResult<Self> {
+impl<T: FloatDType> ModuleInit<T> for DeepSeekAttention<T> {
+    type Config = DeepSeekConfig;
+    type Error = DeepSeekCtxError;
+
+    fn init(config: &DeepSeekConfig, init: Option<Init<T>>) -> DeepSeekResult<Self> {
+        // TODO: check 
         let head_size = config.hidden_size / config.num_attention_heads;
-        let q_proj = lumen_nn::linear(config.hidden_size, config.hidden_size, false, initialize)?;
-        let k_proj = lumen_nn::linear(config.hidden_size, config.num_kv_heads * head_size, false, initialize)?;
-        let v_proj = lumen_nn::linear(config.hidden_size, config.num_kv_heads * head_size, false, initialize)?;
-        let o_proj = lumen_nn::linear(config.hidden_size, config.hidden_size, false, initialize)?;
+        
+        let init = init.unwrap_or_else(default_init_linear);
+        let q_proj = Linear::new(config.hidden_size, config.hidden_size, false, Some(init))?;
+        let k_proj = Linear::new(config.hidden_size, config.num_kv_heads * head_size, false, Some(init))?;
+        let v_proj = Linear::new(config.hidden_size, config.num_kv_heads * head_size, false, Some(init))?;
+        let o_proj = Linear::new(config.hidden_size, config.hidden_size, false, Some(init))?;
 
         Ok(Self {
             q_proj, k_proj, v_proj, o_proj,
@@ -254,8 +283,10 @@ impl<T: FloatDType> DeepSeekAttention<T> {
             head_size,
             max_position_embeddings: config.max_position_embeddings,
         })
-    }  
+    }
+}
 
+impl<T: FloatDType> DeepSeekAttention<T> {
     pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut DeepSeekCache<T>) -> DeepSeekResult<Tensor<T>> {
         let (batch_size, seq_len, hidden_size) = hidden_states.dims3()?;
         let q = self.q_proj.forward(hidden_states)?; // (batch_size, seq_len, head_size * num_attn_heads)
@@ -448,8 +479,20 @@ pub struct DeepSeekRMSNorm<T: FloatDType> {
     pub variance_epsilon: T,
 }
 
+impl<T: FloatDType> ModuleInit<T> for DeepSeekRMSNorm<T> {
+    type Config = DeepSeekConfig;
+    type Error = DeepSeekCtxError;
+
+    fn init(config: &DeepSeekConfig, init: Option<Init<T>>) -> DeepSeekResult<Self> {
+        let init = init.unwrap_or(Init::ones());
+        let weight = init.init((config.hidden_size,))?;
+        let variance_epsilon = T::from_f64(config.rms_norm_eps);
+        Ok(Self { weight, variance_epsilon })
+    }
+}
+
 impl<T: FloatDType> DeepSeekRMSNorm<T> {
-    pub fn init(config: &DeepSeekConfig) -> DeepSeekResult<Self> {
+    pub fn new(config: &DeepSeekConfig) -> DeepSeekResult<Self> {
         let weight = Var::ones((config.hidden_size,))?;
         let variance_epsilon = T::from_f64(config.rms_norm_eps);
         Ok(Self { weight, variance_epsilon })
@@ -464,6 +507,15 @@ impl<T: FloatDType> DeepSeekRMSNorm<T> {
         let out = self.weight.broadcast_mul(&hidden_states)?;
         Ok(out)
     }
+}
+
+// ========================================================================= //
+//                Default
+// ========================================================================= //
+
+#[inline]
+fn default_init_linear<T: FloatDType>() -> Init<T> {
+    Init::normal(T::zero(), T::from_f64(0.02))
 }
 
 // ========================================================================= //

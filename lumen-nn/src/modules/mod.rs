@@ -13,7 +13,7 @@ pub use rnn::*;
 pub use attention::*;
 pub use softmax::*;
 use thiserrorctx::Context;
-use crate::{init::Initialize, NnCtxError, NnError, NnResult};
+use crate::{init::Init, NnCtxError, NnError, NnResult};
 
 pub trait Module<T: FloatDType> : Sized {
     #[allow(unused_variables)]
@@ -56,7 +56,7 @@ pub trait Module<T: FloatDType> : Sized {
         visitor.params
     }
 
-    fn reset_with(&mut self, init: &Initialize<T>) -> NnResult<()> {
+    fn reset_with(&mut self, init: &Init<T>) -> NnResult<()> {
         let mut visitor = InitVisitor::new(init);
         self.visit_mut(&mut visitor)
     }
@@ -86,17 +86,18 @@ pub trait ModuleInit<T: FloatDType> : Sized + Module<T> {
     type Error: From<NnCtxError>;
     type Config;
 
-    fn default_initialize() -> Initialize<T>;
-    
-    fn init_with(config: &Self::Config, initialize: &Initialize<T>) -> Result<Self, Self::Error>;
+    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error>;
 
-    fn init(config: &Self::Config) -> Result<Self, Self::Error> {
-        Self::init_with(config, &Self::default_initialize())
+    fn init_default(config: &Self::Config) -> Result<Self, Self::Error> {
+        Self::init(config, None)
+    }
+    
+    fn init_with(config: &Self::Config, init: Init<T>) -> Result<Self, Self::Error> {
+        Self::init(config, Some(init))
     }
 
     fn load_safetensors<P: AsRef<Path>>(config: &Self::Config, path: P) -> Result<Self, Self::Error> {
-        // empty init!
-        let mut model = Self::init_with(config, &Initialize::Empty)?;
+        let mut model = Self::init_with(config, Init::Empty)?;
         model.load_safetensors(path, true)?;
         Ok(model)
     }
@@ -307,11 +308,11 @@ impl<T: NumDType> ModuleVisitor<T> for DynParamsVisitor {
 
 /// InitVisitor
 struct InitVisitor<'a, T: FloatDType> {
-    init: &'a Initialize<T>,
+    init: &'a Init<T>,
 }
 
 impl<'a, T: FloatDType> InitVisitor<'a, T> {
-    fn new(init: &'a Initialize<T>) -> Self {
+    fn new(init: &'a Init<T>) -> Self {
         Self { init }
     }
 }

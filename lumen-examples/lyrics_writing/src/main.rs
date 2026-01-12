@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::Path};
 use anyhow::Context;
 use lumen_core::{FloatDType, IndexOp, Tensor};
 use lumen_dataset::{DataLoader, Dataset, TensorPairBatcher};
-use lumen_nn::{init::Initialize, optim::{AdamW, AdamWConfig, Optimizer}, Embedding, Linear, Lstm, Module, Sigmoid};
+use lumen_nn::{optim::{AdamW, AdamWConfig, Optimizer}, Embedding, Linear, Lstm, Module, Sigmoid};
 
 fn main() {
     if let Err(e) = result_main() {
@@ -72,11 +72,10 @@ pub struct LyricsNet<T: FloatDType> {
 
 impl<T: FloatDType> LyricsNet<T> {
     pub fn init(vocab_size: usize, embed_size: usize, hidden_size: usize) -> anyhow::Result<Self> {
-        let initialize = Initialize::<T>::uniform(T::zero(), T::from_f64(0.1));
-        let embedding = lumen_nn::embedding(vocab_size, embed_size, &initialize)?;
-        let lstm = lumen_nn::lstm(embed_size, hidden_size, &initialize)?;
-        let h2h = lumen_nn::linear(hidden_size, hidden_size, true, &initialize)?;
-        let h2o = lumen_nn::linear(hidden_size, vocab_size, true, &initialize)?;
+        let embedding = Embedding::new(vocab_size, embed_size, None)?;
+        let lstm = Lstm::new(embed_size, hidden_size, None)?;
+        let h2h = Linear::new(hidden_size, hidden_size, true, None)?;
+        let h2o = Linear::new(hidden_size, vocab_size, true, None)?;
 
         Ok(Self { embedding, lstm, h2h, act: Sigmoid::new(), h2o })
     }
