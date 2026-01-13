@@ -18,6 +18,35 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
     let (_, generics_ty, generics_where) = ast.generics.split_for_impl();
     let generics_module = ast.generics.clone();
 
+    
+    let mut custom_repr_fn_name: Option<syn::Ident> = None;
+
+    for attr in &ast.attrs {
+        if attr.path().is_ident("module") {
+            let _ = attr.parse_nested_meta(|meta| {
+                // module display
+                if meta.path.is_ident("display") {
+                    let value = meta.value()?; 
+                    let s: syn::LitStr = value.parse()?; 
+                    
+                    custom_repr_fn_name = Some(syn::Ident::new(&s.value(), s.span()));
+                    return Ok(());
+                }                
+                Ok(())
+            });
+        }
+    }
+
+    let extra_repr_fn = if let Some(fn_name) = custom_repr_fn_name {
+        quote! {
+            fn extra_repr(&self) -> String {
+                self.#fn_name()
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     // generate visit filed
     let mut body = quote! {};
     let mut body_mut = quote! {};
@@ -96,6 +125,8 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
                 visitor.visit_module_end(self)?;
                 Ok(())
             }
+
+            #extra_repr_fn
         }
 
         impl #generics_module std::fmt::Display for #name #generics_ty #generics_where {

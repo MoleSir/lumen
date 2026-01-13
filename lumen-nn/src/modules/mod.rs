@@ -40,7 +40,6 @@ pub trait Module<T: FloatDType> : Sized {
         full_name.split("::").last().unwrap_or(full_name)
     }
 
-    // TODO
     fn extra_repr(&self) -> String {
         String::new()
     }

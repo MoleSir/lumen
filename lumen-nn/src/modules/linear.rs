@@ -5,6 +5,7 @@ use super::ModuleInit;
 
 /// Applies a linear transformation to the incoming data: :math:`y = xA^T + b`
 #[derive(Module, Clone)]
+#[module(display = "display")]
 pub struct Linear<T: FloatDType> {
     pub weight: Tensor<T>,  // (out_features, in_features)
     pub bias: Option<Tensor<T>>, // (out_features)
@@ -30,6 +31,10 @@ impl<T: FloatDType> Linear<T> {
     
     pub fn forward(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
         crate::functional::linear(input, &self.weight, self.bias.as_ref())
+    }
+
+    fn display(&self) -> String {
+        format!("in_features={}, out_features={}", self.in_features, self.out_features)
     }
 }
 
