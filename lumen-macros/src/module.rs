@@ -47,16 +47,16 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
                 let name = field.ident.clone().unwrap();
                 let name_str = name.to_string();
                 let field_code = quote! {
-                    visitor.enter_module(#name_str);
+                    visitor.enter_module(#name_str, &self.#name);
                     #lumen::modules::Module::visit(&self.#name, visitor)?;
-                    visitor.exit_module(#name_str);
+                    visitor.exit_module(#name_str, &self.#name);
                 };
                 body.extend(field_code);
 
                 let field_code = quote! {
-                    visitor.enter_module(#name_str);
+                    visitor.enter_module(#name_str, &mut self.#name);
                     #lumen::modules::Module::visit_mut(&mut self.#name, visitor)?;
-                    visitor.exit_module(#name_str);
+                    visitor.exit_module(#name_str, &mut self.#name);
                 };
                 body_mut.extend(field_code);
             }
@@ -75,6 +75,13 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
             fn visit_mut<Visitor: #lumen::modules::ModuleVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
                 #body_mut
                 Ok(())
+            }
+        }
+
+        impl #generics_module std::fmt::Display for #name #generics_ty #generics_where {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                use #lumen::modules::Module;
+                write!(f, "{}", self.display())
             }
         }
     };

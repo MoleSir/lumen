@@ -83,6 +83,8 @@ mod test {
         for (name, _) in params {
             println!("{}", name);
         }
+
+        println!("{}", ll);
     }
 
     #[test]

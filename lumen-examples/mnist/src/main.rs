@@ -6,9 +6,11 @@ use lumen_nn::{init::Init, Linear, Module, ModuleInit};
 use lumen_nn::functional as F;
 
 fn main() {
-    if let Err(e) = result_main() {
-        eprintln!("Err: {:?}", e);
-    }
+    // if let Err(e) = result_main() {
+    //     eprintln!("Err: {:?}", e);
+    // }
+    let model = Net::<f32>::new().unwrap();
+    println!("{}", model);
 }
  
 fn result_main() -> anyhow::Result<()> {

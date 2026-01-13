@@ -1,5 +1,3 @@
-use std::{collections::HashMap, convert::Infallible, path::Path};
-use lumen_core::{DynTensor, FloatDType, NumDType, Tensor, WithDType};
 mod linear;
 mod dropout;
 mod embedding;
@@ -12,6 +10,11 @@ pub use embedding::*;
 pub use rnn::*;
 pub use attention::*;
 pub use softmax::*;
+
+use std::fmt;
+use std::{collections::HashMap, convert::Infallible, path::Path};
+use std::any::type_name;
+use lumen_core::{DynTensor, FloatDType, NumDType, Tensor};
 use thiserrorctx::Context;
 use crate::{init::Init, NnCtxError, NnError, NnResult};
 
@@ -24,6 +27,23 @@ pub trait Module<T: FloatDType> : Sized {
     #[allow(unused_variables)]
     fn visit_mut<Visitor: ModuleVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         Ok(())
+    }
+
+    fn module_name() -> &'static str {
+        let full_name = type_name::<Self>();
+        full_name.split("::").last().unwrap_or(full_name)
+    }
+
+    fn extra_repr(&self) -> String {
+        String::new()
+    }
+
+    fn is_param(&self) -> bool {
+        false
+    }
+    
+    fn display(&self) -> ModuleDisplayer<'_, Self, T> {
+        ModuleDisplayer { module: self, indent: 0, _marker: std::marker::PhantomData }
     }
 
     fn param_count(&self) -> usize {
@@ -92,7 +112,7 @@ pub trait Module<T: FloatDType> : Sized {
     }
 }
 
-pub trait ModuleInit<T: FloatDType> : Sized + Module<T> {
+pub trait ModuleInit<T: FloatDType> : Module<T> {
     type Error: From<NnCtxError>;
     type Config;
 
@@ -113,34 +133,34 @@ pub trait ModuleInit<T: FloatDType> : Sized + Module<T> {
     }
 }
 
-pub trait ModuleVisitor<T: WithDType> {
+pub trait ModuleVisitor<T: FloatDType> {
     type Error;
 
     #[allow(unused_variables)]
-    fn visit(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
+    fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
         Ok(())
     }
 
     #[allow(unused_variables)]
-    fn enter_module(&mut self, name: &str) {}
+    fn enter_module(&mut self, name: &str, module: &impl Module<T>) {}
 
     #[allow(unused_variables)]
-    fn exit_module(&mut self, name: &str) {}
+    fn exit_module(&mut self, name: &str, module: &impl Module<T>) {}
 }
 
-pub trait ModuleVisitorMut<T: WithDType> {
+pub trait ModuleVisitorMut<T: FloatDType> {
     type Error;
 
     #[allow(unused_variables)]
-    fn visit_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
+    fn visit_param_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
         Ok(())
     }
 
     #[allow(unused_variables)]
-    fn enter_module(&mut self, name: &str) {}
+    fn enter_module(&mut self, name: &str, module: &mut impl Module<T>) {}
 
     #[allow(unused_variables)]
-    fn exit_module(&mut self, name: &str) {}
+    fn exit_module(&mut self, name: &str, module: &mut impl Module<T>) {}
 }
 
 //==================================================//
@@ -150,12 +170,16 @@ pub trait ModuleVisitorMut<T: WithDType> {
 impl<T: FloatDType> Module<T> for Tensor<T> {
     #[inline]
     fn visit<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-        visitor.visit(self)
+        visitor.visit_param(self)
     }
 
     #[inline]
     fn visit_mut<Visitor: ModuleVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-        visitor.visit_mut(self)
+        visitor.visit_param_mut(self)
+    }
+
+    fn is_param(&self) -> bool {
+        true
     }
 }
 
@@ -178,18 +202,18 @@ impl<T: FloatDType, M: Module<T>> Module<T> for Option<M> {
 impl<T: FloatDType, M: Module<T>> Module<T> for Vec<M> {
     fn visit<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         for (i, module) in self.iter().enumerate() {
-            visitor.enter_module(&i.to_string());
+            visitor.enter_module(&i.to_string(), module);
             module.visit(visitor)?;
-            visitor.exit_module(&i.to_string());
+            visitor.exit_module(&i.to_string(), module);
         }
         Ok(())
     }
 
     fn visit_mut<Visitor: ModuleVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         for (i, module) in self.iter_mut().enumerate() {
-            visitor.enter_module(&i.to_string());
+            visitor.enter_module(&i.to_string(), module);
             module.visit_mut(visitor)?;
-            visitor.exit_module(&i.to_string());
+            visitor.exit_module(&i.to_string(), module);
         }
         Ok(())
     }
@@ -210,39 +234,39 @@ impl ParamCountVisitor {
     }
 }
 
-impl<T: NumDType> ModuleVisitor<T> for ParamCountVisitor {
+impl<T: FloatDType> ModuleVisitor<T> for ParamCountVisitor {
     type Error = Infallible;
-    fn visit(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
+    fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
         self.count += param.element_count();
         Ok(())
     }
 }
 
 /// NamedParams
-struct NamedParamsCountVisitor<T: NumDType> {
+struct NamedParamsCountVisitor<T: FloatDType> {
     map: HashMap<String, Tensor<T>>,
     path: Vec<String>,
 }
 
-impl<T: NumDType> NamedParamsCountVisitor<T> {
+impl<T: FloatDType> NamedParamsCountVisitor<T> {
     fn new() -> Self {
         Self { map: HashMap::new(), path: vec![] }
     }
 }
 
-impl<T: NumDType> ModuleVisitor<T> for NamedParamsCountVisitor<T> {
+impl<T: FloatDType> ModuleVisitor<T> for NamedParamsCountVisitor<T> {
     type Error = Infallible;
 
-    fn visit(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
+    fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
         self.map.insert(self.path.join("."), param.clone());
         Ok(())
     }
 
-    fn enter_module(&mut self, name: &str) {
+    fn enter_module(&mut self, name: &str, _module: &impl Module<T>) {
         self.path.push(name.to_string());
     }
 
-    fn exit_module(&mut self, _: &str) {
+    fn exit_module(&mut self, _: &str, _module: &impl Module<T>) {
         self.path.pop();
     }
 }
@@ -259,19 +283,19 @@ impl NamedDynParamsCountVisitor {
     }
 }
 
-impl<T: NumDType> ModuleVisitor<T> for NamedDynParamsCountVisitor {
+impl<T: FloatDType> ModuleVisitor<T> for NamedDynParamsCountVisitor {
     type Error = Infallible;
 
-    fn visit(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
+    fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
         self.map.insert(self.path.join("."), T::into_dyn(param.clone()));
         Ok(())
     }
 
-    fn enter_module(&mut self, name: &str) {
+    fn enter_module(&mut self, name: &str, _module: &impl Module<T>) {
         self.path.push(name.to_string());
     }
 
-    fn exit_module(&mut self, _: &str) {
+    fn exit_module(&mut self, _: &str, _module: &impl Module<T>) {
         self.path.pop();
     }
 }
@@ -287,10 +311,10 @@ impl<T: NumDType> ParamsVisitor<T> {
     }
 }
 
-impl<T: NumDType> ModuleVisitor<T> for ParamsVisitor<T> {
+impl<T: FloatDType> ModuleVisitor<T> for ParamsVisitor<T> {
     type Error = Infallible;
 
-    fn visit(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
+    fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
         self.params.push(param.clone());
         Ok(())
     }
@@ -307,10 +331,10 @@ impl DynParamsVisitor {
     }
 }
 
-impl<T: NumDType> ModuleVisitor<T> for DynParamsVisitor {
+impl<T: FloatDType> ModuleVisitor<T> for DynParamsVisitor {
     type Error = Infallible;
 
-    fn visit(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
+    fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
         self.params.push(T::into_dyn(param.clone()));
         Ok(())
     }
@@ -329,7 +353,7 @@ impl<'a, T: FloatDType> InitVisitor<'a, T> {
 
 impl<'a, T: FloatDType> ModuleVisitorMut<T> for InitVisitor<'a, T> {
     type Error = NnCtxError;
-    fn visit_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
+    fn visit_param_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
         let shape = param.shape();
         let new_param = self.init.init(shape)?;
         *param = new_param;
@@ -343,7 +367,7 @@ struct CopyVisitor;
 impl<T: FloatDType> ModuleVisitorMut<T> for CopyVisitor {
     type Error = Infallible;
 
-    fn visit_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
+    fn visit_param_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
         *param = param.copy();
         Ok(())    
     }
@@ -369,15 +393,15 @@ impl<'a> LoadParamsVisitor<'a> {
 impl<'a, T: FloatDType> ModuleVisitorMut<T> for LoadParamsVisitor<'a> {
     type Error = NnCtxError;
 
-    fn enter_module(&mut self, name: &str) {
+    fn enter_module(&mut self, name: &str, _module: &mut impl Module<T>) {
         self.path.push(name.to_string());
     }
     
-    fn exit_module(&mut self, _name: &str) {
+    fn exit_module(&mut self, _name: &str, _module: &mut impl Module<T>) {
         self.path.pop();
     }
 
-    fn visit_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
+    fn visit_param_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
         let name = self.path.join(".");
         
         match self.params.get(&name) {
@@ -401,5 +425,69 @@ impl<'a, T: FloatDType> ModuleVisitorMut<T> for LoadParamsVisitor<'a> {
                 }
             }
         }
+    }
+}
+
+// display
+struct DisplayVisitor<'a, 'b, T> {
+    f: &'a mut fmt::Formatter<'b>,
+    indent: usize,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<'a, 'b, T: FloatDType> ModuleVisitor<T> for DisplayVisitor<'a, 'b, T> {
+    type Error = fmt::Error;
+
+    fn enter_module(&mut self, name: &str, module: &impl Module<T>) {
+        if module.is_param() {
+            return;
+        }
+
+        writeln!(self.f).unwrap();
+        write!(self.f, "{:indent$}({}): ", "", name, indent = self.indent).unwrap();
+
+        let inner_display = ModuleDisplayer {
+            module,
+            indent: self.indent + 2,
+            _marker: std::marker::PhantomData,
+        };
+
+        write!(self.f, "{}", inner_display).unwrap();
+    }
+
+    fn visit_param(&mut self, _param: &Tensor<T>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+pub struct ModuleDisplayer<'a, M: Module<T>, T: FloatDType> {
+    module: &'a M,
+    indent: usize,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<'a, M: Module<T>, T: FloatDType> fmt::Display for ModuleDisplayer<'a, M, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", M::module_name())?;
+        
+        write!(f, "(")?;
+
+        let extra = self.module.extra_repr();
+        if !extra.is_empty() {
+            write!(f, "{}", extra)?;
+        }
+        
+        let mut visitor = DisplayVisitor {
+            f,
+            indent: self.indent + 2,
+            _marker: std::marker::PhantomData,
+        };
+        
+        self.module.visit(&mut visitor)?;
+
+        let closing_indent = if self.indent >= 2 { self.indent - 2 } else { 0 };
+        write!(f, "\n{:indent$})", "", indent = closing_indent)?;
+
+        Ok(())
     }
 }
