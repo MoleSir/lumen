@@ -21,6 +21,7 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
     // generate visit filed
     let mut body = quote! {};
     let mut body_mut = quote! {};
+    let mut submodule_body = quote! {};
     match &ast.data {
         syn::Data::Struct(struct_data) => {
             for field in struct_data.fields.iter() {
@@ -36,10 +37,10 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
                         }
                         Ok(())
                     });
-            
+
                     found_skip
                 });
-                
+
                 if should_skip {
                     continue;
                 }
@@ -47,18 +48,28 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
                 let name = field.ident.clone().unwrap();
                 let name_str = name.to_string();
                 let field_code = quote! {
-                    visitor.enter_module(#name_str, &self.#name);
-                    #lumen::modules::Module::visit(&self.#name, visitor)?;
-                    visitor.exit_module(#name_str, &self.#name);
+                    visitor.enter_submodule(#name_str, &self.#name);
+                    #lumen::modules::Module::visit_param(&self.#name, visitor)?;
+                    visitor.exit_submodule(#name_str, &self.#name);
                 };
                 body.extend(field_code);
 
                 let field_code = quote! {
-                    visitor.enter_module(#name_str, &mut self.#name);
-                    #lumen::modules::Module::visit_mut(&mut self.#name, visitor)?;
-                    visitor.exit_module(#name_str, &mut self.#name);
+                    visitor.enter_submodule(#name_str, &mut self.#name);
+                    #lumen::modules::Module::visit_param_mut(&mut self.#name, visitor)?;
+                    visitor.exit_submodule(#name_str, &mut self.#name);
                 };
                 body_mut.extend(field_code);
+                
+                let field_code = quote! {
+                    // handle submodule 
+                    visitor.enter_submodule(#name_str, &self.#name)?;
+                    // submodule recv
+                    #lumen::modules::Module::visit_module(&self.#name, visitor)?;
+                    // exit submodule 
+                    visitor.exit_submodule(#name_str, &self.#name)?;
+                };
+                submodule_body.extend(field_code);
             }
         }
         syn::Data::Enum(_) => panic!("Only struct can be derived"),
@@ -67,13 +78,22 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
 
     let codegen = quote! {
         impl #generics_module #lumen::modules::Module<T> for #name #generics_ty #generics_where {
-            fn visit<Visitor: #lumen::modules::ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+            fn visit_param<Visitor: #lumen::modules::ParamVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
                 #body
                 Ok(())
             }
 
-            fn visit_mut<Visitor: #lumen::modules::ModuleVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+            fn visit_param_mut<Visitor: #lumen::modules::ParamVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
                 #body_mut
+                Ok(())
+            }
+
+            fn visit_module<Visitor: #lumen::modules::ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+                // handle self
+                visitor.visit_module(self)?;
+                // sub module
+                #submodule_body
+                visitor.visit_module_end(self)?;
                 Ok(())
             }
         }
@@ -85,6 +105,6 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
             }
         }
     };
-    
+
     codegen
 }

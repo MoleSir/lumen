@@ -11,6 +11,7 @@ fn main() {
     // }
     let model = Net::<f32>::new().unwrap();
     println!("{}", model);
+    println!("{}", model.module_count());
 }
  
 fn result_main() -> anyhow::Result<()> {

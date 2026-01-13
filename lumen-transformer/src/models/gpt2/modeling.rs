@@ -402,6 +402,8 @@ mod test {
         for (name, param) in model.named_params() {
             println!("{}: {}", name, param.shape());
         }
+
+        println!("{}", model);
     }
 
     #[test]

@@ -12,6 +12,7 @@ pub use attention::*;
 pub use softmax::*;
 
 use std::fmt;
+use std::marker::PhantomData;
 use std::{collections::HashMap, convert::Infallible, path::Path};
 use std::any::type_name;
 use lumen_core::{DynTensor, FloatDType, NumDType, Tensor};
@@ -20,12 +21,17 @@ use crate::{init::Init, NnCtxError, NnError, NnResult};
 
 pub trait Module<T: FloatDType> : Sized {
     #[allow(unused_variables)]
-    fn visit<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+    fn visit_param<Visitor: ParamVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         Ok(())
     }
 
     #[allow(unused_variables)]
-    fn visit_mut<Visitor: ModuleVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+    fn visit_param_mut<Visitor: ParamVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn visit_module<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         Ok(())
     }
 
@@ -34,45 +40,54 @@ pub trait Module<T: FloatDType> : Sized {
         full_name.split("::").last().unwrap_or(full_name)
     }
 
+    // TODO
     fn extra_repr(&self) -> String {
         String::new()
     }
 
-    fn is_param(&self) -> bool {
-        false
-    }
-    
     fn display(&self) -> ModuleDisplayer<'_, Self, T> {
         ModuleDisplayer { module: self, indent: 0, _marker: std::marker::PhantomData }
     }
 
     fn param_count(&self) -> usize {
         let mut visitor = ParamCountVisitor::new();
-        self.visit(&mut visitor).unwrap();
+        self.visit_param(&mut visitor).unwrap();
         visitor.count
+    }
+
+    fn submodule_count(&self) -> usize {
+        let mut visitor = SubModuleCountVisitor::new();
+        self.visit_module(&mut visitor).unwrap();
+        visitor.count - 1
+    }
+
+    fn submodule_names(&self) -> Vec<String> {
+        let mut visitor = SubModuleNamesVisitor::new();
+        self.visit_module(&mut visitor).unwrap();
+        visitor.names
     }
 
     fn named_params(&self) -> HashMap<String, Tensor<T>> {
         let mut visitor = NamedParamsCountVisitor::new();
-        self.visit(&mut visitor).unwrap();
+        self.visit_param(&mut visitor).unwrap();
         visitor.map
     }
 
     fn named_dyn_params(&self) -> HashMap<String, DynTensor> {
         let mut visitor = NamedDynParamsCountVisitor::new();
-        self.visit(&mut visitor).unwrap();
+        self.visit_param(&mut visitor).unwrap();
         visitor.map
     }
 
     fn params(&self) -> Vec<Tensor<T>> {
         let mut visitor = ParamsVisitor::new();
-        self.visit(&mut visitor).unwrap();
+        self.visit_param(&mut visitor).unwrap();
         visitor.params
     }
 
     fn dyn_params(&self) -> Vec<DynTensor> {
         let mut visitor = DynParamsVisitor::new();
-        self.visit(&mut visitor).unwrap();
+        self.visit_param(&mut visitor).unwrap();
         visitor.params
     }
 
@@ -82,18 +97,18 @@ pub trait Module<T: FloatDType> : Sized {
     {
         let mut new_module = self.clone();
         let mut visitor = CopyVisitor;
-        new_module.visit_mut(&mut visitor).unwrap();
+        new_module.visit_param_mut(&mut visitor).unwrap();
         new_module
     }
 
     fn reinit(&mut self, init: &Init<T>) -> NnResult<()> {
         let mut visitor = InitVisitor::new(init);
-        self.visit_mut(&mut visitor)
+        self.visit_param_mut(&mut visitor)
     }
 
     fn load_named_params(&mut self, params: &HashMap<String, DynTensor>, strict: bool) -> NnResult<()> {   
         let mut visitor = LoadParamsVisitor::new(params, strict);
-        self.visit_mut(&mut visitor)
+        self.visit_param_mut(&mut visitor)
     }
 
     fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> NnResult<()> {
@@ -137,18 +152,42 @@ pub trait ModuleVisitor<T: FloatDType> {
     type Error;
 
     #[allow(unused_variables)]
+    fn visit_module<M: Module<T>>(&mut self, module: &M) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn visit_module_end(&mut self, module: &impl Module<T>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn enter_submodule(&mut self, name: &str, submodule: &impl Module<T>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn exit_submodule(&mut self, name: &str, submodule: &impl Module<T>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+pub trait ParamVisitor<T: FloatDType> {
+    type Error;
+
+    #[allow(unused_variables)]
     fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
         Ok(())
     }
 
     #[allow(unused_variables)]
-    fn enter_module(&mut self, name: &str, module: &impl Module<T>) {}
+    fn enter_submodule(&mut self, name: &str, module: &impl Module<T>) {}
 
     #[allow(unused_variables)]
-    fn exit_module(&mut self, name: &str, module: &impl Module<T>) {}
+    fn exit_submodule(&mut self, name: &str, module: &impl Module<T>) {}
 }
 
-pub trait ModuleVisitorMut<T: FloatDType> {
+pub trait ParamVisitorMut<T: FloatDType> {
     type Error;
 
     #[allow(unused_variables)]
@@ -157,10 +196,10 @@ pub trait ModuleVisitorMut<T: FloatDType> {
     }
 
     #[allow(unused_variables)]
-    fn enter_module(&mut self, name: &str, module: &mut impl Module<T>) {}
+    fn enter_submodule(&mut self, name: &str, module: &mut impl Module<T>) {}
 
     #[allow(unused_variables)]
-    fn exit_module(&mut self, name: &str, module: &mut impl Module<T>) {}
+    fn exit_submodule(&mut self, name: &str, module: &mut impl Module<T>) {}
 }
 
 //==================================================//
@@ -169,51 +208,70 @@ pub trait ModuleVisitorMut<T: FloatDType> {
 
 impl<T: FloatDType> Module<T> for Tensor<T> {
     #[inline]
-    fn visit<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+    fn visit_param<Visitor: ParamVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         visitor.visit_param(self)
     }
 
     #[inline]
-    fn visit_mut<Visitor: ModuleVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+    fn visit_param_mut<Visitor: ParamVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         visitor.visit_param_mut(self)
     }
 
-    fn is_param(&self) -> bool {
-        true
+    #[inline]
+    fn visit_module<Visitor: ModuleVisitor<T>>(&self, _visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+        Ok(())
     }
 }
 
 impl<T: FloatDType, M: Module<T>> Module<T> for Option<M> {
-    fn visit<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+    fn visit_param<Visitor: ParamVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         if let Some(module) = self {
-            module.visit(visitor)?
+            module.visit_param(visitor)?
         }
         Ok(())
     }
 
-    fn visit_mut<Visitor: ModuleVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+    fn visit_param_mut<Visitor: ParamVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         if let Some(module) = self {
-            module.visit_mut(visitor)?
+            module.visit_param_mut(visitor)?
+        }
+        Ok(())
+    }
+
+    #[inline]
+    fn visit_module<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+        if let Some(module) = self {
+            module.visit_module(visitor)?
         }
         Ok(())
     }
 }
 
 impl<T: FloatDType, M: Module<T>> Module<T> for Vec<M> {
-    fn visit<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+    fn visit_param<Visitor: ParamVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         for (i, module) in self.iter().enumerate() {
-            visitor.enter_module(&i.to_string(), module);
-            module.visit(visitor)?;
-            visitor.exit_module(&i.to_string(), module);
+            visitor.enter_submodule(&i.to_string(), module);
+            module.visit_param(visitor)?;
+            visitor.exit_submodule(&i.to_string(), module);
         }
         Ok(())
     }
 
-    fn visit_mut<Visitor: ModuleVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+    fn visit_param_mut<Visitor: ParamVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         for (i, module) in self.iter_mut().enumerate() {
-            visitor.enter_module(&i.to_string(), module);
-            module.visit_mut(visitor)?;
-            visitor.exit_module(&i.to_string(), module);
+            visitor.enter_submodule(&i.to_string(), module);
+            module.visit_param_mut(visitor)?;
+            visitor.exit_submodule(&i.to_string(), module);
+        }
+        Ok(())
+    }
+
+    #[inline]
+    fn visit_module<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+        for (i, module) in self.iter().enumerate() {
+            visitor.enter_submodule(&i.to_string(), module)?;
+            module.visit_module(visitor)?;
+            visitor.exit_submodule(&i.to_string(), module)?;
         }
         Ok(())
     }
@@ -234,7 +292,7 @@ impl ParamCountVisitor {
     }
 }
 
-impl<T: FloatDType> ModuleVisitor<T> for ParamCountVisitor {
+impl<T: FloatDType> ParamVisitor<T> for ParamCountVisitor {
     type Error = Infallible;
     fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
         self.count += param.element_count();
@@ -254,7 +312,7 @@ impl<T: FloatDType> NamedParamsCountVisitor<T> {
     }
 }
 
-impl<T: FloatDType> ModuleVisitor<T> for NamedParamsCountVisitor<T> {
+impl<T: FloatDType> ParamVisitor<T> for NamedParamsCountVisitor<T> {
     type Error = Infallible;
 
     fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
@@ -262,11 +320,11 @@ impl<T: FloatDType> ModuleVisitor<T> for NamedParamsCountVisitor<T> {
         Ok(())
     }
 
-    fn enter_module(&mut self, name: &str, _module: &impl Module<T>) {
+    fn enter_submodule(&mut self, name: &str, _module: &impl Module<T>) {
         self.path.push(name.to_string());
     }
 
-    fn exit_module(&mut self, _: &str, _module: &impl Module<T>) {
+    fn exit_submodule(&mut self, _: &str, _module: &impl Module<T>) {
         self.path.pop();
     }
 }
@@ -283,7 +341,7 @@ impl NamedDynParamsCountVisitor {
     }
 }
 
-impl<T: FloatDType> ModuleVisitor<T> for NamedDynParamsCountVisitor {
+impl<T: FloatDType> ParamVisitor<T> for NamedDynParamsCountVisitor {
     type Error = Infallible;
 
     fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
@@ -291,11 +349,11 @@ impl<T: FloatDType> ModuleVisitor<T> for NamedDynParamsCountVisitor {
         Ok(())
     }
 
-    fn enter_module(&mut self, name: &str, _module: &impl Module<T>) {
+    fn enter_submodule(&mut self, name: &str, _module: &impl Module<T>) {
         self.path.push(name.to_string());
     }
 
-    fn exit_module(&mut self, _: &str, _module: &impl Module<T>) {
+    fn exit_submodule(&mut self, _: &str, _module: &impl Module<T>) {
         self.path.pop();
     }
 }
@@ -311,7 +369,7 @@ impl<T: NumDType> ParamsVisitor<T> {
     }
 }
 
-impl<T: FloatDType> ModuleVisitor<T> for ParamsVisitor<T> {
+impl<T: FloatDType> ParamVisitor<T> for ParamsVisitor<T> {
     type Error = Infallible;
 
     fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
@@ -331,7 +389,7 @@ impl DynParamsVisitor {
     }
 }
 
-impl<T: FloatDType> ModuleVisitor<T> for DynParamsVisitor {
+impl<T: FloatDType> ParamVisitor<T> for DynParamsVisitor {
     type Error = Infallible;
 
     fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
@@ -351,7 +409,7 @@ impl<'a, T: FloatDType> InitVisitor<'a, T> {
     }
 }
 
-impl<'a, T: FloatDType> ModuleVisitorMut<T> for InitVisitor<'a, T> {
+impl<'a, T: FloatDType> ParamVisitorMut<T> for InitVisitor<'a, T> {
     type Error = NnCtxError;
     fn visit_param_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
         let shape = param.shape();
@@ -364,7 +422,7 @@ impl<'a, T: FloatDType> ModuleVisitorMut<T> for InitVisitor<'a, T> {
 /// Copy Visitor {
 struct CopyVisitor;
 
-impl<T: FloatDType> ModuleVisitorMut<T> for CopyVisitor {
+impl<T: FloatDType> ParamVisitorMut<T> for CopyVisitor {
     type Error = Infallible;
 
     fn visit_param_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
@@ -390,14 +448,14 @@ impl<'a> LoadParamsVisitor<'a> {
     }
 }
 
-impl<'a, T: FloatDType> ModuleVisitorMut<T> for LoadParamsVisitor<'a> {
+impl<'a, T: FloatDType> ParamVisitorMut<T> for LoadParamsVisitor<'a> {
     type Error = NnCtxError;
 
-    fn enter_module(&mut self, name: &str, _module: &mut impl Module<T>) {
+    fn enter_submodule(&mut self, name: &str, _module: &mut impl Module<T>) {
         self.path.push(name.to_string());
     }
     
-    fn exit_module(&mut self, _name: &str, _module: &mut impl Module<T>) {
+    fn exit_submodule(&mut self, _name: &str, _module: &mut impl Module<T>) {
         self.path.pop();
     }
 
@@ -428,66 +486,130 @@ impl<'a, T: FloatDType> ModuleVisitorMut<T> for LoadParamsVisitor<'a> {
     }
 }
 
-// display
-struct DisplayVisitor<'a, 'b, T> {
-    f: &'a mut fmt::Formatter<'b>,
-    indent: usize,
-    _marker: std::marker::PhantomData<T>,
+pub struct ModuleDisplayer<'a, M, T> {
+    pub module: &'a M,
+    pub indent: usize,
+    pub _marker: PhantomData<T>,
 }
 
-impl<'a, 'b, T: FloatDType> ModuleVisitor<T> for DisplayVisitor<'a, 'b, T> {
+impl<'a, M, T> fmt::Display for ModuleDisplayer<'a, M, T>
+where
+    M: Module<T>,
+    T: FloatDType,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut visitor = DisplayVisitor {
+            f,
+            indent: self.indent,
+            child_count_stack: vec![], 
+            name: String::new()
+        };
+        
+        self.module.visit_module(&mut visitor)
+    }
+}
+
+struct DisplayVisitor<'a, 'b> {
+    f: &'a mut fmt::Formatter<'b>,
+    indent: usize,
+    child_count_stack: Vec<usize>, 
+    name: String,
+}
+
+impl<'a, 'b, T: FloatDType> ModuleVisitor<T> for DisplayVisitor<'a, 'b> {
     type Error = fmt::Error;
 
-    fn enter_module(&mut self, name: &str, module: &impl Module<T>) {
-        if module.is_param() {
-            return;
+    fn visit_module<M: Module<T>>(&mut self, module: &M) -> Result<(), Self::Error> {
+        // is sub module?
+        if !self.name.is_empty() {
+            let parent_child_count = self.child_count_stack.last_mut().unwrap();        
+            *parent_child_count += 1;
+            write!(self.f, "\n{:indent$}({}): ", "", self.name, indent = self.indent)?;
         }
 
-        writeln!(self.f).unwrap();
-        write!(self.f, "{:indent$}({}): ", "", name, indent = self.indent).unwrap();
+        write!(self.f, "{}", M::module_name())?;
 
-        let inner_display = ModuleDisplayer {
-            module,
-            indent: self.indent + 2,
-            _marker: std::marker::PhantomData,
-        };
-
-        write!(self.f, "{}", inner_display).unwrap();
+        // print Module Name
+        let extra = module.extra_repr();
+        if !extra.is_empty() {
+            write!(self.f, "({}", extra)?;
+        } else {
+            write!(self.f, "(")?;
+        }
+        
+        self.child_count_stack.push(0);
+        Ok(())
     }
 
-    fn visit_param(&mut self, _param: &Tensor<T>) -> Result<(), Self::Error> {
+    fn enter_submodule(&mut self, name: &str, _submodule: &impl Module<T>) -> Result<(), Self::Error> {
+        self.indent += 2;
+        self.name = name.to_string();
+        Ok(())
+    }
+
+    fn exit_submodule(&mut self, _name: &str, _submodule: &impl Module<T>) -> Result<(), Self::Error> {
+        self.indent -= 2;
+        Ok(())
+    }
+
+    fn visit_module_end(&mut self, _module: &impl Module<T>) -> Result<(), Self::Error> {
+        let child_count = self.child_count_stack.pop().unwrap_or(0);
+        if child_count > 0 {
+            write!(self.f, "\n{:indent$})", "", indent = self.indent)?;
+        } else {
+            write!(self.f, ")")?;
+        }
         Ok(())
     }
 }
 
-pub struct ModuleDisplayer<'a, M: Module<T>, T: FloatDType> {
-    module: &'a M,
-    indent: usize,
-    _marker: std::marker::PhantomData<T>,
+// Module Count
+struct SubModuleCountVisitor {
+    count: usize,
 }
 
-impl<'a, M: Module<T>, T: FloatDType> fmt::Display for ModuleDisplayer<'a, M, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", M::module_name())?;
-        
-        write!(f, "(")?;
+impl SubModuleCountVisitor {
+    fn new() -> Self {
+        Self { count: 0 }
+    }
+}
 
-        let extra = self.module.extra_repr();
-        if !extra.is_empty() {
-            write!(f, "{}", extra)?;
+impl<T: FloatDType> ModuleVisitor<T> for SubModuleCountVisitor {
+    type Error = Infallible;
+    fn visit_module<M: Module<T>>(&mut self, _module: &M) -> Result<(), Self::Error> {
+        self.count += 1;
+        Ok(())        
+    }
+}
+
+// Module Named
+struct SubModuleNamesVisitor {
+    path: Vec<String>,
+    names: Vec<String>,
+}
+
+impl SubModuleNamesVisitor {
+    fn new() -> Self {
+        Self { names: Vec::new(), path: Vec::new(), }
+    }
+}
+
+impl<T: FloatDType> ModuleVisitor<T> for SubModuleNamesVisitor {
+    type Error = Infallible;
+    fn visit_module<M: Module<T>>(&mut self, _module: &M) -> Result<(), Self::Error> {
+        if !self.path.is_empty() {
+            self.names.push(self.path.join("."));
         }
-        
-        let mut visitor = DisplayVisitor {
-            f,
-            indent: self.indent + 2,
-            _marker: std::marker::PhantomData,
-        };
-        
-        self.module.visit(&mut visitor)?;
+        Ok(())        
+    }
 
-        let closing_indent = if self.indent >= 2 { self.indent - 2 } else { 0 };
-        write!(f, "\n{:indent$})", "", indent = closing_indent)?;
+    fn enter_submodule(&mut self, name: &str, _submodule: &impl Module<T>) -> Result<(), Self::Error> {
+        self.path.push(name.to_string());
+        Ok(())
+    }
 
+    fn exit_submodule(&mut self, _name: &str, _submodule: &impl Module<T>) -> Result<(), Self::Error> {
+        self.path.pop();
         Ok(())
     }
 }

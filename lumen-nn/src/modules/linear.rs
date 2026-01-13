@@ -58,11 +58,38 @@ impl<T: FloatDType> ModuleInit<T> for Linear<T> {
 
 #[cfg(test)]
 mod test {
-    use lumen_core::Tensor;
+    use lumen_core::{FloatDType, Tensor};
+    use lumen_macros::Module;
 
     use crate::init::Init;
     use crate::modules::Module;
-    use crate::Linear;
+    use crate::{Linear, NnResult};
+
+    #[derive(Module)]
+    pub struct Net<T: FloatDType> {
+        pub fc1: Linear<T>,
+        pub fc2: Linear<T>,
+        pub fc3: Linear<T>,
+    }
+
+    impl<T: FloatDType> Net<T> {
+        pub fn new() -> NnResult<Self> {
+            let fc1 = Linear::new(784, 512, true, None)?;
+            let fc2 = Linear::new(512, 256, true, None)?;
+            let fc3 = Linear::new(256, 10, true, None)?;
+    
+            Ok(Self { fc1, fc2, fc3 })
+        }
+    }
+
+    #[test]
+    fn test_mlp() {
+        let net = Net::<f32>::new().unwrap();
+        println!("{}", net);
+        println!("{}", net.param_count());
+        println!("{}", net.submodule_count());
+        println!("{:?}", net.submodule_names());
+    }
 
     #[test]
     fn test_module() {
@@ -84,7 +111,7 @@ mod test {
             println!("{}", name);
         }
 
-        println!("{}", ll);
+        // println!("{}", ll);
     }
 
     #[test]
