@@ -187,31 +187,35 @@ pub struct MnistBatch {
 #[derive(Default)]
 pub struct MnistBatcher;
 
-impl Batcher for MnistBatch {
+impl Batcher for MnistBatcher {
     type Item = MnistItem;
     type Output = MnistResult<MnistBatch>;
  
     fn batch(&self, items: Vec<MnistItem>) -> MnistResult<MnistBatch> {
-        let mut images = vec![];
-        let mut targets = vec![];
+        let batch_size = items.len();
+        
+        let mut flat_pixels = Vec::with_capacity(batch_size * HEIGHT * WIDTH);
+        let mut labels = Vec::with_capacity(batch_size);
 
-        for item in items.iter() {
-            let image = Tensor::new(&item.image)?;
-            let image = image.reshape((1, HEIGHT, WIDTH))?;
-            let image = ((image / 255.0) - 0.1307) / 0.3081;
-            images.push(image);
-            targets.push(item.label as u32); 
+        for item in items {
+            for row in item.image.iter() {
+                flat_pixels.extend_from_slice(row);
+            }
+            labels.push(item.label as u32);
         }
 
-        let images = Tensor::cat(&images, 0)?;
-        let len = targets.len();
-        let targets = Tensor::new(targets)?.reshape((len, 1))?;
+        let images = Tensor::new(flat_pixels)? 
+            .reshape((batch_size, HEIGHT, WIDTH))?; // [B, 28, 28]
+        
+        let images = ((images / 255.0) - 0.1307) / 0.3081;
+        let targets = Tensor::new(labels)?
+            .reshape((batch_size, 1))?;
 
         Ok(MnistBatch { images, targets })
     }
 }
 
-pub type MnistDataLoader = DataLoader<MnistDataset, MnistBatch>;
+pub type MnistDataLoader = DataLoader<MnistDataset, MnistBatcher>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MnistSplit {

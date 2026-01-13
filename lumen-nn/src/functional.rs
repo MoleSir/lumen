@@ -77,6 +77,10 @@ pub fn sigmoid<T: FloatDType>(xs: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
     Ok(xs.sigmoid())
 }
 
+pub fn relu<T: FloatDType>(xs: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    Ok(xs.relu())
+}
+
 pub fn hard_sigmoid<T: FloatDType>(xs: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
     ((xs + T::from_f64(3.0)) / T::from_f64(6.0)).clamp(T::zero(), T::one())
 }

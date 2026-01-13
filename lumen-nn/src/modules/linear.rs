@@ -4,7 +4,7 @@ use crate::{init::Init, NnCtxError, NnResult};
 use super::ModuleInit;
 
 /// Applies a linear transformation to the incoming data: :math:`y = xA^T + b`
-#[derive(Module)]
+#[derive(Module, Clone)]
 pub struct Linear<T: FloatDType> {
     pub weight: Tensor<T>,  // (out_features, in_features)
     pub bias: Option<Tensor<T>>, // (out_features)
@@ -75,8 +75,10 @@ mod test {
         }
 
         let l = Linear::<f32>::new(100, 20, true, None).unwrap();
-        println!("{}", l.param_count());
-        assert_eq!(l.param_count(), 2020);
+        let ll = l.copy();
+
+        println!("{}", ll.param_count());
+        assert_eq!(ll.param_count(), 2020);
         let params = l.named_params();
         for (name, _) in params {
             println!("{}", name);

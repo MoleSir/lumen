@@ -51,6 +51,14 @@ impl Tensor<bool> {
 
         Ok(Tensor(Arc::new(result)))
     }
+
+    pub fn true_count(&self) -> usize {
+        self.iter().filter(|v| *v).count()
+    }
+
+    pub fn false_count(&self) -> usize {
+        self.iter().filter(|v| !*v).count()
+    }
 }
 
 impl<T: WithDType> Tensor<T> {

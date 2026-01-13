@@ -56,7 +56,17 @@ pub trait Module<T: FloatDType> : Sized {
         visitor.params
     }
 
-    fn reset_with(&mut self, init: &Init<T>) -> NnResult<()> {
+    fn copy(&self) -> Self  
+    where 
+        Self: Clone
+    {
+        let mut new_module = self.clone();
+        let mut visitor = CopyVisitor;
+        new_module.visit_mut(&mut visitor).unwrap();
+        new_module
+    }
+
+    fn reinit(&mut self, init: &Init<T>) -> NnResult<()> {
         let mut visitor = InitVisitor::new(init);
         self.visit_mut(&mut visitor)
     }
@@ -96,7 +106,7 @@ pub trait ModuleInit<T: FloatDType> : Sized + Module<T> {
         Self::init(config, Some(init))
     }
 
-    fn load_safetensors<P: AsRef<Path>>(config: &Self::Config, path: P) -> Result<Self, Self::Error> {
+    fn from_safetensors<P: AsRef<Path>>(config: &Self::Config, path: P) -> Result<Self, Self::Error> {
         let mut model = Self::init_with(config, Init::Empty)?;
         model.load_safetensors(path, true)?;
         Ok(model)
@@ -327,6 +337,19 @@ impl<'a, T: FloatDType> ModuleVisitorMut<T> for InitVisitor<'a, T> {
     }
 }
 
+/// Copy Visitor {
+struct CopyVisitor;
+
+impl<T: FloatDType> ModuleVisitorMut<T> for CopyVisitor {
+    type Error = Infallible;
+
+    fn visit_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
+        *param = param.copy();
+        Ok(())    
+    }
+}
+
+/// LoadParamsVisitor
 struct LoadParamsVisitor<'a> {
     params: &'a HashMap<String, DynTensor>,
     path: Vec<String>,

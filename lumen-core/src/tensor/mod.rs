@@ -8,7 +8,7 @@ mod matmul;
 mod reduce;
 mod broadcast;
 mod convert;
-mod condition;
+mod boolean;
 
 pub use construct::ToTensor;
 use std::{hash::Hash, sync::Arc};

@@ -1,5 +1,5 @@
 [workspace]
 members = [ "function_fitting", 
     "iris",
-    "logic_gate", "lyrics_writing",
+    "logic_gate", "lyrics_writing", "mnist",
 ]

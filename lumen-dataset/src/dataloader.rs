@@ -47,8 +47,16 @@ where
         }
     }
 
+    pub fn dataset_len(&self) -> usize {
+        self.dataset.len()
+    }
+
     pub fn batch_count(&self) -> usize {
         self.dataset.len() / self.batch_size
+    }
+
+    pub fn batch_size(&self) -> usize {
+        self.batch_size
     }
 
     pub fn iter<'a>(&'a self) -> DataLoaderIter<'a, D, B> {
