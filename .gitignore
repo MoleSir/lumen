@@ -2,3 +2,4 @@ target
 Cargo.lock
 temp
 cache
+lumen-examples/lyrics_writing
