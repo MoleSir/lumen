@@ -39,7 +39,8 @@ impl<T: FloatDType> RMSNorm<T> {
         // (xxx, normalized_shape) => (xxx, normalized_shape)
         let variance = hidden_states.pow(T::two()).mean_keepdim(D::Minus1)?;
         // (xxx, normalized_shape) => (xxx, normalized_shape) 
-        let hidden_states = hidden_states.broadcast_mul(&(variance + self.variance_epsilon))?.sqr();
+        let rms = (variance + self.variance_epsilon).sqrt();
+        let hidden_states = hidden_states.broadcast_div(&rms)?;
         // (xxx, normalized_shape) => (xxx, normalized_shape)
         let out = self.weight.tensor().broadcast_mul(&hidden_states)?;
         Ok(out)

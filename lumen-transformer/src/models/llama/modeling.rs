@@ -36,7 +36,7 @@ impl<T: FloatDType> LlamaForCausalLM<T> {
         let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
         // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
         let hidden_states = self.lm_head.forward(&hidden_states)
-            .map_err(LlamaError::Core)
+            .map_err(LlamaError::Nn)
             .context("lm head forward")?;
         Ok(hidden_states)
     }
@@ -477,7 +477,8 @@ impl<T: FloatDType> LlamaRMSNorm<T> {
         // (xxx, hidden_size) => (xxx, hidden_size)
         let variance = hidden_states.pow(T::two()).mean_keepdim(D::Minus1)?;
         // (xxx, hidden_size) => (xxx, hidden_size) 
-        let hidden_states = hidden_states.broadcast_mul(&(variance + self.variance_epsilon))?.sqr();
+        let rms = (variance + self.variance_epsilon).sqrt();
+        let hidden_states = hidden_states.broadcast_div(&rms)?;
         // (xxx, hidden_size) => (xxx, hidden_size)
         let out = self.weight.broadcast_mul(&hidden_states)?;
         Ok(out)

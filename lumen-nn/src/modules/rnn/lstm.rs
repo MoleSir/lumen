@@ -71,7 +71,7 @@ impl<T: FloatDType> Lstm<T> {
     ///
     /// * `output` - Sequence of hidden states `(batch_size, seq_len, hidden_size)`.
     /// * `final_state` - The final `(h_n, c_n)`.
-    pub fn forward(&self, input: &Tensor<T>, state: Option<&LstmState<T>>) -> lumen_core::Result<(Tensor<T>, LstmState<T>)> {
+    pub fn forward(&self, input: &Tensor<T>, state: Option<&LstmState<T>>) -> NnResult<(Tensor<T>, LstmState<T>)> {
         let (batch_size, seq_length, _input_size) = input.dims3()?;
         
         // Init states
@@ -117,7 +117,7 @@ impl<T: FloatDType> Lstm<T> {
     ///
     /// * `x` - Input at current step `(batch_size, input_size)`.
     /// * `state` - Previous state `(h_{t-1}, c_{t-1})`.
-    pub fn step(&self, x: &Tensor<T>, state: Option<&LstmState<T>>) -> lumen_core::Result<LstmState<T>> {
+    pub fn step(&self, x: &Tensor<T>, state: Option<&LstmState<T>>) -> NnResult<LstmState<T>> {
         let (batch_size, _input_dim) = x.dims2()?;
         
         let (h_prev, c_prev) = match state {
@@ -142,7 +142,7 @@ impl<T: FloatDType> Lstm<T> {
     ///
     /// We assume the weights are organized in **IFGO** order (Input, Forget, Gate, Output),
     /// which is a common convention (e.g., in PyTorch).
-    fn lstm_cell(&self, x_all: &Tensor<T>, h_all: &Tensor<T>, c_prev: &Tensor<T>) -> lumen_core::Result<(Tensor<T>, Tensor<T>)> {
+    fn lstm_cell(&self, x_all: &Tensor<T>, h_all: &Tensor<T>, c_prev: &Tensor<T>) -> NnResult<(Tensor<T>, Tensor<T>)> {
         let h_size = self.hidden_size;
 
         // Split Input projections

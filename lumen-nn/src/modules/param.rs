@@ -111,7 +111,7 @@ impl<T: FloatDType> _Linear<T> {
         Self::init(&_LinearConfig::new(in_features, out_features, bias), init)
     }
     
-    pub fn forward(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    pub fn forward(&self, input: &Tensor<T>) -> NnResult<Tensor<T>> {
         crate::functional::linear(input, &self.weight.tensor(), self.bias.as_ref().map(|p| p.tensor()))
     }
 

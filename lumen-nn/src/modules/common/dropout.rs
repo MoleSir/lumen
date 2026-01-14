@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
-use crate::functional as F;
+use crate::{functional as F, NnResult};
 
 #[derive(Module)]
 #[module(display = "display")]
@@ -25,7 +25,7 @@ impl<T: FloatDType> Dropout<T> {
         Self { drop_p, train: false }
     }
 
-    pub fn forward(&self, xs: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    pub fn forward(&self, xs: &Tensor<T>) -> NnResult<Tensor<T>> {
         if self.train {
             F::dropout(xs, self.drop_p)
         } else {

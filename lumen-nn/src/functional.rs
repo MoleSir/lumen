@@ -1,6 +1,7 @@
 use lumen_core::{Dim, FloatDType, IntTensor, NumDType, Tensor, D};
+use crate::{NnError, NnResult};
 
-pub fn linear<T: NumDType>(input: &Tensor<T>, weight: &Tensor<T>, bias: Option<&Tensor<T>>) -> lumen_core::Result<Tensor<T>> {
+pub fn linear<T: NumDType>(input: &Tensor<T>, weight: &Tensor<T>, bias: Option<&Tensor<T>>) -> NnResult<Tensor<T>> {
     let x = match input.dims() {
         &[b1, b2, m, k] => {
             let (out_dim, in_dim) = weight.dims2()?;
@@ -33,7 +34,10 @@ pub fn linear<T: NumDType>(input: &Tensor<T>, weight: &Tensor<T>, bias: Option<&
     };
     match bias {
         None => Ok(x),
-        Some(bias) => x.broadcast_add(bias),
+        Some(bias) => {
+            let out = x.broadcast_add(bias)?;
+            Ok(out)
+        }
     }
 }
 
@@ -45,53 +49,56 @@ pub fn linear<T: NumDType>(input: &Tensor<T>, weight: &Tensor<T>, bias: Option<&
 /// let a = Tensor::new(&[[0f32, 1., 0., 1.], [-2., 2., 3., -3.]]).unwrap();
 /// let a = lumen_nn::functional::softmax(&a, 1).unwrap();
 /// ```
-pub fn softmax<T: FloatDType, D: Dim>(xs: &Tensor<T>, dim: D) -> lumen_core::Result<Tensor<T>> {
+pub fn softmax<T: FloatDType, D: Dim>(xs: &Tensor<T>, dim: D) -> NnResult<Tensor<T>> {
     let dim = dim.to_index(xs.shape(), "softmax")?;
     let max = xs.max_keepdim(dim)?; // (..., 1, ...)
     let diff = xs.broadcast_sub(&max)?;   // (..., D, ...)
     let num = diff.exp();                 // (..., D, ...)
     let den = num.sum_keepdim(dim)?;
-    num.broadcast_div(&den)
+    let out = num.broadcast_div(&den)?;
+    Ok(out)
 }
 
-pub fn log_softmax<T: FloatDType, D: Dim>(xs: &Tensor<T>, dim: D) -> lumen_core::Result<Tensor<T>> {
+pub fn log_softmax<T: FloatDType, D: Dim>(xs: &Tensor<T>, dim: D) -> NnResult<Tensor<T>> {
     let dim = dim.to_index(xs.shape(), "log_softmax")?;
     let max = xs.max_keepdim(dim)?; // (..., 1, ...)
     let diff = xs.broadcast_sub(&max)?;   // (..., D, ...)
     //  log(sum(exp(x - max)))
     let log_sum_exp = diff.exp().sum_keepdim(dim)?.ln();
     // (x - max) - log_sum_exp
-    diff.broadcast_sub(&log_sum_exp)
+    let out = diff.broadcast_sub(&log_sum_exp)?;
+    Ok(out)
 }
 
-pub fn silu<T: FloatDType>(xs: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+pub fn silu<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
     Ok(xs.silu())
 }
 
-pub fn swiglu<T: FloatDType>(xs: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+pub fn swiglu<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
     let xs = xs.chunk(2, D::Minus1)?;
     Ok(xs[0].silu() * &xs[1])
 }
 
-pub fn sigmoid<T: FloatDType>(xs: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+pub fn sigmoid<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
     Ok(xs.sigmoid())
 }
 
-pub fn relu<T: FloatDType>(xs: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+pub fn relu<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
     Ok(xs.relu())
 }
 
-pub fn hard_sigmoid<T: FloatDType>(xs: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
-    ((xs + T::from_f64(3.0)) / T::from_f64(6.0)).clamp(T::zero(), T::one())
+pub fn hard_sigmoid<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
+    let out = ((xs + T::from_f64(3.0)) / T::from_f64(6.0)).clamp(T::zero(), T::one())?;
+    Ok(out)
 }
 
-pub fn leaky_relu<T: FloatDType>(xs: &Tensor<T>, negative_slope: T) -> lumen_core::Result<Tensor<T>> {
+pub fn leaky_relu<T: FloatDType>(xs: &Tensor<T>, negative_slope: T) -> NnResult<Tensor<T>> {
     Ok(xs.leaky_relu(negative_slope))
 }
 
-pub fn dropout<T: FloatDType>(xs: &Tensor<T>, drop_p: T) -> lumen_core::Result<Tensor<T>> {
+pub fn dropout<T: FloatDType>(xs: &Tensor<T>, drop_p: T) -> NnResult<Tensor<T>> {
     if drop_p < T::zero() || drop_p >= T::one() {
-        lumen_core::bail!("dropout probability has to be in [0, 1), got {drop_p}")
+        Err(NnError::DropoutInvalid(drop_p.to_f64()))?;
     }
 
     let rand = Tensor::<T>::rand(T::zero(), T::one(), xs.shape())?;
@@ -100,15 +107,17 @@ pub fn dropout<T: FloatDType>(xs: &Tensor<T>, drop_p: T) -> lumen_core::Result<T
     Ok(xs * mask)
 }
 
-pub fn nll_loss<T: FloatDType>(input: &Tensor<T>, target: impl Into<IntTensor>) -> lumen_core::Result<Tensor<T>> {
+pub fn nll_loss<T: FloatDType>(input: &Tensor<T>, target: impl Into<IntTensor>) -> NnResult<Tensor<T>> {
     let target = target.into();
     let gathered = input.gather(target, 1)?;
     let neg_loss = gathered.neg();
-    neg_loss.mean_all()
+    let out = neg_loss.mean_all()?;
+    Ok(out)
 }
 
-pub fn mse_loss<T: FloatDType>(input: &Tensor<T>, target: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
-    input.sub(target)?.sqr().mean_all()
+pub fn mse_loss<T: FloatDType>(input: &Tensor<T>, target: &Tensor<T>) -> NnResult<Tensor<T>> {
+    let out = input.sub(target)?.sqr().mean_all()?;
+    Ok(out)
 }
 
 /// Computes the Cross Entropy Loss between input logits and target probabilities.
@@ -129,13 +138,14 @@ pub fn mse_loss<T: FloatDType>(input: &Tensor<T>, target: &Tensor<T>) -> lumen_c
 /// ## Returns
 ///
 /// * A scalar Tensor representing the mean loss over the batch.
-pub fn cross_entropy<T: FloatDType>(input: &Tensor<T>, target: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+pub fn cross_entropy<T: FloatDType>(input: &Tensor<T>, target: &Tensor<T>) -> NnResult<Tensor<T>> {
     let dim = 1; 
     let log_probs = log_softmax(input, dim)?;
     let weighted_log_probs = target.broadcast_mul(&log_probs)?;
     let sum_class = weighted_log_probs.sum_keepdim(dim)?;
     let loss = sum_class.neg();
-    loss.mean_all()
+    let out = loss.mean_all()?;
+    Ok(out)
 }
 
 /// Computes the Cross Entropy Loss using integer class indices as targets.
@@ -157,7 +167,7 @@ pub fn cross_entropy<T: FloatDType>(input: &Tensor<T>, target: &Tensor<T>) -> lu
 /// ## Returns
 ///
 /// * A scalar Tensor representing the mean loss over the batch.
-pub fn cross_entropy_indices<T: FloatDType>(input: &Tensor<T>, target: impl Into<IntTensor>) -> lumen_core::Result<Tensor<T>> {
+pub fn cross_entropy_indices<T: FloatDType>(input: &Tensor<T>, target: impl Into<IntTensor>) -> NnResult<Tensor<T>> {
     // Input: [samples, classes] (logits)
     // Target: [samples, 1] (probabilities, 0.0~1.0)
     let log_probs = log_softmax(input, 1)?;

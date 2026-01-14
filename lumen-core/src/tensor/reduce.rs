@@ -39,6 +39,15 @@ impl<T: NumDType> Tensor<T> {
 
         delta_pow.mean_keepdim(axis)
     }
+
+    pub fn var_unbiased_keepdim<D: Dim>(&self, axis: D) -> Result<Self> {
+        let n = T::from_usize(self.dim(axis)?);
+        let biased_var = self.var_keepdim(axis)?;
+        
+        // cor scale: N / (N - 1)
+        let correction = n / (n - T::one());
+        Ok(correction * biased_var)
+    }
     
     pub fn var<D: Dim>(&self, axis: D) -> Result<Self> {
         let v = self.var_keepdim(axis)?;
@@ -46,8 +55,18 @@ impl<T: NumDType> Tensor<T> {
         Ok(v)
     }
 
+    pub fn var_unbiased<D: Dim>(&self, axis: D) -> Result<Self> {
+        let v = self.var_unbiased_keepdim(axis)?;
+        let v = v.squeeze(axis)?;
+        Ok(v)
+    }
+
     pub fn var_all(&self) -> Result<Self> {
         self.flatten_all()?.var(0)
+    }
+
+    pub fn var_unbiased_all(&self) -> Result<Self> {
+        self.flatten_all()?.var_unbiased(0)
     }
 
     pub fn argmin_keepdim<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {

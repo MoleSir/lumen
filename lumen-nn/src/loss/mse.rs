@@ -1,10 +1,10 @@
 use lumen_core::{FloatDType, Tensor};
-use crate::Module;
+use crate::{Module, NnResult};
 
 pub struct MseLoss;
 
 impl MseLoss {
-    pub fn forward<T: FloatDType>(&self, input: &Tensor<T>, target: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    pub fn forward<T: FloatDType>(&self, input: &Tensor<T>, target: &Tensor<T>) -> NnResult<Tensor<T>> {
         crate::functional::mse_loss(input, target)
     }
 }

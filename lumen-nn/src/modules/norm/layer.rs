@@ -51,7 +51,10 @@ impl<T: FloatDType> LayerNorm<T> {
         let mean = input.mean_keepdim(D::Minus1)?;
         let var = input.var_keepdim(D::Minus1)?;
 
-        let input_normalized = input.broadcast_sub(&mean)?.broadcast_div(&(var + self.variance_epsilon))?;
+        let std = (var + self.variance_epsilon).sqrt();
+        let input_normalized = input
+            .broadcast_sub(&mean)?
+            .broadcast_div(&std)?;
 
         let res = input_normalized
             .broadcast_mul(self.weight.tensor())?

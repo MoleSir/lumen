@@ -31,7 +31,9 @@ impl<T: FloatDType> ModuleInit<T> for Gpt2ForCausalLM<T> {
 impl<T: FloatDType> Gpt2ForCausalLM<T> {
     pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Gpt2Cache<T>) -> Gpt2Result<Tensor<T>> {
         let hidden_states = self.transformer.forward(input_ids, start_pos, cache).context("transformer forward")?;
-        let logits = self.lm_head.forward(&hidden_states).map_err(Gpt2Error::Core).context("lm head forward")?;
+        let logits = self.lm_head.forward(&hidden_states)
+            .map_err(Gpt2Error::Nn)
+            .context("lm head forward")?;
         Ok(logits)
     }
 }

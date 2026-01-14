@@ -52,7 +52,7 @@ impl<T: FloatDType> Rnn<T> {
         Self::init(&RnnConfig::new(input_size, hidden_size), init)
     }
 
-    pub fn forward(&self, input: &Tensor<T>, h0: Option<&Tensor<T>>) -> lumen_core::Result<(Tensor<T>, Tensor<T>)> {
+    pub fn forward(&self, input: &Tensor<T>, h0: Option<&Tensor<T>>) -> NnResult<(Tensor<T>, Tensor<T>)> {
         let (batch_size, seq_length, _input_size) = input.dims3()?;
         
         let h0 = match h0 {
@@ -80,7 +80,7 @@ impl<T: FloatDType> Rnn<T> {
         Ok((output, h_t))
     }
 
-    pub fn step(&self, x: &Tensor<T>, h: Option<&Tensor<T>>) -> lumen_core::Result<Tensor<T>> {
+    pub fn step(&self, x: &Tensor<T>, h: Option<&Tensor<T>>) -> NnResult<Tensor<T>> {
         let (batch_size, _input_dim) = x.dims2()?;
         
         let h_prev = match h {

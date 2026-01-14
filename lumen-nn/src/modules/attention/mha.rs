@@ -55,7 +55,7 @@ impl<T: FloatDType> MultiHeadAttention<T> {
         Self::init(&MultiHeadAttentionConfig::new(hidden_size, num_head), Some(init))
     }
 
-    pub fn forward(&self, hidden_state: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    pub fn forward(&self, hidden_state: &Tensor<T>) -> NnResult<Tensor<T>> {
         // hidden_state: (batch_size, seq_len, hidden_size)
         let (batch_size, seq_len, hidden_size) = hidden_state.dims3()?;
 
@@ -97,7 +97,7 @@ impl<T: FloatDType> MultiHeadAttention<T> {
         Ok(output)
     }
 
-    pub fn reshape_head(&self, x: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    pub fn reshape_head(&self, x: &Tensor<T>) -> NnResult<Tensor<T>> {
         // x: (batch_size, seq_len, hidden_size)
         let (batch_size, seq_len, hidden_size) = x.dims3()?;
         assert_eq!(hidden_size, self.hidden_size);

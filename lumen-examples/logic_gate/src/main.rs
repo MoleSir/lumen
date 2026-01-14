@@ -26,7 +26,7 @@ impl<T: FloatDType> Mlp<T> {
         self.linears.len()
     }
 
-    pub fn forward(&self, x: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    pub fn forward(&self, x: &Tensor<T>) -> anyhow::Result<Tensor<T>> {
         let mut x = x.clone();
         for (linear, activate) in self.linears.iter().zip(self.activates.iter()) {
             x = linear.forward(&x)?;

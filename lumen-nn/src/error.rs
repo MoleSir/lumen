@@ -14,8 +14,6 @@ pub enum NnError {
     #[error(transparent)]
     SafeTensors(#[from] lumen_io::safetensors::SafeTensorsCtxError),
 
-    // Module init
-    
     #[error("head_size {0} can't divde by num_head {1}")]
     HeadSizeCannotDivideByNumhead(usize, usize),
 
@@ -24,4 +22,7 @@ pub enum NnError {
 
     #[error("unsupport shape {0} of input in batch norm 1d")]
     BatchNorm1dUnsupportShape(Shape),
+
+    #[error("drop_p {0} invalid(not in [0, 1)])")]
+    DropoutInvalid(f64)
 }

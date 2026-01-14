@@ -83,7 +83,7 @@ impl<T: FloatDType> GroupQueryAttention<T> {
         Self::init(&GroupQueryAttentionConfig::new(hidden_size, num_head, num_kv_head), Some(init))
     }
 
-    pub fn forward(&self, hidden_state: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    pub fn forward(&self, hidden_state: &Tensor<T>) -> NnResult<Tensor<T>> {
         // hidden_state: (batch_size, seq_len, hidden_size)
         let (batch_size, seq_len, _hidden_size) = hidden_state.dims3()?;
 
@@ -142,7 +142,7 @@ impl<T: FloatDType> GroupQueryAttention<T> {
     /// Reshapes input tensor to separate heads.
     /// Input: (batch_size, seq_len, total_hidden_dim)
     /// Output: (batch_size, num_heads, seq_len, head_size)
-    fn reshape_head(x: &Tensor<T>, num_heads: usize, head_size: usize) -> lumen_core::Result<Tensor<T>> {
+    fn reshape_head(x: &Tensor<T>, num_heads: usize, head_size: usize) -> NnResult<Tensor<T>> {
         let (batch_size, seq_len, _) = x.dims3()?;
         
         // (batch_size, seq_len, total_dim) => (batch_size, seq_len, num_heads, head_size)
@@ -154,7 +154,7 @@ impl<T: FloatDType> GroupQueryAttention<T> {
         Ok(x)
     }
 
-    fn repeat_kv(&self, k: &Tensor<T>, v: &Tensor<T>) -> lumen_core::Result<(Tensor<T>, Tensor<T>)> {
+    fn repeat_kv(&self, k: &Tensor<T>, v: &Tensor<T>) -> NnResult<(Tensor<T>, Tensor<T>)> {
         let repeat_time = self.num_head / self.num_kv_head;
         let k = k.repeat_dim(1, repeat_time)?;
         let v = v.repeat_dim(1, repeat_time)?;

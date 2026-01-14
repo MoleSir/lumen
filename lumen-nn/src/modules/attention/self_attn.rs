@@ -39,7 +39,7 @@ impl<T: FloatDType> SelfAttention<T> {
         Self::init_with(&hidden_size, init)
     }
 
-    pub fn forward(&self, hidden_state: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    pub fn forward(&self, hidden_state: &Tensor<T>) -> NnResult<Tensor<T>> {
         // calculate q k v 
         let q = self.q_proj.forward(hidden_state)?;
         let k = self.k_proj.forward(hidden_state)?;

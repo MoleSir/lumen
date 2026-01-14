@@ -83,7 +83,7 @@ impl<T: FloatDType> Gru<T> {
     /// A tuple `(output, h_n)` containing:
     /// * `output`: The hidden states for all time steps, shape `(batch_size, seq_len, hidden_size)`.
     /// * `h_n`: The final hidden state of the sequence, shape `(batch_size, hidden_size)`.
-    pub fn forward(&self, input: &Tensor<T>, h0: Option<&Tensor<T>>) -> lumen_core::Result<(Tensor<T>, Tensor<T>)> {
+    pub fn forward(&self, input: &Tensor<T>, h0: Option<&Tensor<T>>) -> NnResult<(Tensor<T>, Tensor<T>)> {
         let (batch_size, seq_length, _input_size) = input.dims3()?;
         
         let h0 = match h0 {
@@ -125,7 +125,7 @@ impl<T: FloatDType> Gru<T> {
     /// ## Returns
     ///
     /// * The new hidden state of shape `(batch_size, hidden_size)`.
-    pub fn step(&self, x: &Tensor<T>, h: Option<&Tensor<T>>) -> lumen_core::Result<Tensor<T>> {
+    pub fn step(&self, x: &Tensor<T>, h: Option<&Tensor<T>>) -> NnResult<Tensor<T>> {
         let (batch_size, _input_dim) = x.dims2()?;
         let h_prev = match h {
             Some(val) => val.clone(),
@@ -142,7 +142,7 @@ impl<T: FloatDType> Gru<T> {
         Ok(h_next)
     }
 
-    fn gru_cell(&self, x_t_all: &Tensor<T>, h_t_all: &Tensor<T>, h_prev: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    fn gru_cell(&self, x_t_all: &Tensor<T>, h_t_all: &Tensor<T>, h_prev: &Tensor<T>) -> NnResult<Tensor<T>> {
         let h_size = self.hidden_size;
 
         // Split into Reset (r), Update (z), New (n)
