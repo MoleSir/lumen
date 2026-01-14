@@ -41,14 +41,19 @@ impl<T: FloatDType> LayerNorm<T> {
         Self::init(&LayerNormConfig::new(normalized_shape, norm_eps), init)
     }
 
-    pub fn forward(&self, x: &Tensor<T>) -> NnResult<Tensor<T>> {
+    /// LayerNorm forward
+    /// 
+    /// ## Argument
+    /// 
+    /// * `input`: (xxx, normalized_shape)
+    pub fn forward(&self, input: &Tensor<T>) -> NnResult<Tensor<T>> {
         // (xxx, normalized_shape) => (xxx, 1)
-        let mean = x.mean_keepdim(D::Minus1)?;
-        let var = x.var_keepdim(D::Minus1)?;
+        let mean = input.mean_keepdim(D::Minus1)?;
+        let var = input.var_keepdim(D::Minus1)?;
 
-        let x_normalized = x.broadcast_sub(&mean)?.broadcast_div(&(var + self.variance_epsilon))?;
+        let input_normalized = input.broadcast_sub(&mean)?.broadcast_div(&(var + self.variance_epsilon))?;
 
-        let res = x_normalized
+        let res = input_normalized
             .broadcast_mul(self.weight.tensor())?
             .broadcast_add(self.bias.tensor())?;
 

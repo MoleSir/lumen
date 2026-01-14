@@ -21,4 +21,7 @@ pub enum NnError {
 
     #[error("head_size {0} can't divde by kv_num_head {1}")]
     HeadSizeCannotDivideByKvNumhead(usize, usize),
+
+    #[error("unsupport shape {0} of input in batch norm 1d")]
+    BatchNorm1dUnsupportShape(Shape),
 }

@@ -91,8 +91,12 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
     };
 
     // generate visit filed
-    let mut tensor_body = quote! {};
-    let mut tensor_mut_body = quote! {};
+    let mut param_body = quote! {};
+    let mut param_mut_body = quote! {};
+    let mut state_body = quote! {};
+    let mut state_mut_body = quote! {};
+    let mut buffer_body = quote! {};
+    let mut buffer_mut_body = quote! {};
     let mut module_body = quote! {};
     let mut module_mut_body = quote! {};
     match &ast.data {
@@ -120,19 +124,48 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
                 
                 let name = field.ident.clone().unwrap();
                 let name_str = name.to_string();
+
                 let field_code = quote! {
                     visitor.enter_submodule(#name_str, &self.#name);
                     #lumen::modules::Module::visit_param(&self.#name, visitor)?;
                     visitor.exit_submodule(#name_str, &self.#name);
                 };
-                tensor_body.extend(field_code);
+                param_body.extend(field_code);
 
                 let field_code = quote! {
                     visitor.enter_submodule(#name_str, &mut self.#name);
                     #lumen::modules::Module::visit_param_mut(&mut self.#name, visitor)?;
                     visitor.exit_submodule(#name_str, &mut self.#name);
                 };
-                tensor_mut_body.extend(field_code);
+                param_mut_body.extend(field_code);
+
+                let field_code = quote! {
+                    visitor.enter_submodule(#name_str, &self.#name);
+                    #lumen::modules::Module::visit_buffer(&self.#name, visitor)?;
+                    visitor.exit_submodule(#name_str, &self.#name);
+                };
+                buffer_body.extend(field_code);
+
+                let field_code = quote! {
+                    visitor.enter_submodule(#name_str, &mut self.#name);
+                    #lumen::modules::Module::visit_buffer_mut(&mut self.#name, visitor)?;
+                    visitor.exit_submodule(#name_str, &mut self.#name);
+                };
+                buffer_mut_body.extend(field_code);
+
+                let field_code = quote! {
+                    visitor.enter_submodule(#name_str, &self.#name);
+                    #lumen::modules::Module::visit_state(&self.#name, visitor)?;
+                    visitor.exit_submodule(#name_str, &self.#name);
+                };
+                state_body.extend(field_code);
+
+                let field_code = quote! {
+                    visitor.enter_submodule(#name_str, &mut self.#name);
+                    #lumen::modules::Module::visit_state_mut(&mut self.#name, visitor)?;
+                    visitor.exit_submodule(#name_str, &mut self.#name);
+                };
+                state_mut_body.extend(field_code);
                 
                 let field_code = quote! {
                     // handle submodule 
@@ -164,32 +197,32 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
         impl #impl_generics_tokens #lumen::modules::Module<#module_generic_type> for #name #ty_generics #where_clause {
             
             fn visit_param<Visitor: #lumen::modules::TensorVisitor<#module_generic_type>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-                #tensor_body
+                #param_body
                 Ok(())
             }
 
             fn visit_param_mut<Visitor: #lumen::modules::TensorVisitorMut<#module_generic_type>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-                #tensor_mut_body
+                #param_mut_body
                 Ok(())
             }
 
             fn visit_buffer<Visitor: #lumen::modules::TensorVisitor<#module_generic_type>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-                #tensor_body
+                #buffer_body
                 Ok(())
             }
 
             fn visit_buffer_mut<Visitor: #lumen::modules::TensorVisitorMut<#module_generic_type>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-                #tensor_mut_body
+                #buffer_mut_body
                 Ok(())
             }
 
             fn visit_state<Visitor: #lumen::modules::TensorVisitor<#module_generic_type>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-                #tensor_body
+                #state_body
                 Ok(())
             }
 
             fn visit_state_mut<Visitor: #lumen::modules::TensorVisitorMut<#module_generic_type>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-                #tensor_mut_body
+                #state_mut_body
                 Ok(())
             }
 
