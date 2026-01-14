@@ -104,6 +104,11 @@ pub trait Module<T: FloatDType> : Sized {
         visitor.params
     }
 
+    fn requires_grad(&self, mode: bool) {
+        let mut visitor = RequiresGradVisitor::new(mode);
+        self.visit_param(&mut visitor).unwrap();
+    }
+
     fn copy(&self) -> Self  
     where 
         Self: Clone
@@ -665,14 +670,9 @@ impl<T: FloatDType> ModuleVisitor<T> for SubModuleNamesVisitor {
 }
 
 // TrainModeVisitor
+#[derive(derive_new::new)]
 struct TrainModeVisitor {
     mode: bool,
-}
-
-impl TrainModeVisitor {
-    fn new(mode: bool) -> Self {
-        Self { mode }
-    }
 }
 
 impl<T: FloatDType> ModuleVisitorMut<T> for TrainModeVisitor {
@@ -680,6 +680,21 @@ impl<T: FloatDType> ModuleVisitorMut<T> for TrainModeVisitor {
     
     fn visit_module_mut<M: Module<T>>(&mut self, module: &mut M) -> Result<(), Self::Error> {
         module.set_train(self.mode);
+        Ok(())
+    }
+}
+
+// RQVisitor
+#[derive(derive_new::new)]
+struct RequiresGradVisitor {
+    mode: bool,
+}
+
+impl<T: FloatDType> ParamVisitor<T> for RequiresGradVisitor {
+    type Error = Infallible;
+
+    fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
+        param.set_requires_grad(self.mode);
         Ok(())
     }
 }
