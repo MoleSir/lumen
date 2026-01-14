@@ -1,15 +1,14 @@
-mod linear;
-mod dropout;
-mod embedding;
+mod common;
+mod activation;
 mod rnn;
 mod attention;
-mod softmax;
-pub use linear::*;
-pub use dropout::*;
-pub use embedding::*;
+mod norm;
+
+pub use common::*;
+pub use activation::*;
 pub use rnn::*;
 pub use attention::*;
-pub use softmax::*;
+pub use norm::*;
 
 use std::fmt;
 use std::marker::PhantomData;
@@ -62,6 +61,16 @@ pub trait Module<T: FloatDType> : Sized {
         self.train(false);
     }
 
+    fn apply_param(&self, f: impl Fn(&Tensor<T>)) {
+        let mut visitor = ParamApplyVisitor::new(f);
+        self.visit_param(&mut visitor).unwrap();
+    }
+
+    fn apply_param_mut(&mut self, f: impl Fn(&mut Tensor<T>)) {
+        let mut visitor = ParamApplyVisitor::new(f);
+        self.visit_param_mut(&mut visitor).unwrap();
+    }
+    
     fn requires_grad(&self, mode: bool) {
         let mut visitor = RequiresGradVisitor::new(mode);
         self.visit_param(&mut visitor).unwrap();
@@ -746,3 +755,28 @@ impl<T: FloatDType> ParamVisitor<T> for RequiresGradVisitor {
         Ok(())
     }
 }
+
+#[derive(derive_new::new)]
+pub struct ParamApplyVisitor<F> {
+    f: F,
+}
+
+impl<T: FloatDType, F: Fn(&Tensor<T>)> ParamVisitor<T> for ParamApplyVisitor<F> {
+    type Error = Infallible;
+
+    fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
+        (self.f)(param);
+        Ok(())
+    }
+}
+
+impl<T: FloatDType, F: Fn(&mut Tensor<T>)> ParamVisitorMut<T> for ParamApplyVisitor<F> {
+    type Error = Infallible;
+
+    fn visit_param_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
+        (self.f)(param);
+        Ok(())
+    }
+}
+
+

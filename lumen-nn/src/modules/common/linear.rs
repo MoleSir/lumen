@@ -1,7 +1,7 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
 use crate::{init::Init, NnCtxError, NnResult};
-use super::ModuleInit;
+use crate::ModuleInit;
 
 /// Applies a linear transformation to the incoming data: :math:`y = xA^T + b`
 #[derive(Module, Clone)]
@@ -114,7 +114,9 @@ mod test {
             println!("{}", name);
         }
 
-        // println!("{}", ll);
+        println!("{}", ll);
+
+        // ll.apply_param(|p| print!("{}", p));
     }
 
     #[test]

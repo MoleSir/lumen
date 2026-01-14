@@ -1,7 +1,7 @@
 use lumen_core::{FloatDType, IntTensor, Tensor};
 use lumen_macros::Module;
 use crate::{init::Init, NnCtxError, NnResult};
-use super::ModuleInit;
+use crate::ModuleInit;
 
 /// A simple lookup table that stores embeddings of a fixed dictionary and size.
 #[derive(Module)]
