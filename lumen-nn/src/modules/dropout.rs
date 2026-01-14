@@ -1,24 +1,29 @@
 use lumen_core::{FloatDType, Tensor};
+use lumen_macros::Module;
 use crate::functional as F;
-use super::Module;
 
-pub struct Dropout {
-    drop_p: f64,
+#[derive(Module)]
+#[module(display = "display")]
+pub struct Dropout<T: FloatDType> {
+    #[module(skip)]
+    drop_p: T,
 }
 
-impl Dropout {
-    pub fn new(drop_p: f64) -> Dropout {
+impl<T: FloatDType> Dropout<T> {
+    pub fn new(drop_p: T) -> Self {
         Self { drop_p }
     }
 
-    pub fn forward<T: FloatDType>(&self, xs: &Tensor<T>, train: bool) -> lumen_core::Result<Tensor<T>> {
+    pub fn forward(&self, xs: &Tensor<T>, train: bool) -> lumen_core::Result<Tensor<T>> {
         if train {
             F::dropout(xs, self.drop_p)
         } else {
             Ok(xs.clone())
         }
     }
+
+    fn display(&self) -> String {
+        format!("drop_p={}", self.drop_p)
+    }
 }
 
-impl<T: FloatDType> Module<T> for Dropout {
-}

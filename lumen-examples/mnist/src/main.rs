@@ -115,7 +115,6 @@ pub fn test(model: &Net<f32>, test_loader: &MnistDataLoader,
     Ok(())
 }
 
-
 #[derive(Module)]
 pub struct Net<T: FloatDType> {
     pub fc1: Linear<T>,

@@ -89,13 +89,13 @@ pub fn leaky_relu<T: FloatDType>(xs: &Tensor<T>, negative_slope: T) -> lumen_cor
     Ok(xs.leaky_relu(negative_slope))
 }
 
-pub fn dropout<T: FloatDType>(xs: &Tensor<T>, drop_p: f64) -> lumen_core::Result<Tensor<T>> {
-    if !(0. ..1.).contains(&drop_p) {
+pub fn dropout<T: FloatDType>(xs: &Tensor<T>, drop_p: T) -> lumen_core::Result<Tensor<T>> {
+    if drop_p < T::zero() || drop_p >= T::one() {
         lumen_core::bail!("dropout probability has to be in [0, 1), got {drop_p}")
     }
 
     let rand = Tensor::<T>::rand(T::zero(), T::one(), xs.shape())?;
-    let scale = T::from_f64(1.0 / (1.0 - drop_p));
+    let scale = T::one() / (T::one() - drop_p);
     let drop_p = Tensor::new(scale)?.broadcast_as(xs.shape())?;
     let mask = rand.ge(drop_p)?.to_dtype() * scale;
     Ok(xs * mask)

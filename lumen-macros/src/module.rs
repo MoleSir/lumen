@@ -13,14 +13,26 @@ pub fn derive_impl(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
 
 fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
     let lumen = utils::get_lumen_nn_path();
-    // 
     let name = &ast.ident;
-    let (_, generics_ty, generics_where) = ast.generics.split_for_impl();
-    let generics_module = ast.generics.clone();
 
-    
+    // extract generic param
+    let validated_generic = match validate_and_extract_generic(&ast.generics) {
+        Ok(res) => res,
+        Err(e) => return e.to_compile_error().into(),
+    };
+
+    let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
+    let (impl_generics_tokens, module_generic_type) = match validated_generic.as_ref() {
+        Some(user_generic_ident) => {
+            (quote! { #impl_generics }, quote! { #user_generic_ident })
+        }
+        None => {
+            (quote! { <T: FloatDType> }, quote! { T })
+        }
+    };
+
+    // module attr
     let mut custom_repr_fn_name: Option<syn::Ident> = None;
-
     for attr in &ast.attrs {
         if attr.path().is_ident("module") {
             let _ = attr.parse_nested_meta(|meta| {
@@ -36,7 +48,8 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
             });
         }
     }
-
+    
+    // module display
     let extra_repr_fn = if let Some(fn_name) = custom_repr_fn_name {
         quote! {
             fn extra_repr(&self) -> String {
@@ -45,6 +58,17 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
         }
     } else {
         quote! {}
+    };
+
+    let display_body = match validated_generic.as_ref() {
+        Some(_) => quote! {
+            use #lumen::modules::Module;
+            write!(f, "{}", self.display())
+        },
+        None => quote! {
+            use crate::modules::Module;
+            write!(f, "{}", Module::<f64>::display(&*self))
+        },
     };
 
     // generate visit filed
@@ -105,22 +129,22 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
         syn::Data::Union(_) => panic!("Only struct can be derived"),
     };
 
+    // codegen
     let codegen = quote! {
-        impl #generics_module #lumen::modules::Module<T> for #name #generics_ty #generics_where {
-            fn visit_param<Visitor: #lumen::modules::ParamVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+        impl #impl_generics_tokens #lumen::modules::Module<#module_generic_type> for #name #ty_generics #where_clause {
+            
+            fn visit_param<Visitor: #lumen::modules::ParamVisitor<#module_generic_type>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
                 #body
                 Ok(())
             }
 
-            fn visit_param_mut<Visitor: #lumen::modules::ParamVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+            fn visit_param_mut<Visitor: #lumen::modules::ParamVisitorMut<#module_generic_type>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
                 #body_mut
                 Ok(())
             }
 
-            fn visit_module<Visitor: #lumen::modules::ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-                // handle self
+            fn visit_module<Visitor: #lumen::modules::ModuleVisitor<#module_generic_type>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
                 visitor.visit_module(self)?;
-                // sub module
                 #submodule_body
                 visitor.visit_module_end(self)?;
                 Ok(())
@@ -129,13 +153,59 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
             #extra_repr_fn
         }
 
-        impl #generics_module std::fmt::Display for #name #generics_ty #generics_where {
+        impl #impl_generics std::fmt::Display for #name #ty_generics #where_clause {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                use #lumen::modules::Module;
-                write!(f, "{}", self.display())
+                #display_body
             }
         }
     };
 
+    // panic!("{}", codegen);
+
     codegen
+}
+
+fn validate_and_extract_generic(generics: &syn::Generics) -> syn::Result<Option<&syn::Ident>> {
+    let params: Vec<_> = generics.params.iter().collect();
+
+    // 1. check count
+    if params.len() > 1 {
+        return Err(syn::Error::new_spanned(
+            generics, 
+            "Module struct allows at most one generic parameter (e.g., <T: FloatDType>)."
+        ));
+    }
+
+    // no params
+    if params.is_empty() {
+        return Ok(None);
+    }
+
+    // 2. a param must be bounds by `FloatDType`
+    let param = params[0];
+    let type_param = match param {
+        syn::GenericParam::Type(tp) => tp,
+        _ => return Err(syn::Error::new_spanned(
+            param, 
+            "Module struct generic parameter must be a type parameter, not lifetime or const."
+        )),
+    };
+
+    let has_float_dtype = type_param.bounds.iter().any(|bound| {
+        if let syn::TypeParamBound::Trait(trait_bound) = bound {
+            if let Some(segment) = trait_bound.path.segments.last() {
+                return segment.ident == "FloatDType";
+            }
+        }
+        false
+    });
+
+    if !has_float_dtype {
+        return Err(syn::Error::new_spanned(
+            type_param, 
+            format!("The generic parameter '{}' must be bound by FloatDType (e.g., {}: FloatDType).", type_param.ident, type_param.ident)
+        ));
+    }
+
+    Ok(Some(&type_param.ident))
 }
