@@ -1,10 +1,10 @@
 use lumen_core::{FloatDType, Tensor, D};
 use lumen_macros::Module;
-use crate::{init::Init, ModuleInit, NnCtxError, NnResult};
+use crate::{init::Init, ModuleInit, NnCtxError, NnResult, Parameter};
 
 #[derive(Module)]
 pub struct RMSNorm<T: FloatDType> {
-    pub weight: Tensor<T>,
+    pub weight: Parameter<T>,
     #[module(skip)]
     pub variance_epsilon: T,
 }
@@ -23,7 +23,10 @@ impl<T: FloatDType> ModuleInit<T> for RMSNorm<T> {
         let init = init.unwrap_or(Init::ones());
         let weight = init.init((config.normalized_shape,))?;
         let variance_epsilon = T::from_f64(config.norm_eps);
-        Ok(Self { weight, variance_epsilon })
+        Ok(Self { 
+            weight: Parameter::new(weight), 
+            variance_epsilon 
+        })
     }
 }
 
@@ -38,7 +41,7 @@ impl<T: FloatDType> RMSNorm<T> {
         // (xxx, normalized_shape) => (xxx, normalized_shape) 
         let hidden_states = hidden_states.broadcast_mul(&(variance + self.variance_epsilon))?.sqr();
         // (xxx, normalized_shape) => (xxx, normalized_shape)
-        let out = self.weight.broadcast_mul(&hidden_states)?;
+        let out = self.weight.tensor().broadcast_mul(&hidden_states)?;
         Ok(out)
     }
 }

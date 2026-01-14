@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use lumen_core::{FloatDType, IntTensor, Tensor, D};
 use lumen_macros::Module;
-use lumen_nn::{init::Init, Embedding, Linear, ModuleInit};
+use lumen_nn::{init::Init, Embedding, Linear, ModuleInit, Parameter};
 use thiserrorctx::Context;
 use super::{Gpt2Config, Gpt2CtxError, Gpt2Error, Gpt2Result};
 
@@ -294,8 +294,8 @@ impl<T: FloatDType> Gpt2Attention<T> {
 
 #[derive(Module)]
 pub struct Gpt2LayerNorm<T: FloatDType> {
-    pub weight: Tensor<T>, // Gamma
-    pub bias: Tensor<T>,   // Beta
+    pub weight: Parameter<T>, // Gamma
+    pub bias: Parameter<T>,   // Beta
     #[module(skip)]
     pub eps: T,
 }
@@ -310,13 +310,13 @@ impl<T: FloatDType> ModuleInit<T> for Gpt2LayerNorm<T> {
 
         let weight = init
             .unwrap_or(Init::ones())
-            .init((size, ))
+            .init_param((size, ))
             .map_err(Gpt2Error::Core)
             .context("init weight")?;
 
         let bias = init
             .unwrap_or(Init::zeros())
-            .init((size, ))
+            .init_param((size, ))
             .map_err(Gpt2Error::Core)
             .context("init bias")?;
 

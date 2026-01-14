@@ -1,12 +1,12 @@
 use lumen_core::{FloatDType, IntTensor, Tensor};
 use lumen_macros::Module;
 use crate::{init::Init, NnCtxError, NnResult};
-use crate::ModuleInit;
+use crate::{ModuleInit, Parameter};
 
 /// A simple lookup table that stores embeddings of a fixed dictionary and size.
 #[derive(Module)]
 pub struct Embedding<T: FloatDType> {
-    pub embeddings: Tensor<T>,
+    pub embeddings: Parameter<T>,
 
     #[module(skip)]
     pub num_embeddings: usize,
@@ -26,7 +26,7 @@ impl<T: FloatDType> ModuleInit<T> for Embedding<T> {
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let init = init.unwrap_or(Init::standard_normal());
-        let embeddings = init.init((config.num_embeddings, config.embedding_size))?;
+        let embeddings = init.init_param((config.num_embeddings, config.embedding_size))?;
         Ok(Self { embeddings, num_embeddings: config.num_embeddings, embedding_size: config.embedding_size })
     }
 }

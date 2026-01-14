@@ -3,12 +3,16 @@ mod activation;
 mod rnn;
 mod attention;
 mod norm;
+pub mod param;
+pub mod buffer;
 
 pub use common::*;
 pub use activation::*;
 pub use rnn::*;
 pub use attention::*;
 pub use norm::*;
+pub use param::*;
+pub use buffer::*;
 
 use std::fmt;
 use std::marker::PhantomData;
@@ -17,19 +21,127 @@ use std::any::type_name;
 use lumen_core::{DynTensor, FloatDType, NumDType, Tensor};
 use thiserrorctx::Context;
 use crate::{init::Init, NnCtxError, NnError, NnResult};
+use paste::paste;
+
+macro_rules! impl_tensor_count {
+    ( $($kind:ident),* ) => {$(paste! {
+        fn  [< $kind _count >] (&self) -> usize {
+            let mut visitor = TensorCountVisitor::new();
+            self. [< visit_ $kind  >](&mut visitor).unwrap();
+            visitor.count
+        }
+    })*};
+}
+
+macro_rules! impl_tensor_element_count {
+    ( $($kind:ident),* ) => {$(paste! {
+        fn  [< $kind _element_count >] (&self) -> usize {
+            let mut visitor = TensorElementCountVisitor::new();
+            self. [< visit_ $kind  >](&mut visitor).unwrap();
+            visitor.count
+        }
+    })*};
+}
+
+macro_rules! impl_named_tensors {
+    ( $($kind:ident),* ) => {$(paste! {
+        fn  [< named_ $kind s >] (&self) -> HashMap<String, Tensor<T>> {
+            let mut visitor = NamedTensorsVisitor::new();
+            self. [< visit_ $kind  >](&mut visitor).unwrap();
+            visitor.map
+        }
+    })*};
+}
+
+macro_rules! impl_named_dyn_tensors {
+    ( $($kind:ident),* ) => {$(paste! {
+        fn  [< named_dyn_ $kind s >] (&self) -> HashMap<String, DynTensor> {
+            let mut visitor = NamedDynTensorsCountVisitor::new();
+            self. [< visit_ $kind  >](&mut visitor).unwrap();
+            visitor.map
+        }
+    })*};
+}
+
+macro_rules! impl_tensors {
+    ( $($kind:ident),* ) => {$(paste! {
+        fn  [< $kind s >] (&self) -> Vec<Tensor<T>> {
+            let mut visitor = TensorsVisitor::new();
+            self. [< visit_ $kind  >](&mut visitor).unwrap();
+            visitor.params
+        }
+    })*};
+}
+
+macro_rules! impl_dyn_tensors {
+    ( $($kind:ident),* ) => {$(paste! {
+        fn  [< dyn_ $kind s >] (&self) -> Vec<DynTensor> {
+            let mut visitor = DynTensorsVisitor::new();
+            self. [< visit_ $kind  >](&mut visitor).unwrap();
+            visitor.params
+        }
+    })*};
+}
+
+macro_rules! impl_reinit_tensors {
+    ( $($kind:ident),* ) => {$(paste! {
+        fn  [< reinit_ $kind s >] (&mut self, init: Init<T>) -> NnResult<()> {
+            let mut visitor = InitTensorVisitor::new(init);
+            self. [< visit_ $kind _mut >](&mut visitor)
+        }
+    })*};
+}
+
+macro_rules! impl_apply_tensors {
+    ( $($kind:ident),* ) => {$(paste! {
+        fn  [< apply_ $kind >] (&self, f: impl Fn(&Tensor<T>)) {
+            let mut visitor = ParamApplyVisitor::new(f);
+            self. [< visit_ $kind  >](&mut visitor).unwrap();
+        }
+
+        fn  [< apply_ $kind _mut >] (&mut self, f: impl Fn(&mut Tensor<T>)) {
+            let mut visitor = ParamApplyVisitor::new(f);
+            self. [< visit_ $kind _mut >](&mut visitor).unwrap();
+        }
+    })*};
+}
 
 // ============================================================================================ // 
 //                        Module and ModuleInit trait
 // ============================================================================================ // 
 
 pub trait Module<T: FloatDType> : Sized {
+    // ================================================================= // 
+    //                           Visitor
+    // ================================================================= // 
+
     #[allow(unused_variables)]
-    fn visit_param<Visitor: ParamVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+    fn visit_param<Visitor: TensorVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         Ok(())
     }
 
     #[allow(unused_variables)]
-    fn visit_param_mut<Visitor: ParamVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+    fn visit_param_mut<Visitor: TensorVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn visit_buffer<Visitor: TensorVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn visit_buffer_mut<Visitor: TensorVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn visit_state<Visitor: TensorVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn visit_state_mut<Visitor: TensorVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         Ok(())
     }
 
@@ -42,6 +154,10 @@ pub trait Module<T: FloatDType> : Sized {
     fn visit_module_mut<Visitor: ModuleVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
         Ok(())
     }
+
+    // ================================================================= // 
+    //                     Module Visitor Method
+    // ================================================================= // 
 
     fn module_name() -> &'static str {
         let full_name = type_name::<Self>();
@@ -61,21 +177,6 @@ pub trait Module<T: FloatDType> : Sized {
         self.train(false);
     }
 
-    fn apply_param(&self, f: impl Fn(&Tensor<T>)) {
-        let mut visitor = ParamApplyVisitor::new(f);
-        self.visit_param(&mut visitor).unwrap();
-    }
-
-    fn apply_param_mut(&mut self, f: impl Fn(&mut Tensor<T>)) {
-        let mut visitor = ParamApplyVisitor::new(f);
-        self.visit_param_mut(&mut visitor).unwrap();
-    }
-    
-    fn requires_grad(&self, mode: bool) {
-        let mut visitor = RequiresGradVisitor::new(mode);
-        self.visit_param(&mut visitor).unwrap();
-    }
-
     fn submodule_count(&self) -> usize {
         let mut visitor = SubModuleCountVisitor::new();
         self.visit_module(&mut visitor).unwrap();
@@ -88,41 +189,27 @@ pub trait Module<T: FloatDType> : Sized {
         visitor.names
     }
 
-    fn named_params(&self) -> HashMap<String, Tensor<T>> {
-        let mut visitor = NamedParamsCountVisitor::new();
+    // ================================================================= // 
+    //                     Tensor Visitor Method
+    // ================================================================= // 
+
+    fn requires_grad(&self, mode: bool) {
+        let mut visitor = RequiresGradVisitor::new(mode);
         self.visit_param(&mut visitor).unwrap();
-        visitor.map
     }
 
-    fn named_dyn_params(&self) -> HashMap<String, DynTensor> {
-        let mut visitor = NamedDynParamsCountVisitor::new();
-        self.visit_param(&mut visitor).unwrap();
-        visitor.map
-    }
+    impl_tensor_count!(param, buffer, state);
+    impl_tensor_element_count!(param, buffer, state);
 
-    fn params(&self) -> Vec<Tensor<T>> {
-        let mut visitor = ParamsVisitor::new();
-        self.visit_param(&mut visitor).unwrap();
-        visitor.params
-    }
+    impl_named_tensors!(param, buffer, state);
+    impl_named_dyn_tensors!(param, buffer, state);
 
-    fn param_count(&self) -> usize {
-        let mut visitor = ParamCountVisitor::new();
-        self.visit_param(&mut visitor).unwrap();
-        visitor.count
-    }
+    impl_tensors!(param, buffer, state);
+    impl_dyn_tensors!(param, buffer, state);
 
-    fn element_count(&self) -> usize {
-        let mut visitor = ElementCountVisitor::new();
-        self.visit_param(&mut visitor).unwrap();
-        visitor.count
-    }
+    impl_apply_tensors!(param, buffer, state);
 
-    fn dyn_params(&self) -> Vec<DynTensor> {
-        let mut visitor = DynParamsVisitor::new();
-        self.visit_param(&mut visitor).unwrap();
-        visitor.params
-    }
+    impl_reinit_tensors!(param, buffer, state);
 
     fn copy(&self) -> Self  
     where 
@@ -130,36 +217,34 @@ pub trait Module<T: FloatDType> : Sized {
     {
         let mut new_module = self.clone();
         let mut visitor = CopyVisitor;
-        new_module.visit_param_mut(&mut visitor).unwrap();
+        new_module.visit_state_mut(&mut visitor).unwrap();
         new_module
     }
 
-    fn reinit(&mut self, init: &Init<T>) -> NnResult<()> {
-        let mut visitor = InitVisitor::new(init);
-        self.visit_param_mut(&mut visitor)
-    }
-
-    fn load_named_params(&mut self, params: &HashMap<String, DynTensor>, strict: bool) -> NnResult<()> {   
-        let mut visitor = LoadParamsVisitor::new(params, strict);
-        self.visit_param_mut(&mut visitor)
+    fn load_named_states(&mut self, params: &HashMap<String, DynTensor>, strict: bool) -> NnResult<()> {   
+        let mut visitor = LoadTensorsVisitor::new(params, strict);
+        self.visit_state_mut(&mut visitor)
     }
 
     fn save_safetensors<P: AsRef<Path>>(&self, path: P) -> NnResult<()> {
-        let named_params = self.named_dyn_params();
-        lumen_io::safetensors::save_file(&named_params, None, path)
+        let named_states = self.named_dyn_states();
+        lumen_io::safetensors::save_file(&named_states, None, path)
             .map_err(NnError::SafeTensors)
             .context("save model to safetensors")?;
         Ok(())
     }
 
     fn load_safetensors<P: AsRef<Path>>(&mut self, path: P, strict: bool) -> NnResult<()> {
-        let params = lumen_io::safetensors::load_file(path)
+        let states = lumen_io::safetensors::load_file(path)
             .map_err(NnError::SafeTensors)
             .context("load model param")?;
-        self.load_named_params(&params.tensors, strict)
+        self.load_named_states(&states.tensors, strict)
     }
 
-    // override method
+    // ================================================================= // 
+    //                     Override method
+    // ================================================================= // 
+
     fn extra_repr(&self) -> String {
         String::new()
     }
@@ -242,7 +327,7 @@ pub trait ModuleVisitorMut<T: FloatDType> {
     }
 }
 
-pub trait ParamVisitor<T: FloatDType> {
+pub trait TensorVisitor<T: FloatDType> {
     type Error;
 
     #[allow(unused_variables)]
@@ -257,7 +342,7 @@ pub trait ParamVisitor<T: FloatDType> {
     fn exit_submodule<M: Module<T>>(&mut self, name: &str, module: &M) {}
 }
 
-pub trait ParamVisitorMut<T: FloatDType> {
+pub trait TensorVisitorMut<T: FloatDType> {
     type Error;
 
     #[allow(unused_variables)]
@@ -272,46 +357,30 @@ pub trait ParamVisitorMut<T: FloatDType> {
     fn exit_submodule<M: Module<T>>(&mut self, name: &str, module: &mut M) {}
 }
 
-//==================================================//
-//         Util Modules
-//==================================================//
+// ============================================================================================ // 
+//                        Module impl
+// ============================================================================================ // 
 
-impl<T: FloatDType> Module<T> for Tensor<T> {
-    #[inline]
-    fn visit_param<Visitor: ParamVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-        visitor.visit_param(self)
-    }
-
-    #[inline]
-    fn visit_param_mut<Visitor: ParamVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-        visitor.visit_param_mut(self)
-    }
-
-    #[inline]
-    fn visit_module<Visitor: ModuleVisitor<T>>(&self, _visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-        Ok(())
-    }
-
-    #[inline]
-    fn visit_module_mut<Visitor: ModuleVisitorMut<T>>(&mut self, _visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-        Ok(())
-    }
+macro_rules! impl_tensor_visit_for_option {
+    ( $($kind:ident),* ) => {$(paste!{
+        fn  [< visit_ $kind >]<Visitor: TensorVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+            if let Some(module) = self {
+                module. [< visit_ $kind >](visitor)?
+            }
+            Ok(())
+        }
+    
+        fn [< visit_ $kind _mut >] <Visitor: TensorVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+            if let Some(module) = self {
+                module. [< visit_ $kind _mut >](visitor)?
+            }
+            Ok(())
+        }
+    })*};
 }
 
 impl<T: FloatDType, M: Module<T>> Module<T> for Option<M> {
-    fn visit_param<Visitor: ParamVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-        if let Some(module) = self {
-            module.visit_param(visitor)?
-        }
-        Ok(())
-    }
-
-    fn visit_param_mut<Visitor: ParamVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-        if let Some(module) = self {
-            module.visit_param_mut(visitor)?
-        }
-        Ok(())
-    }
+    impl_tensor_visit_for_option!(param, state, buffer);
 
     #[inline]
     fn visit_module<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
@@ -330,24 +399,30 @@ impl<T: FloatDType, M: Module<T>> Module<T> for Option<M> {
     }
 }
 
-impl<T: FloatDType, M: Module<T>> Module<T> for Vec<M> {
-    fn visit_param<Visitor: ParamVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-        for (i, module) in self.iter().enumerate() {
-            visitor.enter_submodule(&i.to_string(), module);
-            module.visit_param(visitor)?;
-            visitor.exit_submodule(&i.to_string(), module);
+macro_rules! impl_tensor_visit_for_vec {
+    ( $($kind:ident),* ) => {$(paste!{
+        fn  [< visit_ $kind >]<Visitor: TensorVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+            for (i, module) in self.iter().enumerate() {
+                visitor.enter_submodule(&i.to_string(), module);
+                module.[< visit_ $kind >](visitor)?;
+                visitor.exit_submodule(&i.to_string(), module);
+            }
+            Ok(())
         }
-        Ok(())
-    }
+    
+        fn [< visit_ $kind _mut >] <Visitor: TensorVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+            for (i, module) in self.iter_mut().enumerate() {
+                visitor.enter_submodule(&i.to_string(), module);
+                module.[< visit_ $kind _mut >](visitor)?;
+                visitor.exit_submodule(&i.to_string(), module);
+            }
+            Ok(())
+        }
+    })*};
+}
 
-    fn visit_param_mut<Visitor: ParamVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-        for (i, module) in self.iter_mut().enumerate() {
-            visitor.enter_submodule(&i.to_string(), module);
-            module.visit_param_mut(visitor)?;
-            visitor.exit_submodule(&i.to_string(), module);
-        }
-        Ok(())
-    }
+impl<T: FloatDType, M: Module<T>> Module<T> for Vec<M> {
+    impl_tensor_visit_for_vec!(param, state, buffer);
 
     #[inline]
     fn visit_module<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
@@ -375,17 +450,17 @@ impl<T: FloatDType, M: Module<T>> Module<T> for Vec<M> {
 //===========================================================================//
 
 /// ParamCount
-struct ParamCountVisitor {
+struct TensorCountVisitor {
     count: usize,
 }
 
-impl ParamCountVisitor {
+impl TensorCountVisitor {
     fn new() -> Self {
         Self { count: 0 }
     }
 }
 
-impl<T: FloatDType> ParamVisitor<T> for ParamCountVisitor {
+impl<T: FloatDType> TensorVisitor<T> for TensorCountVisitor {
     type Error = Infallible;
     fn visit_param(&mut self, _param: &Tensor<T>) -> Result<(), Self::Error> {
         self.count += 1;
@@ -393,18 +468,18 @@ impl<T: FloatDType> ParamVisitor<T> for ParamCountVisitor {
     }
 }
 
-// ElementCountVisitor
-struct ElementCountVisitor {
+// TensorElementCountVisitor
+struct TensorElementCountVisitor {
     count: usize,
 }
 
-impl ElementCountVisitor {
+impl TensorElementCountVisitor {
     fn new() -> Self {
         Self { count: 0 }
     }
 }
 
-impl<T: FloatDType> ParamVisitor<T> for ElementCountVisitor {
+impl<T: FloatDType> TensorVisitor<T> for TensorElementCountVisitor {
     type Error = Infallible;
     fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
         self.count += param.element_count();
@@ -413,18 +488,18 @@ impl<T: FloatDType> ParamVisitor<T> for ElementCountVisitor {
 }
 
 /// NamedParams
-struct NamedParamsCountVisitor<T: FloatDType> {
+struct NamedTensorsVisitor<T: FloatDType> {
     map: HashMap<String, Tensor<T>>,
     path: Vec<String>,
 }
 
-impl<T: FloatDType> NamedParamsCountVisitor<T> {
+impl<T: FloatDType> NamedTensorsVisitor<T> {
     fn new() -> Self {
         Self { map: HashMap::new(), path: vec![] }
     }
 }
 
-impl<T: FloatDType> ParamVisitor<T> for NamedParamsCountVisitor<T> {
+impl<T: FloatDType> TensorVisitor<T> for NamedTensorsVisitor<T> {
     type Error = Infallible;
 
     fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
@@ -442,18 +517,18 @@ impl<T: FloatDType> ParamVisitor<T> for NamedParamsCountVisitor<T> {
 }
 
 /// NamedParams
-struct NamedDynParamsCountVisitor {
+struct NamedDynTensorsCountVisitor {
     map: HashMap<String, DynTensor>,
     path: Vec<String>,
 }
 
-impl NamedDynParamsCountVisitor {
+impl NamedDynTensorsCountVisitor {
     fn new() -> Self {
         Self { map: HashMap::new(), path: vec![] }
     }
 }
 
-impl<T: FloatDType> ParamVisitor<T> for NamedDynParamsCountVisitor {
+impl<T: FloatDType> TensorVisitor<T> for NamedDynTensorsCountVisitor {
     type Error = Infallible;
 
     fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
@@ -470,18 +545,18 @@ impl<T: FloatDType> ParamVisitor<T> for NamedDynParamsCountVisitor {
     }
 }
 
-/// ParamsVisitor
-struct ParamsVisitor<T: NumDType> {
+/// TensorsVisitor
+struct TensorsVisitor<T: NumDType> {
     params: Vec<Tensor<T>>,
 }
 
-impl<T: NumDType> ParamsVisitor<T> {
+impl<T: NumDType> TensorsVisitor<T> {
     fn new() -> Self {
         Self { params: vec![] }
     }
 }
 
-impl<T: FloatDType> ParamVisitor<T> for ParamsVisitor<T> {
+impl<T: FloatDType> TensorVisitor<T> for TensorsVisitor<T> {
     type Error = Infallible;
 
     fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
@@ -490,18 +565,18 @@ impl<T: FloatDType> ParamVisitor<T> for ParamsVisitor<T> {
     }
 }
 
-/// ParamsVisitor
-struct DynParamsVisitor {
+/// DynTensorsVisitor
+struct DynTensorsVisitor {
     params: Vec<DynTensor>,
 }
 
-impl DynParamsVisitor {
+impl DynTensorsVisitor {
     fn new() -> Self {
         Self { params: vec![] }
     }
 }
 
-impl<T: FloatDType> ParamVisitor<T> for DynParamsVisitor {
+impl<T: FloatDType> TensorVisitor<T> for DynTensorsVisitor {
     type Error = Infallible;
 
     fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
@@ -510,18 +585,18 @@ impl<T: FloatDType> ParamVisitor<T> for DynParamsVisitor {
     }
 }
 
-/// InitVisitor
-struct InitVisitor<'a, T: FloatDType> {
-    init: &'a Init<T>,
+/// InitTensorVisitor
+struct InitTensorVisitor<T: FloatDType> {
+    init: Init<T>,
 }
 
-impl<'a, T: FloatDType> InitVisitor<'a, T> {
-    fn new(init: &'a Init<T>) -> Self {
+impl<T: FloatDType> InitTensorVisitor<T> {
+    fn new(init: Init<T>) -> Self {
         Self { init }
     }
 }
 
-impl<'a, T: FloatDType> ParamVisitorMut<T> for InitVisitor<'a, T> {
+impl<T: FloatDType> TensorVisitorMut<T> for InitTensorVisitor<T> {
     type Error = NnCtxError;
     fn visit_param_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
         let shape = param.shape();
@@ -534,7 +609,7 @@ impl<'a, T: FloatDType> ParamVisitorMut<T> for InitVisitor<'a, T> {
 /// Copy Visitor {
 struct CopyVisitor;
 
-impl<T: FloatDType> ParamVisitorMut<T> for CopyVisitor {
+impl<T: FloatDType> TensorVisitorMut<T> for CopyVisitor {
     type Error = Infallible;
 
     fn visit_param_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
@@ -543,14 +618,14 @@ impl<T: FloatDType> ParamVisitorMut<T> for CopyVisitor {
     }
 }
 
-/// LoadParamsVisitor
-struct LoadParamsVisitor<'a> {
+/// LoadTensorsVisitor
+struct LoadTensorsVisitor<'a> {
     params: &'a HashMap<String, DynTensor>,
     path: Vec<String>,
     strict: bool,
 }
 
-impl<'a> LoadParamsVisitor<'a> {
+impl<'a> LoadTensorsVisitor<'a> {
     fn new(params: &'a HashMap<String, DynTensor>, strict: bool,) -> Self {
         Self {
             params,
@@ -560,7 +635,7 @@ impl<'a> LoadParamsVisitor<'a> {
     }
 }
 
-impl<'a, T: FloatDType> ParamVisitorMut<T> for LoadParamsVisitor<'a> {
+impl<'a, T: FloatDType> TensorVisitorMut<T> for LoadTensorsVisitor<'a> {
     type Error = NnCtxError;
 
     fn enter_submodule<M: Module<T>>(&mut self, name: &str, _module: &mut M) {
@@ -747,7 +822,7 @@ struct RequiresGradVisitor {
     mode: bool,
 }
 
-impl<T: FloatDType> ParamVisitor<T> for RequiresGradVisitor {
+impl<T: FloatDType> TensorVisitor<T> for RequiresGradVisitor {
     type Error = Infallible;
 
     fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
@@ -761,7 +836,7 @@ pub struct ParamApplyVisitor<F> {
     f: F,
 }
 
-impl<T: FloatDType, F: Fn(&Tensor<T>)> ParamVisitor<T> for ParamApplyVisitor<F> {
+impl<T: FloatDType, F: Fn(&Tensor<T>)> TensorVisitor<T> for ParamApplyVisitor<F> {
     type Error = Infallible;
 
     fn visit_param(&mut self, param: &Tensor<T>) -> Result<(), Self::Error> {
@@ -770,7 +845,7 @@ impl<T: FloatDType, F: Fn(&Tensor<T>)> ParamVisitor<T> for ParamApplyVisitor<F> 
     }
 }
 
-impl<T: FloatDType, F: Fn(&mut Tensor<T>)> ParamVisitorMut<T> for ParamApplyVisitor<F> {
+impl<T: FloatDType, F: Fn(&mut Tensor<T>)> TensorVisitorMut<T> for ParamApplyVisitor<F> {
     type Error = Infallible;
 
     fn visit_param_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {

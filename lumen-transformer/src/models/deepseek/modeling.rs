@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use lumen_core::{FloatDType, IntTensor, Tensor, Var, D};
+use lumen_core::{FloatDType, IntTensor, Tensor, D};
 use lumen_macros::Module;
-use lumen_nn::{init::Init, Embedding, Linear, ModuleInit};
+use lumen_nn::{init::Init, Embedding, Linear, ModuleInit, Parameter};
 use thiserrorctx::Context;
 use super::{DeepSeekConfig, DeepSeekCtxError, DeepSeekError, DeepSeekResult};
 
@@ -474,7 +474,7 @@ impl<T: FloatDType> DeepSeekAttention<T> {
 
 #[derive(Module)]
 pub struct DeepSeekRMSNorm<T: FloatDType> {
-    pub weight: Tensor<T>,
+    pub weight: Parameter<T>,
     #[module(skip)]
     pub variance_epsilon: T,
 }
@@ -485,7 +485,7 @@ impl<T: FloatDType> ModuleInit<T> for DeepSeekRMSNorm<T> {
 
     fn init(config: &DeepSeekConfig, init: Option<Init<T>>) -> DeepSeekResult<Self> {
         let init = init.unwrap_or(Init::ones());
-        let weight = init.init((config.hidden_size,))?;
+        let weight = init.init_param((config.hidden_size,))?;
         let variance_epsilon = T::from_f64(config.rms_norm_eps);
         Ok(Self { weight, variance_epsilon })
     }
@@ -493,7 +493,7 @@ impl<T: FloatDType> ModuleInit<T> for DeepSeekRMSNorm<T> {
 
 impl<T: FloatDType> DeepSeekRMSNorm<T> {
     pub fn new(config: &DeepSeekConfig) -> DeepSeekResult<Self> {
-        let weight = Var::ones((config.hidden_size,))?;
+        let weight = Parameter::new(Tensor::ones((config.hidden_size,))?);
         let variance_epsilon = T::from_f64(config.rms_norm_eps);
         Ok(Self { weight, variance_epsilon })
     }

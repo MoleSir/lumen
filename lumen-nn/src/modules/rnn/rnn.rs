@@ -1,12 +1,12 @@
 use lumen_core::{FloatDType, IndexOp, Tensor};
 use lumen_macros::Module;
-use crate::{init::Init, Linear, ModuleInit, NnCtxError, NnResult};
+use crate::{init::Init, Linear, ModuleInit, NnCtxError, NnResult, Parameter};
 
 #[derive(Module)]
 pub struct Rnn<T: FloatDType> {
     pub input_proj: Linear<T>,
     pub hidden_proj: Linear<T>,
-    pub bias: Tensor<T>,
+    pub bias: Parameter<T>,
 
     #[module(skip)]
     pub input_size: usize,
@@ -34,7 +34,7 @@ impl<T: FloatDType> ModuleInit<T> for Rnn<T> {
 
         let input_proj = Linear::new(input_size, hidden_size, false, Some(init))?;
         let hidden_proj = Linear::new(hidden_size, hidden_size, false, Some(init))?;
-        let bias = init.init((1, hidden_size))?;
+        let bias = init.init_param((1, hidden_size))?;
 
         Ok(Rnn { 
             input_proj, 

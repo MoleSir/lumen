@@ -1,11 +1,11 @@
 use lumen_core::{FloatDType, Tensor, D};
 use lumen_macros::Module;
-use crate::{init::Init, ModuleInit, NnCtxError, NnResult};
+use crate::{init::Init, Parameter, ModuleInit, NnCtxError, NnResult};
 
 #[derive(Module)]
 pub struct LayerNorm<T: FloatDType> {
-    pub weight: Tensor<T>,
-    pub bias: Tensor<T>,
+    pub weight: Parameter<T>,
+    pub bias: Parameter<T>,
 
     #[module(skip)]
     pub normalized_shape: usize,
@@ -27,7 +27,12 @@ impl<T: FloatDType> ModuleInit<T> for LayerNorm<T> {
         let weight = init.unwrap_or(Init::ones()).init((config.normalized_shape,))?;
         let bias = init.unwrap_or(Init::zeros()).init((config.normalized_shape,))?;
         let variance_epsilon = T::from_f64(config.norm_eps);
-        Ok(Self { weight, bias, normalized_shape: config.normalized_shape, variance_epsilon })
+        Ok(Self { 
+            weight: Parameter::new(weight), 
+            bias: Parameter::new(bias), 
+            normalized_shape: config.normalized_shape, 
+            variance_epsilon 
+        })
     }
 }
 
@@ -44,8 +49,8 @@ impl<T: FloatDType> LayerNorm<T> {
         let x_normalized = x.broadcast_sub(&mean)?.broadcast_div(&(var + self.variance_epsilon))?;
 
         let res = x_normalized
-            .broadcast_mul(&self.weight)?
-            .broadcast_add(&self.bias)?;
+            .broadcast_mul(self.weight.tensor())?
+            .broadcast_add(self.bias.tensor())?;
 
         Ok(res)
     }

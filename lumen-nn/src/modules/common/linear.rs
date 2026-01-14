@@ -1,14 +1,14 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
 use crate::{init::Init, NnCtxError, NnResult};
-use crate::ModuleInit;
+use crate::{ModuleInit, Parameter};
 
 /// Applies a linear transformation to the incoming data: :math:`y = xA^T + b`
 #[derive(Module, Clone)]
 #[module(display = "display")]
 pub struct Linear<T: FloatDType> {
-    pub weight: Tensor<T>,  // (out_features, in_features)
-    pub bias: Option<Tensor<T>>, // (out_features)
+    pub weight: Parameter<T>,  // (out_features, in_features)
+    pub bias: Option<Parameter<T>>, // (out_features)
 
     #[module(skip)]
     pub in_features: usize,
@@ -30,7 +30,7 @@ impl<T: FloatDType> Linear<T> {
     }
     
     pub fn forward(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
-        crate::functional::linear(input, &self.weight, self.bias.as_ref())
+        crate::functional::linear(input, &self.weight, self.bias.as_ref().map(|f| f.tensor()))
     }
 
     fn display(&self) -> String {
@@ -43,16 +43,20 @@ impl<T: FloatDType> ModuleInit<T> for Linear<T> {
     type Error = NnCtxError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
-        let weight = init
-            .unwrap_or_else(|| {
-                let gain = T::one() / T::from_f64(3.0).sqrt();
-                Init::kaiming_uniform(gain, false)
-            })
-            .init_with((config.out_features, config.in_features), config.in_features, config.out_features)?;
+        let init = init.unwrap_or_else(|| {
+            let gain = T::one() / T::from_f64(3.0).sqrt();
+            Init::kaiming_uniform(gain, false)
+        });
+
+        let weight = init.init_with_param(
+            (config.out_features, config.in_features), 
+            config.in_features, 
+            config.out_features
+        )?;
 
         let bias = if config.bias {
             let zero_init = Init::zeros();
-            Some(zero_init.init((config.out_features,))?)
+            Some(zero_init.init_param((config.out_features,))?)
         } else {
             None
         };
@@ -91,7 +95,7 @@ mod test {
     fn test_mlp() {
         let net = Net::<f32>::new().unwrap();
         println!("{}", net);
-        println!("{}", net.element_count());
+        println!("{}", net.param_element_count());
         println!("{}", net.submodule_count());
         println!("{:?}", net.submodule_names());
     }
@@ -99,7 +103,7 @@ mod test {
     #[test]
     fn test_module() {
         let l = Linear::<f32>::new(100, 20, false, None).unwrap();
-        assert_eq!(l.element_count(), 2000);
+        assert_eq!(l.param_element_count(), 2000);
         let params = l.named_params();
         for (name, _) in params {
             println!("{}", name);
@@ -108,7 +112,7 @@ mod test {
         let l = Linear::<f32>::new(100, 20, true, None).unwrap();
         let ll = l.copy();
 
-        assert_eq!(ll.element_count(), 2020);
+        assert_eq!(ll.param_element_count(), 2020);
         let params = l.named_params();
         for (name, _) in params {
             println!("{}", name);

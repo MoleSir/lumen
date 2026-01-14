@@ -8,5 +8,4 @@ mod error;
 pub use modules::*;
 pub use loss::*;
 pub use error::*;
-
 pub use lumen_macros::Module;
