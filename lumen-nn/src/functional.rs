@@ -96,7 +96,6 @@ pub fn dropout<T: FloatDType>(xs: &Tensor<T>, drop_p: T) -> lumen_core::Result<T
 
     let rand = Tensor::<T>::rand(T::zero(), T::one(), xs.shape())?;
     let scale = T::one() / (T::one() - drop_p);
-    let drop_p = Tensor::new(scale)?.broadcast_as(xs.shape())?;
     let mask = rand.ge(drop_p)?.to_dtype() * scale;
     Ok(xs * mask)
 }

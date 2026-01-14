@@ -33,6 +33,8 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
 
     // module attr
     let mut custom_repr_fn_name: Option<syn::Ident> = None;
+    let mut custom_set_train_name: Option<syn::Ident> = None;
+    
     for attr in &ast.attrs {
         if attr.path().is_ident("module") {
             let _ = attr.parse_nested_meta(|meta| {
@@ -40,10 +42,16 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
                 if meta.path.is_ident("display") {
                     let value = meta.value()?; 
                     let s: syn::LitStr = value.parse()?; 
-                    
                     custom_repr_fn_name = Some(syn::Ident::new(&s.value(), s.span()));
                     return Ok(());
-                }                
+                }          
+                if meta.path.is_ident("train") {
+                    let value = meta.value()?; 
+                    let s: syn::LitStr = value.parse()?; 
+                    custom_set_train_name = Some(syn::Ident::new(&s.value(), s.span()));
+                    return Ok(());
+                }          
+                      
                 Ok(())
             });
         }
@@ -71,10 +79,22 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
         },
     };
 
+    // set train
+    let set_train_fn = if let Some(fn_name) = custom_set_train_name {
+        quote! {
+            fn set_train(&mut self, mode: bool) {
+                self.#fn_name(mode)
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     // generate visit filed
-    let mut body = quote! {};
-    let mut body_mut = quote! {};
-    let mut submodule_body = quote! {};
+    let mut param_body = quote! {};
+    let mut param_mut_body = quote! {};
+    let mut module_body = quote! {};
+    let mut module_mut_body = quote! {};
     match &ast.data {
         syn::Data::Struct(struct_data) => {
             for field in struct_data.fields.iter() {
@@ -105,14 +125,14 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
                     #lumen::modules::Module::visit_param(&self.#name, visitor)?;
                     visitor.exit_submodule(#name_str, &self.#name);
                 };
-                body.extend(field_code);
+                param_body.extend(field_code);
 
                 let field_code = quote! {
                     visitor.enter_submodule(#name_str, &mut self.#name);
                     #lumen::modules::Module::visit_param_mut(&mut self.#name, visitor)?;
                     visitor.exit_submodule(#name_str, &mut self.#name);
                 };
-                body_mut.extend(field_code);
+                param_mut_body.extend(field_code);
                 
                 let field_code = quote! {
                     // handle submodule 
@@ -122,7 +142,17 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
                     // exit submodule 
                     visitor.exit_submodule(#name_str, &self.#name)?;
                 };
-                submodule_body.extend(field_code);
+                module_body.extend(field_code);
+                
+                let field_code = quote! {
+                    // handle submodule 
+                    visitor.enter_submodule(#name_str, &mut self.#name)?;
+                    // submodule recv
+                    #lumen::modules::Module::visit_module_mut(&mut self.#name, visitor)?;
+                    // exit submodule 
+                    visitor.exit_submodule(#name_str, &mut self.#name)?;
+                };
+                module_mut_body.extend(field_code);
             }
         }
         syn::Data::Enum(_) => panic!("Only struct can be derived"),
@@ -134,23 +164,31 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
         impl #impl_generics_tokens #lumen::modules::Module<#module_generic_type> for #name #ty_generics #where_clause {
             
             fn visit_param<Visitor: #lumen::modules::ParamVisitor<#module_generic_type>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-                #body
+                #param_body
                 Ok(())
             }
 
             fn visit_param_mut<Visitor: #lumen::modules::ParamVisitorMut<#module_generic_type>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
-                #body_mut
+                #param_mut_body
                 Ok(())
             }
 
             fn visit_module<Visitor: #lumen::modules::ModuleVisitor<#module_generic_type>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
                 visitor.visit_module(self)?;
-                #submodule_body
+                #module_body
                 visitor.visit_module_end(self)?;
                 Ok(())
             }
 
+            fn visit_module_mut<Visitor: #lumen::modules::ModuleVisitorMut<#module_generic_type>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+                visitor.visit_module_mut(self)?;
+                #module_mut_body
+                visitor.visit_module_mut_end(self)?;
+                Ok(())
+            }
+
             #extra_repr_fn
+            #set_train_fn
         }
 
         impl #impl_generics std::fmt::Display for #name #ty_generics #where_clause {

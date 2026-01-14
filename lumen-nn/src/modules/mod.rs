@@ -19,6 +19,10 @@ use lumen_core::{DynTensor, FloatDType, NumDType, Tensor};
 use thiserrorctx::Context;
 use crate::{init::Init, NnCtxError, NnError, NnResult};
 
+// ============================================================================================ // 
+//                        Module and ModuleInit trait
+// ============================================================================================ // 
+
 pub trait Module<T: FloatDType> : Sized {
     #[allow(unused_variables)]
     fn visit_param<Visitor: ParamVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
@@ -35,17 +39,27 @@ pub trait Module<T: FloatDType> : Sized {
         Ok(())
     }
 
+    #[allow(unused_variables)]
+    fn visit_module_mut<Visitor: ModuleVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+        Ok(())
+    }
+
     fn module_name() -> &'static str {
         let full_name = type_name::<Self>();
         full_name.split("::").last().unwrap_or(full_name)
     }
 
-    fn extra_repr(&self) -> String {
-        String::new()
-    }
-
     fn display(&self) -> ModuleDisplayer<'_, Self, T> {
         ModuleDisplayer { module: self, indent: 0, _marker: std::marker::PhantomData }
+    }
+
+    fn train(&mut self, mode: bool) {
+        let mut visitor = TrainModeVisitor::new(mode);
+        self.visit_module_mut(&mut visitor).unwrap(); 
+    }
+    
+    fn eval(&mut self) {
+        self.train(false);
     }
 
     fn param_count(&self) -> usize {
@@ -124,6 +138,15 @@ pub trait Module<T: FloatDType> : Sized {
             .context("load model param")?;
         self.load_named_params(&params.tensors, strict)
     }
+
+    // override method
+    fn extra_repr(&self) -> String {
+        String::new()
+    }
+
+    #[allow(unused_variables)]
+    fn set_train(&mut self, mode: bool) {
+    }
 }
 
 pub trait ModuleInit<T: FloatDType> : Module<T> {
@@ -147,6 +170,10 @@ pub trait ModuleInit<T: FloatDType> : Module<T> {
     }
 }
 
+// ============================================================================================ // 
+//                        Visitor  traits
+// ============================================================================================ // 
+
 pub trait ModuleVisitor<T: FloatDType> {
     type Error;
 
@@ -167,6 +194,30 @@ pub trait ModuleVisitor<T: FloatDType> {
 
     #[allow(unused_variables)]
     fn exit_submodule(&mut self, name: &str, submodule: &impl Module<T>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+pub trait ModuleVisitorMut<T: FloatDType> {
+    type Error;
+
+    #[allow(unused_variables)]
+    fn visit_module_mut<M: Module<T>>(&mut self, module: &mut M) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn visit_module_mut_end(&mut self, module: &impl Module<T>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn enter_submodule(&mut self, name: &str, submodule: &mut impl Module<T>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    fn exit_submodule(&mut self, name: &str, submodule: &mut impl Module<T>) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -609,6 +660,26 @@ impl<T: FloatDType> ModuleVisitor<T> for SubModuleNamesVisitor {
 
     fn exit_submodule(&mut self, _name: &str, _submodule: &impl Module<T>) -> Result<(), Self::Error> {
         self.path.pop();
+        Ok(())
+    }
+}
+
+// TrainModeVisitor
+struct TrainModeVisitor {
+    mode: bool,
+}
+
+impl TrainModeVisitor {
+    fn new(mode: bool) -> Self {
+        Self { mode }
+    }
+}
+
+impl<T: FloatDType> ModuleVisitorMut<T> for TrainModeVisitor {
+    type Error = Infallible;
+    
+    fn visit_module_mut<M: Module<T>>(&mut self, module: &mut M) -> Result<(), Self::Error> {
+        module.set_train(self.mode);
         Ok(())
     }
 }
