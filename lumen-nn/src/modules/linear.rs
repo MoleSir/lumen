@@ -91,7 +91,7 @@ mod test {
     fn test_mlp() {
         let net = Net::<f32>::new().unwrap();
         println!("{}", net);
-        println!("{}", net.param_count());
+        println!("{}", net.element_count());
         println!("{}", net.submodule_count());
         println!("{:?}", net.submodule_names());
     }
@@ -99,8 +99,7 @@ mod test {
     #[test]
     fn test_module() {
         let l = Linear::<f32>::new(100, 20, false, None).unwrap();
-        println!("{}", l.param_count());
-        assert_eq!(l.param_count(), 2000);
+        assert_eq!(l.element_count(), 2000);
         let params = l.named_params();
         for (name, _) in params {
             println!("{}", name);
@@ -109,8 +108,7 @@ mod test {
         let l = Linear::<f32>::new(100, 20, true, None).unwrap();
         let ll = l.copy();
 
-        println!("{}", ll.param_count());
-        assert_eq!(ll.param_count(), 2020);
+        assert_eq!(ll.element_count(), 2020);
         let params = l.named_params();
         for (name, _) in params {
             println!("{}", name);
