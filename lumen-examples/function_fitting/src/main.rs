@@ -25,7 +25,7 @@ impl<T: FloatDType> FunctionModel<T> {
         })
     }
 
-    pub fn forward(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    pub fn forward(&self, input: &Tensor<T>) -> anyhow::Result<Tensor<T>> {
         // input: (batch_size, seq_len, 1)
         let (rnn_output, _state) = self.rnn.forward(input, None)?;
         let out = self.fc1.forward(&rnn_output)?;

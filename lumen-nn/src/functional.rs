@@ -210,7 +210,7 @@ pub fn leaky_relu<T: FloatDType>(xs: &Tensor<T>, negative_slope: T) -> NnResult<
 /// ## Arguments
 ///
 /// * `input` - Log-probabilities of shape `(batch, num_classes)`.
-/// * `target` - Class indices of shape `(batch)` or `(batch, 1)`.
+/// * `target` - Class indices of shape `(batch, 1)`.
 ///
 /// ## Returns
 ///

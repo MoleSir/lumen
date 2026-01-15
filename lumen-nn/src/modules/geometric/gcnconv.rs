@@ -1,4 +1,4 @@
-use lumen_core::{DTypeConvert, FloatDType, IndexOp, IntDType, IntTensor, Tensor};
+use lumen_core::{FloatDType, IndexOp, IntDType, IntTensor, Tensor};
 use lumen_macros::Module;
 use thiserrorctx::Context;
 use crate::{init::Init, Linear, ModuleInit, NnCtxError, NnResult};
@@ -45,12 +45,7 @@ impl<T: FloatDType> GCNConv<T> {
     /// 
     /// * `x` - (N, in_features) nodes feature
     /// * `edge_index` - (2, edge_size) 
-    pub fn forward(&self, x: &Tensor<T>, edge_index: impl Into<IntTensor>) -> NnResult<Tensor<T>> 
-    where 
-        u8: DTypeConvert<T>,
-        u32: DTypeConvert<T>,
-        i32: DTypeConvert<T>,
-    {
+    pub fn forward(&self, x: &Tensor<T>, edge_index: impl Into<IntTensor>) -> NnResult<Tensor<T>> {
         let edge_index = edge_index.into();
         match edge_index {
             IntTensor::U8(edge_index) => self.forward_impl(x, edge_index),
@@ -59,10 +54,7 @@ impl<T: FloatDType> GCNConv<T> {
         }
     }
 
-    fn forward_impl<I: IntDType>(&self, x: &Tensor<T>, edge_index: Tensor<I>) -> NnResult<Tensor<T>> 
-    where 
-        I: DTypeConvert<T>
-    {
+    fn forward_impl<I: IntDType>(&self, x: &Tensor<T>, edge_index: Tensor<I>) -> NnResult<Tensor<T>> {
         let (n, _in_features) = x.dims2()?;
 
         // 1. Self-loop

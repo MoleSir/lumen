@@ -1,7 +1,7 @@
 [workspace]
 members = [ 
     "function_fitting", 
-    "iris",
+    "iris", "karate_club",
     "logic_gate", 
     "lyrics_writing", 
     "mnist",
