@@ -1,6 +1,7 @@
-use lumen_core::{FloatDType, Tensor, D};
+use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
 use crate::{init::Init, Parameter, ModuleInit, NnCtxError, NnResult};
+use crate::functional as F;
 
 #[derive(Module)]
 pub struct LayerNorm<T: FloatDType> {
@@ -46,21 +47,9 @@ impl<T: FloatDType> LayerNorm<T> {
     /// ## Argument
     /// 
     /// * `input`: (xxx, normalized_shape)
+    #[inline]
     pub fn forward(&self, input: &Tensor<T>) -> NnResult<Tensor<T>> {
-        // (xxx, normalized_shape) => (xxx, 1)
-        let mean = input.mean_keepdim(D::Minus1)?;
-        let var = input.var_keepdim(D::Minus1)?;
-
-        let std = (var + self.variance_epsilon).sqrt();
-        let input_normalized = input
-            .broadcast_sub(&mean)?
-            .broadcast_div(&std)?;
-
-        let res = input_normalized
-            .broadcast_mul(self.weight.tensor())?
-            .broadcast_add(self.bias.tensor())?;
-
-        Ok(res)
+        F::layer_norm(input, Some(self.weight.tensor()), Some(self.bias.tensor()), self.variance_epsilon)
     }
 }
 

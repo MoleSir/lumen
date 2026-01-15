@@ -1,6 +1,24 @@
 use lumen_core::{Dim, FloatDType, IntTensor, NumDType, Tensor, D};
 use crate::{NnError, NnResult};
 
+// ============================================================================= //
+//                         Common 
+// ============================================================================= //
+
+/// Applies a linear transformation to the incoming data: $y = xA^T + b$.
+///
+/// This function handles broadcasting for inputs with more than 2 dimensions,
+/// commonly used in Transformer blocks (e.g., `[batch, heads, seq, dim]`).
+///
+/// ## Arguments
+///
+/// * `input` - Input tensor of shape `(..., in_features)`.
+/// * `weight` - Weights of shape `(out_features, in_features)`.
+/// * `bias` - Optional bias of shape `(out_features)`.
+///
+/// ## Returns
+///
+/// * A Tensor with shape `(..., out_features)`.
 pub fn linear<T: NumDType>(input: &Tensor<T>, weight: &Tensor<T>, bias: Option<&Tensor<T>>) -> NnResult<Tensor<T>> {
     let x = match input.dims() {
         &[b1, b2, m, k] => {
@@ -41,8 +59,20 @@ pub fn linear<T: NumDType>(input: &Tensor<T>, weight: &Tensor<T>, bias: Option<&
     }
 }
 
-/// Applies the softmax function to the input tensor, rescaling the element so that elements on
-/// a slice of fixed index on dimension `dim` are between 0 and 1 and sum to 1.
+/// Applies the Softmax function to an n-dimensional input Tensor.
+///
+/// Rescales elements so that they lie in the range [0, 1] and sum to 1.
+///
+/// ## Arguments
+///
+/// * `xs` - Input tensor.
+/// * `dim` - A dimension along which Softmax will be computed.
+///
+/// ## Returns
+///
+/// * A Tensor with the same dimension and shape as the input with values in the range [0, 1].
+///
+/// ## Example
 ///
 /// ```rust
 /// use lumen_core::Tensor;
@@ -59,6 +89,18 @@ pub fn softmax<T: FloatDType, D: Dim>(xs: &Tensor<T>, dim: D) -> NnResult<Tensor
     Ok(out)
 }
 
+/// Applies the LogSoftmax function to an n-dimensional input Tensor.
+///
+/// Mathematically equivalent to `log(softmax(x))`, but implemented separately for numerical stability.
+///
+/// ## Arguments
+///
+/// * `xs` - Input tensor.
+/// * `dim` - A dimension along which LogSoftmax will be computed.
+///
+/// ## Returns
+///
+/// * A Tensor of the same shape as `xs` containing the log probabilities.
 pub fn log_softmax<T: FloatDType, D: Dim>(xs: &Tensor<T>, dim: D) -> NnResult<Tensor<T>> {
     let dim = dim.to_index(xs.shape(), "log_softmax")?;
     let max = xs.max_keepdim(dim)?; // (..., 1, ...)
@@ -70,32 +112,18 @@ pub fn log_softmax<T: FloatDType, D: Dim>(xs: &Tensor<T>, dim: D) -> NnResult<Te
     Ok(out)
 }
 
-pub fn silu<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
-    Ok(xs.silu())
-}
-
-pub fn swiglu<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
-    let xs = xs.chunk(2, D::Minus1)?;
-    Ok(xs[0].silu() * &xs[1])
-}
-
-pub fn sigmoid<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
-    Ok(xs.sigmoid())
-}
-
-pub fn relu<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
-    Ok(xs.relu())
-}
-
-pub fn hard_sigmoid<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
-    let out = ((xs + T::from_f64(3.0)) / T::from_f64(6.0)).clamp(T::zero(), T::one())?;
-    Ok(out)
-}
-
-pub fn leaky_relu<T: FloatDType>(xs: &Tensor<T>, negative_slope: T) -> NnResult<Tensor<T>> {
-    Ok(xs.leaky_relu(negative_slope))
-}
-
+/// Randomly zeroes some of the elements of the input tensor with probability `drop_p`.
+///
+/// The output is scaled by a factor of $\frac{1}{1 - p}$ during training (Inverted Dropout).
+///
+/// ## Arguments
+///
+/// * `xs` - Input tensor.
+/// * `drop_p` - The probability of an element to be zeroed (must be between 0.0 and 1.0).
+///
+/// ## Returns
+///
+/// * A Tensor of the same shape as `xs`.
 pub fn dropout<T: FloatDType>(xs: &Tensor<T>, drop_p: T) -> NnResult<Tensor<T>> {
     if drop_p < T::zero() || drop_p >= T::one() {
         Err(NnError::DropoutInvalid(drop_p.to_f64()))?;
@@ -107,6 +135,86 @@ pub fn dropout<T: FloatDType>(xs: &Tensor<T>, drop_p: T) -> NnResult<Tensor<T>> 
     Ok(xs * mask)
 }
 
+// ============================================================================= //
+//                         Activate 
+// ============================================================================= //
+
+/// Applies the Sigmoid Linear Unit (SiLU) function, element-wise.
+///
+/// The SiLU activation function is also known as the swish function: $SiLU(x) = x * \sigma(x)$.
+pub fn silu<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
+    Ok(xs.silu())
+}
+
+/// Applies the SwiGLU activation.
+///
+/// Expects the input tensor to have an even size in the last dimension.
+/// It splits the input into two halves (A and B) along the last dimension,
+/// and computes $SiLU(A) \otimes B$.
+///
+/// ## Arguments
+///
+/// * `xs` - Input tensor. Shape `(..., 2 * d)`.
+///
+/// ## Returns
+///
+/// * Output tensor. Shape `(..., d)`.
+pub fn swiglu<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
+    let xs = xs.chunk(2, D::Minus1)?;
+    Ok(xs[0].silu() * &xs[1])
+}
+
+/// Applies the Sigmoid function, element-wise.
+///
+/// $\text{Sigmoid}(x) = \frac{1}{1 + \exp(-x)}$
+pub fn sigmoid<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
+    Ok(xs.sigmoid())
+}
+
+/// Applies the Rectified Linear Unit (ReLU) function, element-wise.
+///
+/// $\text{ReLU}(x) = \max(0, x)$
+pub fn relu<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
+    Ok(xs.relu())
+}
+
+/// Applies the Hard Sigmoid function, element-wise.
+///
+/// Defined as $\frac{\text{ReLU6}(x + 3)}{6}$.
+/// Result is clamped between 0 and 1.
+pub fn hard_sigmoid<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
+    let out = ((xs + T::from_f64(3.0)) / T::from_f64(6.0)).clamp(T::zero(), T::one())?;
+    Ok(out)
+}
+
+/// Applies the Leaky ReLU function, element-wise.
+///
+/// $\text{LeakyReLU}(x) = \max(0, x) + \text{negative\_slope} * \min(0, x)$
+///
+/// ## Arguments
+///
+/// * `xs` - Input tensor.
+/// * `negative_slope` - Controls the angle of the negative slope.
+pub fn leaky_relu<T: FloatDType>(xs: &Tensor<T>, negative_slope: T) -> NnResult<Tensor<T>> {
+    Ok(xs.leaky_relu(negative_slope))
+}
+
+// ============================================================================= //
+//                         Loss 
+// ============================================================================= //
+
+/// Computes the Negative Log Likelihood loss.
+///
+/// Expects the input to contain log-probabilities (e.g., from `log_softmax`).
+///
+/// ## Arguments
+///
+/// * `input` - Log-probabilities of shape `(batch, num_classes)`.
+/// * `target` - Class indices of shape `(batch)` or `(batch, 1)`.
+///
+/// ## Returns
+///
+/// * Scalar tensor representing the mean loss.
 pub fn nll_loss<T: FloatDType>(input: &Tensor<T>, target: impl Into<IntTensor>) -> NnResult<Tensor<T>> {
     let target = target.into();
     let gathered = input.gather(target, 1)?;
@@ -115,6 +223,18 @@ pub fn nll_loss<T: FloatDType>(input: &Tensor<T>, target: impl Into<IntTensor>) 
     Ok(out)
 }
 
+/// Computes the Mean Squared Error loss.
+///
+/// Measures the element-wise mean squared error.
+///
+/// ## Arguments
+///
+/// * `input` - Input tensor.
+/// * `target` - Target tensor.
+///
+/// ## Returns
+///
+/// * Scalar tensor representing the mean loss.
 pub fn mse_loss<T: FloatDType>(input: &Tensor<T>, target: &Tensor<T>) -> NnResult<Tensor<T>> {
     let out = input.sub(target)?.sqr().mean_all()?;
     Ok(out)
@@ -172,6 +292,81 @@ pub fn cross_entropy_indices<T: FloatDType>(input: &Tensor<T>, target: impl Into
     // Target: [samples, 1] (probabilities, 0.0~1.0)
     let log_probs = log_softmax(input, 1)?;
     nll_loss(&log_probs, target)
+}
+
+// ============================================================================= //
+//                         Normalization 
+// ============================================================================= //
+
+/// Applies Layer Normalization over a mini-batch of inputs.
+///
+/// $\text{LN}(x) = \frac{x - \mu}{\sqrt{\sigma^2 + \epsilon}} \cdot \gamma + \beta$
+///
+/// The mean and standard-deviation are calculated over the last dimension.
+///
+/// ## Arguments
+///
+/// * `input` - Input tensor of shape `(..., normalized_shape)`.
+/// * `weight` - Optional scale tensor ($\gamma$) of shape `(normalized_shape)`.
+/// * `bias` - Optional shift tensor ($\beta$) of shape `(normalized_shape)`.
+/// * `eps` - A value added to the denominator for numerical stability.
+pub fn layer_norm<T: FloatDType>(
+    input: &Tensor<T>,
+    weight: Option<&Tensor<T>>,
+    bias: Option<&Tensor<T>>,
+    eps: T,
+) -> NnResult<Tensor<T>> {
+    // 1. Calculate Mean and Variance along the last dimension
+    let mean = input.mean_keepdim(D::Minus1)?;
+    let var = input.var_keepdim(D::Minus1)?;
+
+    // 2. Normalize: (x - mean) / sqrt(var + eps)
+    let std = (var + eps).sqrt();
+    let input_normalized = input
+        .broadcast_sub(&mean)?
+        .broadcast_div(&std)?;
+
+    // 3. Apply Affine Transform: x * weight + bias
+    let out = match (weight, bias) {
+        (Some(w), Some(b)) => input_normalized.broadcast_mul(w)?.broadcast_add(b)?,
+        (Some(w), None) => input_normalized.broadcast_mul(w)?,
+        (None, Some(b)) => input_normalized.broadcast_add(b)?,
+        (None, None) => input_normalized,
+    };
+
+    Ok(out)
+}
+
+/// Applies Root Mean Square Normalization.
+///
+/// $\text{RMS}(x) = \frac{x}{\sqrt{\text{Mean}(x^2) + \epsilon}} \cdot \gamma$
+///
+/// Commonly used in LLMs (e.g., LLaMA). It normalizes inputs based on the root mean square
+/// without centering the mean.
+///
+/// ## Arguments
+///
+/// * `input` - Input tensor.
+/// * `weight` - Scale tensor ($\gamma$).
+/// * `eps` - A value added to the denominator for numerical stability.
+pub fn rms_norm<T: FloatDType>(
+    input: &Tensor<T>,
+    weight: &Tensor<T>,
+    eps: T,
+) -> NnResult<Tensor<T>> {
+    // 1. Calculate Mean of Squares: Mean(x^2)
+    let variance = input.sqr().mean_keepdim(D::Minus1)?;
+
+    // 2. Calculate RMS: sqrt(variance + eps)
+    let rms = (variance + eps).sqrt();
+
+    // 3. Normalize: x / rms
+    let input_normalized = input.broadcast_div(&rms)?;
+
+    // 4. Scale: x * weight
+    let out = input_normalized.broadcast_mul(weight)?;
+
+    Ok(out)
 }
 
 #[cfg(test)]

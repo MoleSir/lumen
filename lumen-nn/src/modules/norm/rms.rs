@@ -1,6 +1,7 @@
-use lumen_core::{FloatDType, Tensor, D};
+use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
 use crate::{init::Init, ModuleInit, NnCtxError, NnResult, Parameter};
+use crate::functional as F;
 
 #[derive(Module)]
 pub struct RMSNorm<T: FloatDType> {
@@ -35,15 +36,9 @@ impl<T: FloatDType> RMSNorm<T> {
         Self::init(&RMSNormConfig::new(normalized_shape, norm_eps), init)
     }
 
-    pub fn forward(&self, hidden_states: &Tensor<T>) -> NnResult<Tensor<T>> {
-        // (xxx, normalized_shape) => (xxx, normalized_shape)
-        let variance = hidden_states.pow(T::two()).mean_keepdim(D::Minus1)?;
-        // (xxx, normalized_shape) => (xxx, normalized_shape) 
-        let rms = (variance + self.variance_epsilon).sqrt();
-        let hidden_states = hidden_states.broadcast_div(&rms)?;
-        // (xxx, normalized_shape) => (xxx, normalized_shape)
-        let out = self.weight.tensor().broadcast_mul(&hidden_states)?;
-        Ok(out)
+    #[inline]
+    pub fn forward(&self, input: &Tensor<T>) -> NnResult<Tensor<T>> {
+        F::rms_norm(input, &self.weight, self.variance_epsilon)
     }
 }
 
