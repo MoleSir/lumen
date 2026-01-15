@@ -2,7 +2,6 @@ use anyhow::Context;
 use lumen_core::{FloatDType, Tensor};
 use lumen_nn::{functional::nll_loss, init::Init, optim::{Optimizer, SGD}, GCNConv, Module};
 
-
 fn main() {
     if let Err(e) = result_main() {
         eprintln!("Err: {}", e);

@@ -1,5 +1,5 @@
 [workspace]
-members = [ 
+members = [ "basic", 
     "function_fitting", 
     "iris", "karate_club",
     "logic_gate", 

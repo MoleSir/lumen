@@ -2,7 +2,7 @@
 
 A lightweight, statically typed Tensor library for Rust, featuring a PyTorch-like API and built-in Automatic Differentiation.
 
-Unlike many dynamic tensor libraries, lumen leverages Rust's type system with **Static DTypes** (`Tensor<T>`). This ensures strict type safety at compile time and allows for optimized storage layouts.
+Unlike many dynamic tensor libraries, lumen leverages Rust's type system with Static DTypes (`Tensor<T>`). This ensures strict type safety at compile time and allows for optimized storage layouts.
 
 
 
@@ -13,7 +13,7 @@ Unlike many dynamic tensor libraries, lumen leverages Rust's type system with **
 Initialize tensors using constructors like new, zeros, rand, or arange.
 
 ````rust
-use lumen_core::{Tensor};
+use lumen_core::Tensor;
 
 fn main() {
     // Create from array
@@ -33,7 +33,7 @@ fn main() {
 
 The library supports powerful indexing capabilities similar to Python's NumPy, allowing for efficient views of data.
 
-````ruby
+````rust
 let arr = Tensor::arange(0, 125).unwrap().reshape((5, 5, 5)).unwrap();
 
 // Simple index
@@ -67,10 +67,10 @@ let c = a.matmul(&b).unwrap();
 
 A wide array of unary and floating-point operations are supported directly on Tensor<F>:
 
-- **Basic:** abs, sqrt, sqr, recip, exp, ln
-- **Trig:** sin, cos, tanh
-- **Neural Network Activations:** relu, gelu, gelu_erf, silu, erf
-- **Rounding:** floor, ceil, round
+- Basic: abs, sqrt, sqr, recip, exp, ln
+- Trig: sin, cos, tanh
+- Neural Network Activations: relu, gelu, gelu_erf, silu, erf
+- Rounding: floor, ceil, round
 
 ### 5. Automatic Differentiation (Autograd)
 
@@ -82,7 +82,7 @@ let w = Var::<f64>::new(&[[2.0, 3.0]]).unwrap(); // Shape (1, 2)
 let x = Var::<f64>::new(&[[4.0], [5.0]]).unwrap(); // Shape (2, 1)
 let b = Var::<f64>::new(&[[10.0]]).unwrap();       // Shape (1, 1)
 
-// Forward pass: y = w * x + b
+// Forward pass: y = w  x + b
 let y = w.matmul(&x).unwrap().add(&b).unwrap();
 
 // Backward pass: Compute gradients
@@ -101,6 +101,6 @@ assert!(grads[&b].allclose(&Tensor::new(&[[1.0]]).unwrap(), 1e-5, 1e-8));
 
 
 
-## License
+## LICENSE
 
 MIT
