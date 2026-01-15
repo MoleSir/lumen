@@ -313,13 +313,13 @@ impl<T: FloatDType> ModuleInit<T> for Gpt2LayerNorm<T> {
         let weight = init
             .unwrap_or(Init::ones())
             .init_param((size, ))
-            .map_err(Gpt2Error::Core)
+            .map_err(Gpt2Error::Nn)
             .context("init weight")?;
 
         let bias = init
             .unwrap_or(Init::zeros())
             .init_param((size, ))
-            .map_err(Gpt2Error::Core)
+            .map_err(Gpt2Error::Nn)
             .context("init bias")?;
 
         Ok(Self { weight, bias, eps })

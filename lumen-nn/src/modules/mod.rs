@@ -3,8 +3,9 @@ mod activation;
 mod rnn;
 mod attention;
 mod norm;
-pub mod param;
-pub mod buffer;
+mod geometric;
+mod param;
+mod buffer;
 
 pub use common::*;
 pub use activation::*;
@@ -13,6 +14,7 @@ pub use attention::*;
 pub use norm::*;
 pub use param::*;
 pub use buffer::*;
+pub use geometric::*;
 
 use std::fmt;
 use std::marker::PhantomData;

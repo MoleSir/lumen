@@ -1,4 +1,4 @@
-use crate::{DynTensor, Result, Storage, Tensor};
+use crate::{DynTensor, IntTensor, Result, Storage, Tensor};
 use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, UnsignedIntDType, WithDType};
 
 impl WithDType for u32 {
@@ -53,5 +53,10 @@ impl NumDType for u32 {
     }
 }
 
-impl IntDType for u32 {}
+impl IntDType for u32 {
+    fn to_inttensor(tensor: Tensor<Self>) -> IntTensor {
+        IntTensor::U32(tensor)
+    }
+}
+
 impl UnsignedIntDType for u32 {}

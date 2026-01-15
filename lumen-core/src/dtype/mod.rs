@@ -5,7 +5,7 @@ mod i32;
 mod bool;
 mod u8;
 
-use crate::{grad::{AutogradInfo, AutogradMetaT, NoAutograd}, DynTensor, Result, Tensor};
+use crate::{grad::{AutogradInfo, AutogradMetaT, NoAutograd}, DynTensor, IntTensor, Result, Tensor};
 use super::Storage;
 
 pub trait WithDType:
@@ -112,6 +112,8 @@ pub trait IntDType:
     fn is_true(self) -> bool {
         self != Self::zero()
     }
+
+    fn to_inttensor(tensor: Tensor<Self>) -> IntTensor;
 }
 
 pub trait SignedIntDType : 

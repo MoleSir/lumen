@@ -433,6 +433,15 @@ mod test {
     }
 
     #[test]
+    fn test_index_select_1d() {
+        let scores = Tensor::<f64>::arange(0.0, 100.0).unwrap();
+        let indices = Tensor::new(&[25, 34, 12, 90]).unwrap();
+
+        let selected = scores.index_select(indices, 0).unwrap();
+        println!("{}", selected);
+    }
+
+    #[test]
     fn test_index_select_duplicates_and_reorder() {
         let arr = Tensor::arange(0, 5).unwrap(); // [0, 1, 2, 3, 4]
 

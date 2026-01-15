@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, Shape, Tensor};
 
-use crate::{Buffer, Parameter};
+use crate::{Buffer, NnError, NnResult, Parameter};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Init<T: FloatDType> {
@@ -157,37 +157,37 @@ impl<T: FloatDType> Init<T> {
     /// # Params
     ///
     /// - shape: Shape of the initiated tensor.
-    pub fn init(&self, shape: impl Into<Shape>) -> lumen_core::Result<Tensor<T>> {
+    pub fn init(&self, shape: impl Into<Shape>) -> NnResult<Tensor<T>> {
         self.do_init_with(shape, None, None)
     }
 
     #[inline]
-    pub fn init_param(&self, shape: impl Into<Shape>) -> lumen_core::Result<Parameter<T>> {
+    pub fn init_param(&self, shape: impl Into<Shape>) -> NnResult<Parameter<T>> {
         self.init(shape).map(Parameter::new)
     }
 
     #[inline]
-    pub fn init_buffer(&self, shape: impl Into<Shape>) -> lumen_core::Result<Buffer<T>> {
+    pub fn init_buffer(&self, shape: impl Into<Shape>) -> NnResult<Buffer<T>> {
         self.init(shape).map(Buffer::new)
     }
 
-    pub fn init_with(&self, shape: impl Into<Shape>, fan_in: usize, fan_out: usize) -> lumen_core::Result<Tensor<T>> {
+    pub fn init_with(&self, shape: impl Into<Shape>, fan_in: usize, fan_out: usize) -> NnResult<Tensor<T>> {
         self.do_init_with(shape, Some(fan_in), Some(fan_out))
     }
 
     #[inline]
-    pub fn init_with_param(&self, shape: impl Into<Shape>, fan_in: usize, fan_out: usize) -> lumen_core::Result<Parameter<T>> {
+    pub fn init_with_param(&self, shape: impl Into<Shape>, fan_in: usize, fan_out: usize) -> NnResult<Parameter<T>> {
         self.init_with(shape, fan_in, fan_out).map(Parameter::new)
     }
 
     #[inline]
-    pub fn init_with_buffer(&self, shape: impl Into<Shape>, fan_in: usize, fan_out: usize) -> lumen_core::Result<Buffer<T>> {
+    pub fn init_with_buffer(&self, shape: impl Into<Shape>, fan_in: usize, fan_out: usize) -> NnResult<Buffer<T>> {
         self.init_with(shape, fan_in, fan_out).map(Buffer::new)
     }
 
-    fn do_init_with(&self, shape: impl Into<Shape>, fan_in: Option<usize>, fan_out: Option<usize>) -> lumen_core::Result<Tensor<T>> {
+    fn do_init_with(&self, shape: impl Into<Shape>, fan_in: Option<usize>, fan_out: Option<usize>) -> NnResult<Tensor<T>> {
         let shape = shape.into();
-        match self {
+        let result = match self {
             Init::Uninit => Tensor::uninit(shape),
             Init::Empty => Tensor::empty(shape),
             Init::Constant { value } => Tensor::full(shape, *value),
@@ -211,7 +211,10 @@ impl<T: FloatDType> Init<T> {
                 let std = *gain * self.xavier_std(fan_in, fan_out);
                 Tensor::randn(T::zero(), std, shape)
             }
-        }
+        };
+
+        let tensor = result.map_err(NnError::Core)?;
+        Ok(tensor)
     }
 
     fn kaiming_std(

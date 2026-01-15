@@ -1,4 +1,4 @@
-use crate::{DynTensor, Result, Storage, Tensor};
+use crate::{DynTensor, IntTensor, Result, Storage, Tensor};
 use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, SignedIntDType, WithDType};
 
 impl WithDType for i32 {
@@ -53,7 +53,11 @@ impl NumDType for i32 {
     }
 }
 
-impl IntDType for i32 {}
+impl IntDType for i32 {
+    fn to_inttensor(tensor: Tensor<Self>) -> IntTensor {
+        IntTensor::I32(tensor)
+    }
+}
 
 impl SignedIntDType for i32 {
     fn abs(self) -> i32 {
