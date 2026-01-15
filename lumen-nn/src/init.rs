@@ -1,6 +1,12 @@
-use lumen_core::{FloatDType, Shape, Tensor, Var};
+use lumen_core::{FloatDType, Shape, Tensor};
 
-pub enum Initialize<T: FloatDType> {
+use crate::{Buffer, NnError, NnResult, Parameter};
+
+#[derive(Debug, Clone, Copy)]
+pub enum Init<T: FloatDType> {
+    Uninit,
+    Empty,
+
     /// Fills tensor with specified value everywhere
     Constant {
         /// The value to fill the tensor with
@@ -58,23 +64,23 @@ pub enum Initialize<T: FloatDType> {
     },
 }
 
-impl<T: FloatDType> Initialize<T> {
-    /// Returns an initializer that fills the tensor with 0s.
+impl<T: FloatDType> Init<T> {
+    /// Returns an init that fills the tensor with 0s.
     pub fn zeros() -> Self {
         Self::Zeros
     }
 
-    /// Returns an initializer that fills the tensor with 1s.
+    /// Returns an init that fills the tensor with 1s.
     pub fn ones() -> Self {
         Self::Ones
     }
 
-    /// Returns an initializer that fills the tensor with a constant value.
+    /// Returns an init that fills the tensor with a constant value.
     pub fn constant(value: T) -> Self {
         Self::Constant { value }
     }
 
-    /// Returns an initializer that generates values from a standard normal distribution
+    /// Returns an init that generates values from a standard normal distribution
     /// (mean = 0.0, std = 1.0).
     /// Alias: randn
     pub fn standard_normal() -> Self {
@@ -89,17 +95,17 @@ impl<T: FloatDType> Initialize<T> {
         Self::standard_normal()
     }
 
-    /// Returns an initializer that generates values from a normal distribution.
+    /// Returns an init that generates values from a normal distribution.
     pub fn normal(mean: T, std: T) -> Self {
         Self::Normal { mean, std }
     }
 
-    /// Returns an initializer that generates values from a uniform distribution between min and max.
+    /// Returns an init that generates values from a uniform distribution between min and max.
     pub fn uniform(min: T, max: T) -> Self {
         Self::Uniform { min, max }
     }
 
-    /// Returns an initializer that generates values from a uniform distribution between 0 and 1.
+    /// Returns an init that generates values from a uniform distribution between 0 and 1.
     /// Alias: rand
     pub fn standard_uniform() -> Self {
         Self::Uniform {
@@ -115,21 +121,20 @@ impl<T: FloatDType> Initialize<T> {
 
     /// Kaiming (He) Uniform Initialization.
     /// Recommended for layers with ReLU/Leaky ReLU activations.
-    /// Defaults to `fan_out_only = false` (fan_in mode).
-    pub fn kaiming_uniform(gain: T) -> Self {
+    pub fn kaiming_uniform(gain: T, fan_out_only: bool) -> Self {
         Self::KaimingUniform {
             gain,
-            fan_out_only: false,
+            fan_out_only,
         }
     }
 
     /// Kaiming (He) Normal Initialization.
     /// Recommended for layers with ReLU/Leaky ReLU activations.
     /// Defaults to `fan_out_only = false` (fan_in mode).
-    pub fn kaiming_normal(gain: T) -> Self {
+    pub fn kaiming_normal(gain: T, fan_out_only: bool) -> Self {
         Self::KaimingNormal {
             gain,
-            fan_out_only: false,
+            fan_out_only,
         }
     }
 
@@ -146,41 +151,70 @@ impl<T: FloatDType> Initialize<T> {
     }
 }
 
-impl<T: FloatDType> Initialize<T> {
-    /// Inits a tensor parameter of given shape with values depending on initializer kind.
+impl<T: FloatDType> Init<T> {
+    /// Inits a tensor parameter of given shape with values depending on init kind.
     ///
     /// # Params
     ///
     /// - shape: Shape of the initiated tensor.
-    pub fn init(&self, shape: impl Into<Shape>) -> lumen_core::Result<Tensor<T>> {
-        self.init_with(shape, None, None)
+    pub fn init(&self, shape: impl Into<Shape>) -> NnResult<Tensor<T>> {
+        self.do_init_with(shape, None, None)
     }
 
-    pub fn init_with(&self, shape: impl Into<Shape>, fan_in: Option<usize>, fan_out: Option<usize>) -> lumen_core::Result<Tensor<T>> {
+    #[inline]
+    pub fn init_param(&self, shape: impl Into<Shape>) -> NnResult<Parameter<T>> {
+        self.init(shape).map(Parameter::new)
+    }
+
+    #[inline]
+    pub fn init_buffer(&self, shape: impl Into<Shape>) -> NnResult<Buffer<T>> {
+        self.init(shape).map(Buffer::new)
+    }
+
+    pub fn init_with(&self, shape: impl Into<Shape>, fan_in: usize, fan_out: usize) -> NnResult<Tensor<T>> {
+        self.do_init_with(shape, Some(fan_in), Some(fan_out))
+    }
+
+    #[inline]
+    pub fn init_with_param(&self, shape: impl Into<Shape>, fan_in: usize, fan_out: usize) -> NnResult<Parameter<T>> {
+        self.init_with(shape, fan_in, fan_out).map(Parameter::new)
+    }
+
+    #[inline]
+    pub fn init_with_buffer(&self, shape: impl Into<Shape>, fan_in: usize, fan_out: usize) -> NnResult<Buffer<T>> {
+        self.init_with(shape, fan_in, fan_out).map(Buffer::new)
+    }
+
+    fn do_init_with(&self, shape: impl Into<Shape>, fan_in: Option<usize>, fan_out: Option<usize>) -> NnResult<Tensor<T>> {
         let shape = shape.into();
-        match self {
-            Initialize::Constant { value } => Var::full(shape, *value),
-            Initialize::Ones => Var::ones(shape),
-            Initialize::Zeros => Var::zeros(shape),
-            Initialize::Uniform { min, max } => Var::rand(*min, *max, shape),
-            Initialize::Normal { mean, std } => Var::randn(*mean, *std, shape),
-            Initialize::KaimingUniform { gain, fan_out_only } => {
+        let result = match self {
+            Init::Uninit => Tensor::uninit(shape),
+            Init::Empty => Tensor::empty(shape),
+            Init::Constant { value } => Tensor::full(shape, *value),
+            Init::Ones => Tensor::ones(shape),
+            Init::Zeros => Tensor::zeros(shape),
+            Init::Uniform { min, max } => Tensor::rand(*min, *max, shape),
+            Init::Normal { mean, std } => Tensor::randn(*mean, *std, shape),
+            Init::KaimingUniform { gain, fan_out_only } => {
                 let a = T::from_f64(3.0).sqrt() * *gain * self.kaiming_std(*fan_out_only, fan_in, fan_out);
-                Var::rand(-a, a, shape)
+                Tensor::rand(-a, a, shape)
             }
-            Initialize::KaimingNormal { gain, fan_out_only } => {
+            Init::KaimingNormal { gain, fan_out_only } => {
                 let std = *gain * self.kaiming_std(*fan_out_only, fan_in, fan_out);
-                Var::randn(T::zero(), std, shape)
+                Tensor::randn(T::zero(), std, shape)
             }
-            Initialize::XavierUniform { gain } => {
+            Init::XavierUniform { gain } => {
                 let a = T::from_f64(3.0).sqrt() * *gain * self.xavier_std(fan_in, fan_out);
-                Var::rand(-a, a, shape)
+                Tensor::rand(-a, a, shape)
             }
-            Initialize::XavierNormal { gain } => {
+            Init::XavierNormal { gain } => {
                 let std = *gain * self.xavier_std(fan_in, fan_out);
-                Var::randn(T::zero(), std, shape)
+                Tensor::randn(T::zero(), std, shape)
             }
-        }
+        };
+
+        let tensor = result.map_err(NnError::Core)?;
+        Ok(tensor)
     }
 
     fn kaiming_std(

@@ -1,13 +1,15 @@
 [workspace]
 members = [
     "lumen-core", 
+    "lumen-io",
     "lumen-nn", 
     "lumen-macros",
     "lumen-dataset",
+    "lumen-transformer",
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 repository = "https://github.com/MoleSir/lumen.git"
 description = "A tiny ML framework"
@@ -15,10 +17,12 @@ keywords = ["machine-learning", "auto-grad"]
 license = "MIT"
 
 [workspace.dependencies]
-lumen-core = { path = "./lumen-core", package = "lumen-core" }
-lumen-nn = { path = "./lumen-nn", package = "lumen-nn" }
-lumen-macros = { path = "./lumen-macros", package = "lumen-macros" }
-lumen-dataset = { path = "./lumen-dataset", package = "lumen-dataset" }
+lumen-core = { path = "./lumen-core", package = "lumen-core", version = "0.3.0" }
+lumen-io = { path = "./lumen-io", package = "lumen-io", version = "0.3.0" }
+lumen-nn = { path = "./lumen-nn", package = "lumen-nn", version = "0.3.0" }
+lumen-macros = { path = "./lumen-macros", package = "lumen-macros", version = "0.3.0" }
+lumen-dataset = { path = "./lumen-dataset", package = "lumen-dataset", version = "0.3.0" }
+lumen-transformer = { path = "./lumen-transformer", package = "lumen-transformer", version = "0.3.0" }
 
 approx = "0.5.1"
 derive_builder = "0.20.2"
@@ -26,7 +30,8 @@ num-traits = "0.2.19"
 rand = "0.9.2"
 rand_distr = "0.5.1"
 tempfile = "3.21.0"
-thiserror = "2.0.16"
+thiserror = "2.0"
+thiserrorctx = "1.0"
 paste = "1.0.15"
 libm = "0.2.15"
 proc-macro2 = "1.0"
@@ -36,9 +41,11 @@ proc-macro-crate = "3.3"
 serde = { version = "1.0", default-features = false, features = [
     "derive",
     "alloc",
-] } # alloc is for no_std, derive is needed
+] }
 serde_json = { version = "1.0", default-features = false }
 dirs = "6.0"
 reqwest = "0.12"
 indicatif = "0.18"
 flate2 = "1.1"
+memmap2 = "0.9.9"
+derive-new = "0.7"

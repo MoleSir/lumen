@@ -1,4 +1,4 @@
-use crate::{TensorOrScalar, op::BinaryOp, AutogradMetaT, CmpOp, Error, FloatDType, NumDType, Result, Shape, Storage, UnaryOp, WithDType};
+use crate::{TensorOrScalar, grad::BinaryOp, AutogradMetaT, CmpOp, Error, FloatDType, NumDType, Result, Shape, Storage, UnaryOp, WithDType};
 use super::Tensor;
 use paste::paste;
 
@@ -15,7 +15,7 @@ impl<T: WithDType> Tensor<T> {
                 lhs: lhs.clone(),
                 rhs: rhs.clone(),
                 op,
-            })
+            })?
         } else {
             Ok(lhs)
         }
@@ -633,7 +633,7 @@ macro_rules! impl_scalar_tensor_binary {
     };
 }
 
-impl_scalar_tensor_binary!(f32, f64, u8, i32, u32, usize);
+impl_scalar_tensor_binary!(f32, f64, u8, i32, u32);
 
 #[cfg(test)]
 mod tests {

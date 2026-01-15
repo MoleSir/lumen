@@ -393,6 +393,10 @@ impl<T: WithDType> Storage<T> {
         Self(data.into())
     }
 
+    pub fn empty() -> Self {
+        Self(vec![])
+    }
+
     #[inline]
     pub fn data(&self) -> &[T] {
         &self.0

@@ -33,7 +33,7 @@ struct AdamWParam<T: FloatDType> {
 pub struct AdamW<T: FloatDType> {
     params: Vec<AdamWParam<T>>,
     step_t: usize,
-    config: AdamWConfig<T>,
+    pub config: AdamWConfig<T>,
 }
 
 impl<T: FloatDType> AdamW<T> {
@@ -55,6 +55,8 @@ impl<T: FloatDType> AdamW<T> {
 impl<T: FloatDType> Optimizer<T> for AdamW<T> {
     type Error = lumen_core::Error;
     fn step(&mut self, grads: &GradStore<T>) -> Result<(), Self::Error> {
+        let _guard = lumen_core::NoGradGuard::new();
+
         self.step_t += 1;
         let lr = self.config.lr;
         let lambda = self.config.weight_decay;

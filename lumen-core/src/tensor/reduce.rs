@@ -39,9 +39,24 @@ impl<T: NumDType> Tensor<T> {
 
         delta_pow.mean_keepdim(axis)
     }
+
+    pub fn var_unbiased_keepdim<D: Dim>(&self, axis: D) -> Result<Self> {
+        let n = T::from_usize(self.dim(axis)?);
+        let biased_var = self.var_keepdim(axis)?;
+        
+        // cor scale: N / (N - 1)
+        let correction = n / (n - T::one());
+        Ok(correction * biased_var)
+    }
     
     pub fn var<D: Dim>(&self, axis: D) -> Result<Self> {
         let v = self.var_keepdim(axis)?;
+        let v = v.squeeze(axis)?;
+        Ok(v)
+    }
+
+    pub fn var_unbiased<D: Dim>(&self, axis: D) -> Result<Self> {
+        let v = self.var_unbiased_keepdim(axis)?;
         let v = v.squeeze(axis)?;
         Ok(v)
     }
@@ -50,23 +65,27 @@ impl<T: NumDType> Tensor<T> {
         self.flatten_all()?.var(0)
     }
 
-    pub fn argmin_keepdim<D: Dim>(&self, axis: D) -> Result<Tensor<usize>> {
+    pub fn var_unbiased_all(&self) -> Result<Self> {
+        self.flatten_all()?.var_unbiased(0)
+    }
+
+    pub fn argmin_keepdim<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
         let (storage, dims) = self.compute_reduec_axis_op(axis, ReduceArgMin::op, "argmin")?;
         Ok(Tensor::from_storage(storage, dims))
     }
 
-    pub fn argmin<D: Dim>(&self, axis: D) -> Result<Tensor<usize>> {
+    pub fn argmin<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
         let (storage, dims) = self.compute_reduec_axis_op(axis, ReduceArgMin::op, "argmin_keepdim")?;
         let res = Tensor::from_storage(storage, dims);
         res.squeeze(axis)
     }
 
-    pub fn argmax_keepdim<D: Dim>(&self, axis: D) -> Result<Tensor<usize>> {
+    pub fn argmax_keepdim<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
         let (storage, dims) = self.compute_reduec_axis_op(axis, ReduceArgMax::op, "argmax")?;
         Ok(Tensor::from_storage(storage, dims))
     }
 
-    pub fn argmax<D: Dim>(&self, axis: D) -> Result<Tensor<usize>> {
+    pub fn argmax<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
         let (storage, dims) = self.compute_reduec_axis_op(axis, ReduceArgMax::op, "argmax_keepdim")?;
         let res = Tensor::from_storage(storage, dims);
         res.squeeze(axis)
@@ -211,7 +230,7 @@ impl<D: NumDType> ReduceOp<D> for ReduceMin {
 
 pub struct ReduceArgMin;
 impl<D: NumDType> ReduceOp<D> for ReduceArgMin {
-    type Output = usize;
+    type Output = u32;
     fn op(arr: &mut DimArrayIter<'_, D>) -> Self::Output {
         arr.into_iter()
             .enumerate()
@@ -221,7 +240,7 @@ impl<D: NumDType> ReduceOp<D> for ReduceArgMin {
                 } else {
                     (ib, b)
                 }
-            }).unwrap().0
+            }).unwrap().0 as u32
     }
 } 
 
@@ -236,7 +255,7 @@ impl<D: NumDType> ReduceOp<D> for ReduceMax {
 
 pub struct ReduceArgMax;
 impl<D: NumDType> ReduceOp<D> for ReduceArgMax {
-    type Output = usize;
+    type Output = u32;
     fn op(arr: &mut DimArrayIter<'_, D>) -> Self::Output {
         arr.into_iter()
             .enumerate()
@@ -246,7 +265,7 @@ impl<D: NumDType> ReduceOp<D> for ReduceArgMax {
                 } else {
                     (ib, b)
                 }
-            }).unwrap().0
+            }).unwrap().0 as u32
     }
 } 
 

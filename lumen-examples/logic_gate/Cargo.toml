@@ -6,4 +6,4 @@ edition = "2024"
 [dependencies]
 lumen-core = { path = "../../lumen-core" }
 lumen-nn = { path = "../../lumen-nn" }
-lumen-macros = { path = "../../lumen-macros" }
+anyhow = "1.0"

@@ -1,7 +1,6 @@
 use lumen_core::{FloatDType, Tensor};
-use lumen_macros::Module;
-use lumen_nn::{init::Initialize, linear, optim::{Optimizer, SGD}, CrossEntropyLoss, Linear, Module, Relu};
-use lumen_dataset::{common::{IrisBatcher, IrisDataset}, DataLoader};
+use lumen_nn::{optim::{Optimizer, SGD}, CrossEntropyLoss, Linear, Module, Relu};
+use lumen_dataset::common::{IrisDataLoader, IrisDataset};
 
 #[derive(Module)]
 pub struct Mlp<T: FloatDType> {
@@ -10,11 +9,9 @@ pub struct Mlp<T: FloatDType> {
 }
 
 impl<T: FloatDType> Mlp<T> {
-    pub fn from_archs(arch: impl AsRef<[usize]>) -> lumen_core::Result<Self> {
+    pub fn from_archs(arch: impl AsRef<[usize]>) -> anyhow::Result<Self> {
         let arch = arch.as_ref();
         assert!(arch.len() >= 2);
-
-        let init = Initialize::<T>::standard_normal(); 
         
         let mut linears = vec![];
         let mut activates = vec![];
@@ -23,7 +20,7 @@ impl<T: FloatDType> Mlp<T> {
             let in_dim = arch[i];
             let out_dim = arch[i+1];
             
-            linears.push(linear(in_dim, out_dim, true, &init)?);
+            linears.push(Linear::new(in_dim, out_dim, true, None)?);
             
             if i < arch.len() - 2 {
                 activates.push(Relu::new());
@@ -33,7 +30,7 @@ impl<T: FloatDType> Mlp<T> {
         Ok(Mlp { linears, activates })
     }
 
-    pub fn forward(&self, x: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    pub fn forward(&self, x: &Tensor<T>) -> anyhow::Result<Tensor<T>> {
         let mut x = x.clone();
         
         for (i, layer) in self.linears.iter().enumerate() {
@@ -50,7 +47,7 @@ impl<T: FloatDType> Mlp<T> {
 
 fn result_main() -> Result<(), Box<dyn std::error::Error>> {
     let dataset = IrisDataset::load(Some("../cache"))?;
-    let dataloader = DataLoader::new(dataset, IrisBatcher, 16, true);
+    let dataloader = IrisDataLoader::from_dataset(dataset, 16, true);
     let model = Mlp::<f32>::from_archs([4, 10, 3])?;
     let criterion = CrossEntropyLoss;
     let mut optimizer = SGD::new(model.params(), 0.1);

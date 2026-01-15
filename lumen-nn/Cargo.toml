@@ -9,5 +9,10 @@ license = { workspace = true }
 [dependencies]
 lumen-core = { workspace = true }
 lumen-macros = { workspace = true }
+lumen-io = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
+thiserrorctx = { workspace = true }
+thiserror = { workspace = true }
+derive-new = { workspace = true }
+paste = { workspace = true }

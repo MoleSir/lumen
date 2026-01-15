@@ -28,7 +28,7 @@ impl<T: WithDType> Tensor<T> {
             };
             Ok(Self(Arc::new(tensor_)))
         } else {
-            Err( Error::SqueezeDimNot1 { shape: self.shape().clone(), dim } )
+            Err( Error::SqueezeDimNot1 { shape: self.shape().clone(), dim } )?
         }
     }
 
@@ -191,7 +191,7 @@ impl<T: WithDType> Tensor<T> {
                 lhs: self.shape().clone(),
                 rhs: shape,
                 op: "reshape",
-            });
+            })?;
         }
 
         let meta = T::AutogradMeta::on_reshape_op(self);

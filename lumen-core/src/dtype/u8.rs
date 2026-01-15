@@ -1,10 +1,20 @@
-use crate::{Result, Storage};
+use crate::{DynTensor, IntTensor, Result, Storage, Tensor};
 
 use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, UnsignedIntDType, WithDType};
 
 impl WithDType for u8 {
     const DTYPE: DType = DType::U8;
     type AutogradMeta = NoAutograd;
+
+    #[inline]
+    fn from_dyn(tensor: &DynTensor) -> crate::Result<Tensor<Self>> {
+        <Tensor<Self> as TryFrom::<DynTensor>>::try_from(tensor.clone())
+    }
+
+    #[inline]
+    fn into_dyn(tensor: Tensor<Self>) -> DynTensor {
+        tensor.into()
+    }
 }
 
 impl NumDType for u8 {
@@ -44,5 +54,10 @@ impl NumDType for u8 {
     }
 }
 
-impl IntDType for u8 {}
+impl IntDType for u8 {
+    fn to_inttensor(tensor: Tensor<Self>) -> IntTensor {
+        IntTensor::U8(tensor)
+    }
+}
+
 impl UnsignedIntDType for u8 {}

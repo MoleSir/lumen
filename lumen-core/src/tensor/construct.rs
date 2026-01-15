@@ -39,6 +39,30 @@ impl<T: WithDType> Tensor<T> {
         Ok(Self::build(storage, shape, meta))
     }
 
+    /// Creates a new `Tensor` with un initialze value!
+    pub fn uninit<S: Into<Shape>>(shape: S) -> Result<Self> {
+        Self::uninit_impl(shape, T::AutogradMeta::default())
+    }
+
+    pub(crate) fn uninit_impl<S: Into<Shape>>(shape: S, meta: T::AutogradMeta) -> Result<Self> {
+        let shape: Shape = shape.into();
+        let element_count = shape.element_count();
+        let mut v: Vec<T> = Vec::with_capacity(element_count);
+        unsafe { v.set_len(element_count); }
+        let storage = Storage::new(v);
+        Ok(Self::build(storage, shape, meta))
+    }
+
+    pub fn empty<S: Into<Shape>>(shape: S) -> Result<Self> {
+        Self::empty_impl(shape, T::AutogradMeta::default())
+    }
+
+    pub(crate) fn empty_impl<S: Into<Shape>>(shape: S, meta: T::AutogradMeta) -> Result<Self> {
+        let shape: Shape = shape.into();
+        let storage = Storage::empty();
+        Ok(Self::build(storage, shape, meta))
+    }
+
     /// Creates a new `Tensor` directly from a storage buffer and shape.
     ///
     /// Typically used internally, but can also be used when you already
@@ -136,6 +160,9 @@ impl<T: NumDType> Tensor<T> {
         let shape = storage.len();
         Ok(Self::build(storage, shape, meta))
     }
+}
+
+impl<T: WithDType> Tensor<T> {
 
     /// Creates an array from a flat `Vec<T>` and explicit shape.
     ///
@@ -165,7 +192,7 @@ impl<T: NumDType> Tensor<T> {
 
     pub(crate) fn diag_impl(diag: &[T], meta: T::AutogradMeta) -> Result<Self> {
         let size = diag.len();
-        let mut vec = vec![T::zero(); size * size];
+        let mut vec = vec![T::false_value(); size * size];
         for n in 0..size {
             vec[n * size + n] = diag[n];
         }
@@ -309,6 +336,16 @@ impl<T: FloatDType> Tensor<T> {
     #[inline]
     pub fn new_var<A: ToTensor<T>>(array: A) -> Result<Self> {
         Self::new_impl(array, AutogradInfo::var())
+    }
+
+    #[inline]
+    pub fn uninit_var<S: Into<Shape>>(shape: S) -> Result<Self> {
+        Self::uninit_impl(shape, AutogradInfo::var())
+    }
+
+    #[inline]
+    pub fn empty_var<S: Into<Shape>>(shape: S) -> Result<Self> {
+        Self::empty_impl(shape, AutogradInfo::var())
     }
 
     #[inline]

@@ -134,7 +134,7 @@ impl Layout {
             return Err(Error::BroadcastIncompatibleShapes {
                 src_shape: self.shape().clone(),
                 dst_shape: shape,
-            });
+            })?;
         }
 
         let added_dims = shape.rank() - self.shape().rank();
@@ -149,7 +149,7 @@ impl Layout {
                 return Err(Error::BroadcastIncompatibleShapes {
                     src_shape: self.shape().clone(),
                     dst_shape: shape,
-                });
+                })?;
             } else {
                 0
             };

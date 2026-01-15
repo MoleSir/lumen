@@ -1,5 +1,4 @@
 use std::str::Utf8Error;
-
 use crate::{DType, Slice, Shape};
 
 #[derive(Debug, thiserror::Error)]
@@ -203,13 +202,6 @@ pub enum Error {
     #[error(transparent)]
     Utf8(#[from] Utf8Error),
 
-    // === Utils ===
-    #[error("{context}\n{inner}")]
-    Context {
-        inner: Box<Self>,
-        context: String,
-    },
-
     /// User generated error message
     #[error("{0}")]
     Msg(String),
@@ -217,30 +209,18 @@ pub enum Error {
     #[error("unwrap none")]
     UnwrapNone,
 }
+
 pub type Result<T> = std::result::Result<T, Error>;
-
-pub trait Context: Sized {
-    fn context(self, ctx: impl Into<String>) -> Self;
-}
-
-impl<T> Context for Result<T> {
-    fn context(self, ctx: impl Into<String>) -> Self {
-        match self {
-            Ok(v) => Ok(v),
-            Err(e) => Err(Error::Context { inner: Box::new(e), context: ctx.into() })
-        }
-    }
-}
 
 #[macro_export]
 macro_rules! bail {
     ($msg:literal $(,)?) => {
-        return Err($crate::Error::Msg(format!($msg).into()))
+        return Err($crate::Error::Msg(format!($msg).into()))?
     };
     ($err:expr $(,)?) => {
-        return Err($crate::Error::Msg(format!($err).into()))
+        return Err($crate::Error::Msg(format!($err).into()))?
     };
     ($fmt:expr, $($arg:tt)*) => {
-        return Err($crate::Error::Msg(format!($fmt, $($arg)*).into()))
+        return Err($crate::Error::Msg(format!($fmt, $($arg)*).into()))?
     };
 }

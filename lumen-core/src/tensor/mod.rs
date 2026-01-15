@@ -8,7 +8,7 @@ mod matmul;
 mod reduce;
 mod broadcast;
 mod convert;
-mod condition;
+mod boolean;
 
 pub use construct::ToTensor;
 use std::{hash::Hash, sync::Arc};
@@ -60,7 +60,7 @@ impl<T: WithDType> Tensor<T> {
 
     pub fn check_scalar(&self) -> Result<()> {
         if !self.is_scalar() {
-            Err(Error::NotScalar)
+            Err(Error::NotScalar)?
         } else {
             Ok(())
         }

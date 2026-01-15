@@ -1,0 +1,12 @@
+[package]
+name = "function_fitting"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+lumen-core = { path = "../../lumen-core" }
+lumen-nn = { path = "../../lumen-nn" }
+lumen-dataset = { path = "../../lumen-dataset" }
+plotlib = "0.5.1"
+anyhow = "1.0"
+rand = "0.9.2"

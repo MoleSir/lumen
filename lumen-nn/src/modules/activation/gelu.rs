@@ -1,10 +1,10 @@
-use lumen_core::{FloatDType, NumDType, Tensor};
-use crate::modules::Module;
+use lumen_core::{FloatDType, Tensor};
+use lumen_macros::Module;
 
+#[derive(Module)]
 pub struct Gelu;
 
 impl Gelu {
-    /// Create the module.
     pub fn new() -> Self {
         Self {}
     }
@@ -12,7 +12,4 @@ impl Gelu {
     pub fn forward<T: FloatDType>(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
         Ok(input.gelu())
     }
-}
-
-impl<T: NumDType> Module<T> for Gelu {
 }

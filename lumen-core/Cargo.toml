@@ -13,4 +13,5 @@ num-traits = { workspace = true }
 paste = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
+thiserrorctx = { workspace = true }
 thiserror = { workspace = true }

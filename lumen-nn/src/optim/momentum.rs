@@ -54,6 +54,8 @@ impl<T: FloatDType> Optimizer<T> for Momentum<T> {
     type Error = lumen_core::Error;
 
     fn step(&mut self, grads: &GradStore<T>) -> Result<(), Self::Error> {
+        let _guard = lumen_core::NoGradGuard::new();
+
         let lr = self.config.lr;
         let momentum = self.config.momentum;
         let weight_decay = self.config.weight_decay;

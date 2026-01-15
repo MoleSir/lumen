@@ -1,0 +1,16 @@
+[package]
+name = "lumen-transformer"
+version = { workspace = true }
+edition = { workspace = true }
+description = { workspace = true }
+keywords = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+lumen-core = { workspace = true }
+lumen-nn = { workspace = true }
+lumen-macros = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+thiserrorctx = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }

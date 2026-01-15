@@ -1,19 +1,27 @@
 use approx::relative_eq;
 use rand::rng;
 use rand_distr::Distribution;
-
-use crate::{Result, Storage};
-
+use crate::{DynTensor, Result, Storage, Tensor};
 use super::{AutogradInfo, DType, FloatCategory, FloatDType, NumDType, WithDType};
 
 impl WithDType for f64 {
     const DTYPE: DType = DType::F64;
     type AutogradMeta = AutogradInfo<f64>;
+
+    #[inline]
+    fn from_dyn(tensor: &DynTensor) -> crate::Result<Tensor<Self>> {
+        <Tensor<Self> as TryFrom::<DynTensor>>::try_from(tensor.clone())
+    }
+
+    #[inline]
+    fn into_dyn(tensor: Tensor<Self>) -> DynTensor {
+        tensor.into()
+    }
 }
 
 impl NumDType for f64 {
     type Category = FloatCategory;
-
+    
     fn from_f64(v: f64) -> Self {
         v as f64
     }
@@ -54,6 +62,10 @@ impl NumDType for f64 {
 }
 
 impl FloatDType for f64 {
+    fn min_value() -> Self {    
+        f64::MIN
+    }
+    
     #[inline]
     fn sqr(self) -> Self {
         self * self

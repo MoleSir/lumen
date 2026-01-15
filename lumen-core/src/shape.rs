@@ -217,7 +217,7 @@ impl<const N: usize> DimNCoordinates<N> {
                 expected: N,
                 got: from_shape.rank(),
                 shape: Shape::from(from_shape.dims()),
-            })
+            })?
         }
     }
 }
@@ -355,7 +355,7 @@ macro_rules! extract_dims {
                     expected: $cnt,
                     got: dims.len(),
                     shape: Shape::from(dims),
-                })
+                })?
             } else {
                 Ok($dims(dims))
             }
@@ -375,7 +375,7 @@ macro_rules! extract_dims {
 
         impl std::convert::TryInto<$out_type> for Shape {
             type Error = crate::Error;
-            fn try_into(self) -> std::result::Result<$out_type, Self::Error> {
+            fn try_into(self) -> crate::Result<$out_type> {
                 self.$fn_name()
             }
         }
@@ -418,7 +418,7 @@ impl Dim for usize {
                 shape: shape.clone(),
                 dim: dim as i32,
                 op,
-            })
+            })?
         } else {
             Ok(dim)
         }
@@ -431,7 +431,7 @@ impl Dim for usize {
                 shape: shape.clone(),
                 dim: dim as i32,
                 op,
-            })
+            })?
         } else {
             Ok(dim)
         }
@@ -446,7 +446,7 @@ impl Dim for D {
             Self::Minus2 if rank >= 2 => Ok(rank - 2),
             Self::Minus(u) if *u > 0 && rank >= *u => Ok(rank - *u),
             Self::Index(u) => u.to_index(shape, op),
-            _ => Err(self.out_of_range(shape, op)),
+            _ => Err(self.out_of_range(shape, op))?,
         }
     }
 
@@ -456,7 +456,7 @@ impl Dim for D {
             Self::Minus1 => Ok(rank),
             Self::Minus2 if rank >= 1 => Ok(rank - 1),
             Self::Minus(u) if *u > 0 && rank + 1 >= *u => Ok(rank + 1 - *u),
-            _ => Err(self.out_of_range(shape, op)),
+            _ => Err(self.out_of_range(shape, op))?,
         }
     }
 }
@@ -470,14 +470,14 @@ pub trait Dims {
                     shape: shape.clone(),
                     dims: dims.to_vec(),
                     op,
-                });
+                })?;
             }
             if dim >= shape.rank() {
                 return Err(Error::DimOutOfRange {
                     shape: shape.clone(),
                     dim: dim as i32,
                     op,
-                });
+                })?;
             }
         }
         Ok(())

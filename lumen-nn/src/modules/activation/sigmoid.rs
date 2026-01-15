@@ -1,6 +1,7 @@
-use lumen_core::{FloatDType, NumDType, Tensor};
-use crate::modules::Module;
+use lumen_core::{FloatDType, Tensor};
+use crate::Module;
 
+#[derive(Module)]
 pub struct Sigmoid;
 
 impl Sigmoid {
@@ -12,7 +13,4 @@ impl Sigmoid {
     pub fn forward<T: FloatDType>(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
         Ok(input.sigmoid())
     }
-}
-
-impl<T: NumDType> Module<T> for Sigmoid {
 }

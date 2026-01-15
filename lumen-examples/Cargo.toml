@@ -1,6 +1,8 @@
 [workspace]
-members = [ 
-    # "function_fitting", 
-    "iris",
-    "logic_gate",
+members = [ "basic", 
+    "function_fitting", 
+    "iris", "karate_club",
+    "logic_gate", 
+    "lyrics_writing", 
+    "mnist",
 ]
