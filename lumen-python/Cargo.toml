@@ -1,0 +1,28 @@
+[package]
+name = "lumen-python"
+version = { workspace = true }
+edition = { workspace = true }
+repository = { workspace = true }
+description = { workspace = true }
+keywords = { workspace = true }
+license = { workspace = true }
+
+
+[lib]
+name = "lumen"
+crate-type = ["cdylib"]
+
+
+[dependencies]
+lumen-core = { workspace = true }
+pyo3 = { version = "0.27", features = ["auto-initialize"] }
+paste = { workspace = true }
+
+
+[dev-dependencies]
+tempfile = "3.10"
+pyo3 = { version = "0.27", features = ["auto-initialize"] }
+
+
+[features]
+default = ["pyo3/extension-module"]
