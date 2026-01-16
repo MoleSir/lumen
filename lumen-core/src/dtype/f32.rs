@@ -9,6 +9,8 @@ use super::{AutogradInfo, DType, FloatCategory, FloatDType, NumDType, WithDType}
 
 impl WithDType for f32 {
     const DTYPE: DType = DType::F32;
+    const ZERO: Self = 0.0;
+    const ONE: Self = 1.0;
     type AutogradMeta = AutogradInfo<f32>;
 
     #[inline]

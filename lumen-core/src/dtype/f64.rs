@@ -6,6 +6,8 @@ use super::{AutogradInfo, DType, FloatCategory, FloatDType, NumDType, WithDType}
 
 impl WithDType for f64 {
     const DTYPE: DType = DType::F64;
+    const ZERO: Self = 0.0;
+    const ONE: Self = 1.0;
     type AutogradMeta = AutogradInfo<f64>;
 
     #[inline]

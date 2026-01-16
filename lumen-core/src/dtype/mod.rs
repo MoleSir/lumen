@@ -4,7 +4,6 @@ mod u32;
 mod i32;
 mod bool;
 mod u8;
-
 use crate::{grad::{AutogradInfo, AutogradMetaT, NoAutograd}, DynTensor, IntTensor, Result, Tensor};
 use super::Storage;
 
@@ -14,12 +13,13 @@ pub trait WithDType:
     + std::cmp::PartialOrd
     + std::cmp::PartialEq
     + std::fmt::Display
-    + Boolean
     + 'static
     + Send
     + Sync
 {
     const DTYPE: DType;
+    const ZERO: Self;
+    const ONE: Self;
     type AutogradMeta: AutogradMetaT<Self>;
     fn from_dyn(tensor: &DynTensor) -> crate::Result<Tensor<Self>>;
     fn into_dyn(tensor: Tensor<Self>) -> DynTensor;
@@ -192,55 +192,5 @@ impl<T: NumDType> DTypeConvert<T> for bool {
 impl<T: NumDType> DTypeConvert<bool> for T {
     fn convert(self) -> bool {
         self == T::zero() 
-    }
-}
-
-pub trait Boolean {
-    fn true_value() -> Self;
-    fn false_value() -> Self;
-}
-
-macro_rules! impl_boolean_for_int {
-    ($($t:ty),*) => {
-        $(
-            impl Boolean for $t {
-                fn false_value() -> Self {
-                    0
-                }
-            
-                fn true_value() -> Self {
-                    1
-                }
-            }
-        )*
-    };
-}
-
-macro_rules! impl_boolean_for_float {
-    ($($t:ty),*) => {
-        $(
-            impl Boolean for $t {
-                fn false_value() -> Self {
-                    0.
-                }
-            
-                fn true_value() -> Self {
-                    1.
-                }
-            }
-        )*
-    };
-}
-
-impl_boolean_for_int!(u8, i32, u32);
-impl_boolean_for_float!(f32, f64);
-
-impl Boolean for bool {
-    fn false_value() -> Self {
-        false
-    }
-
-    fn true_value() -> Self {
-        true
     }
 }

@@ -3,6 +3,8 @@ use super::{DType, NoAutograd, WithDType};
 
 impl WithDType for bool {
     const DTYPE: DType = DType::Bool;
+    const ZERO: Self = false;
+    const ONE: Self = true;
     type AutogradMeta = NoAutograd;
 
     #[inline]

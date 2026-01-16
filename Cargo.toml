@@ -5,7 +5,8 @@ members = [
     "lumen-nn", 
     "lumen-macros",
     "lumen-dataset",
-    "lumen-transformer",
+    "lumen-transformer", 
+    "lumen-python",
 ]
 
 [workspace.package]
@@ -23,6 +24,7 @@ lumen-nn = { path = "./lumen-nn", package = "lumen-nn", version = "0.3.0" }
 lumen-macros = { path = "./lumen-macros", package = "lumen-macros", version = "0.3.0" }
 lumen-dataset = { path = "./lumen-dataset", package = "lumen-dataset", version = "0.3.0" }
 lumen-transformer = { path = "./lumen-transformer", package = "lumen-transformer", version = "0.3.0" }
+lumen-python = { path = "./lumen-python", package = "lumen-python", version = "0.3.0" }
 
 approx = "0.5.1"
 derive_builder = "0.20.2"

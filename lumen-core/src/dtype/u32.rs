@@ -3,6 +3,8 @@ use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, UnsignedIntDType
 
 impl WithDType for u32 {
     const DTYPE: DType = DType::U32;
+    const ZERO: Self = 0;
+    const ONE: Self = 1;
     type AutogradMeta = NoAutograd;
 
     #[inline]

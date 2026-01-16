@@ -4,6 +4,8 @@ use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, UnsignedIntDType
 
 impl WithDType for u8 {
     const DTYPE: DType = DType::U8;
+    const ZERO: Self = 0;
+    const ONE: Self = 1;
     type AutogradMeta = NoAutograd;
 
     #[inline]
