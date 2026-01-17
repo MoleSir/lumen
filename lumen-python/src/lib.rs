@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 fn lumen(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<core::PyTensor>()?;
     m.add_class::<core::PyDType>()?;
+    m.add_class::<core::PyGradStore>()?;
     m.add_wrapped(wrap_pymodule!(nn::nn))?;
     m.add_wrapped(wrap_pymodule!(dataset::dataset))?;
     Ok(())
