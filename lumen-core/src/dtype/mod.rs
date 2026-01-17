@@ -90,6 +90,8 @@ pub trait NumDType:
   + for<'a> std::ops::Div<&'a Tensor<Self>, Output = Tensor<Self>>  
 {
     type Category: NumCategory;
+    const MAX_VALUE: Self;
+    const MIN_VALUE: Self;
 
     fn from_f64(v: f64) -> Self;
     fn to_f64(self) -> f64;
@@ -132,6 +134,7 @@ pub trait UnsignedIntDType :
 
 pub trait FloatDType: 
     NumDType<Category = FloatCategory, AutogradMeta = AutogradInfo<Self>>
+    + std::fmt::LowerExp
     + num_traits::Float
     + rand_distr::num_traits::Float
 {

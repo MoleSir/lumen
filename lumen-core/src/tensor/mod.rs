@@ -1,7 +1,7 @@
 mod construct;
 mod indexer;
 mod iter;
-mod display;
+pub mod display;
 mod shape;
 mod arith;
 mod matmul;

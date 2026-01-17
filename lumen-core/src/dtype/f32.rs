@@ -27,6 +27,9 @@ impl WithDType for f32 {
 impl NumDType for f32 {
     type Category = FloatCategory;
 
+    const MAX_VALUE: Self = f32::MAX;
+    const MIN_VALUE: Self = f32::MIN;
+
     fn from_f64(v: f64) -> Self {
         v as f32
     }

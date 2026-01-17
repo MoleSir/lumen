@@ -836,4 +836,37 @@ mod test {
         assert_eq!(b.dims(), [4, 6]);
         Ok(())
     }
+
+    #[test]
+    fn test_narrow_1d_basic() -> Result<()> {
+        let a = Tensor::new(&[0, 1, 2, 3, 4, 5])?;
+        
+        let b = a.narrow(0, 2, 3)?;
+        
+        assert_eq!(b.dims(), &[3]);
+        assert_eq!(b.to_vec(), &[2, 3, 4]);
+
+        let b = Tensor::randn(0.0, 1.0, (5, 5))?;
+        println!("{:?}", b);
+        Ok(())
+    }
+
+    #[test]
+    fn test_narrow_2d_rows() -> Result<()> {
+        // Shape: [3, 3]
+        // [ 0,  1,  2 ]
+        // [ 3,  4,  5 ]
+        // [ 6,  7,  8 ]
+        let a = Tensor::new(&[
+            [0, 1, 2], 
+            [3, 4, 5], 
+            [6, 7, 8]
+        ])?;
+
+        let b = a.narrow(0, 1, 1)?;
+
+        assert_eq!(b.dims(), &[1, 3]);
+        assert_eq!(b.to_vec(), &[3, 4, 5]);
+        Ok(())
+    }
 }

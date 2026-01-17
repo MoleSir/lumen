@@ -20,6 +20,10 @@ impl WithDType for u8 {
 }
 
 impl NumDType for u8 {
+
+    const MAX_VALUE: Self = u8::MAX;
+    const MIN_VALUE: Self = u8::MIN;
+
     type Category = IntCategory;
 
     fn from_f64(v: f64) -> Self {

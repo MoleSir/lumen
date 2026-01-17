@@ -23,6 +23,9 @@ impl WithDType for f64 {
 
 impl NumDType for f64 {
     type Category = FloatCategory;
+
+    const MAX_VALUE: Self = f64::MAX;
+    const MIN_VALUE: Self = f64::MIN;
     
     fn from_f64(v: f64) -> Self {
         v as f64

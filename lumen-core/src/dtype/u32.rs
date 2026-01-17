@@ -21,6 +21,9 @@ impl WithDType for u32 {
 impl NumDType for u32 {
     type Category = IntCategory;
 
+    const MAX_VALUE: Self = u32::MAX;
+    const MIN_VALUE: Self = u32::MIN;
+
     fn from_f64(v: f64) -> Self {
         v as u32
     }

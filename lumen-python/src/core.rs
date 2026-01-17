@@ -1,11 +1,11 @@
-use lumen_core::{NumDType, Tensor};
+use lumen_core::{DynTensor, IndexOp, NumDType, Tensor};
 use pyo3::{exceptions::{PyRuntimeError, PyTypeError, PyValueError}, prelude::*};
 use paste::paste;
 
 #[pyclass(name = "Tensor")]
 #[derive(Clone)]
 pub struct PyTensor {
-    pub inner: TensorEnum,
+    pub inner: DynTensor,
 }
 
 #[pyclass(name = "DType", eq, eq_int)]
@@ -19,15 +19,15 @@ pub enum PyDType {
     UInt8,
 }
 
-#[derive(Clone)]
-pub enum TensorEnum {
-    Bool(Tensor<bool>),
-    F32(Tensor<f32>),
-    F64(Tensor<f64>),
-    I32(Tensor<i32>),
-    U32(Tensor<u32>),
-    U8(Tensor<u8>),
-}
+// #[derive(Clone)]
+// pub enum DynTensor {
+//     Bool(Tensor<bool>),
+//     F32(Tensor<f32>),
+//     F64(Tensor<f64>),
+//     I32(Tensor<i32>),
+//     U32(Tensor<u32>),
+//     U8(Tensor<u8>),
+// }
 
 macro_rules! impl_contruct {
     ($method:ident, $dtype:ident, $shape:ident) => {
@@ -46,12 +46,12 @@ macro_rules! impl_contruct {
 macro_rules! impl_method {
     ($self:ident, $t:ident, $expr:expr) => {
         match &$self.inner {
-            TensorEnum::Bool($t) => $expr,
-            TensorEnum::F32($t) => $expr,
-            TensorEnum::F64($t) => $expr,
-            TensorEnum::U32($t) => $expr,
-            TensorEnum::I32($t) => $expr,
-            TensorEnum::U8($t) => $expr,
+            DynTensor::Bool($t) => $expr,
+            DynTensor::F32($t) => $expr,
+            DynTensor::F64($t) => $expr,
+            DynTensor::U32($t) => $expr,
+            DynTensor::I32($t) => $expr,
+            DynTensor::U8($t) => $expr,
         }
     };
 }
@@ -62,32 +62,32 @@ macro_rules! impl_arith_binary_lhs {
         paste! {
             if let Ok(lhs) = $lhs.extract::<PyTensor>() {
                 match (&lhs.inner, &$rhs.inner) {
-                    (TensorEnum::F32(lhs), TensorEnum::F32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                    (TensorEnum::F64(lhs), TensorEnum::F64(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                    (TensorEnum::U32(lhs), TensorEnum::U32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                    (TensorEnum::I32(lhs), TensorEnum::I32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                    (TensorEnum::U8(lhs), TensorEnum::U8(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::F32(lhs), DynTensor::F32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::F64(lhs), DynTensor::F64(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::U32(lhs), DynTensor::U32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::I32(lhs), DynTensor::I32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::U8(lhs), DynTensor::U8(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
                     _ => Err(PyTypeError::new_err(format!("unsupport {} with {:?} and {:?}", stringify!($method), lhs.dtype(), $rhs.dtype())))
                 }
             } else {
                 match &$rhs.inner {
-                    TensorEnum::U8(rhs) => {
+                    DynTensor::U8(rhs) => {
                         let scalar = $lhs.extract::<u8>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for f32 tensor"))?;                
                         Tensor:: [< scalar_ $method >](scalar, rhs).map_err(to_value_error).map(Into::into)
                     },
-                    TensorEnum::F32(rhs) => {
+                    DynTensor::F32(rhs) => {
                         let scalar = $lhs.extract::<f32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or float for f32 tensor"))?;                
                         Tensor:: [< scalar_ $method >](scalar, rhs).map_err(to_value_error).map(Into::into)
                     },
-                    TensorEnum::F64(rhs) => {
+                    DynTensor::F64(rhs) => {
                         let scalar = $lhs.extract::<f64>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or float for f64 tensor"))?;
                         Tensor:: [< scalar_ $method >](scalar, rhs).map_err(to_value_error).map(Into::into)
                     },
-                    TensorEnum::I32(rhs) => {
+                    DynTensor::I32(rhs) => {
                         let scalar = $lhs.extract::<i32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for i32 tensor"))?;
                         Tensor:: [< scalar_ $method >](scalar, rhs).map_err(to_value_error).map(Into::into)
                     },
-                    TensorEnum::U32(rhs) => {
+                    DynTensor::U32(rhs) => {
                         let scalar = $lhs.extract::<u32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for i32 tensor"))?;
                         Tensor:: [< scalar_ $method >](scalar, rhs).map_err(to_value_error).map(Into::into)
                     },
@@ -102,32 +102,32 @@ macro_rules! impl_arith_binary {
     ($lhs:ident, $rhs:ident, $method:ident) => {
         if let Ok(rhs) = $rhs.extract::<PyTensor>() {
             match (&$lhs.inner, &rhs.inner) {
-                (TensorEnum::F32(lhs), TensorEnum::F32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                (TensorEnum::F64(lhs), TensorEnum::F64(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                (TensorEnum::U32(lhs), TensorEnum::U32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                (TensorEnum::I32(lhs), TensorEnum::I32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                (TensorEnum::U8(lhs), TensorEnum::U8(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                (DynTensor::F32(lhs), DynTensor::F32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                (DynTensor::F64(lhs), DynTensor::F64(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                (DynTensor::U32(lhs), DynTensor::U32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                (DynTensor::I32(lhs), DynTensor::I32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                (DynTensor::U8(lhs), DynTensor::U8(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
                 _ => Err(PyTypeError::new_err(format!("unsupport {} with {:?} and {:?}", stringify!($method), $lhs.dtype(), rhs.dtype())))
             }
         } else {
             match &$lhs.inner {
-                TensorEnum::U8(lhs) => {
+                DynTensor::U8(lhs) => {
                     let scalar = $rhs.extract::<u8>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for f32 tensor"))?;                
                     lhs.$method(scalar).map_err(to_value_error).map(Into::into)
                 },
-                TensorEnum::F32(lhs) => {
+                DynTensor::F32(lhs) => {
                     let scalar = $rhs.extract::<f32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or float for f32 tensor"))?;                
                     lhs.$method(scalar).map_err(to_value_error).map(Into::into)
                 },
-                TensorEnum::F64(lhs) => {
+                DynTensor::F64(lhs) => {
                     let scalar = $rhs.extract::<f64>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or float for f64 tensor"))?;
                     lhs.$method(scalar).map_err(to_value_error).map(Into::into)
                 },
-                TensorEnum::I32(lhs) => {
+                DynTensor::I32(lhs) => {
                     let scalar = $rhs.extract::<i32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for i32 tensor"))?;
                     lhs.$method(scalar).map_err(to_value_error).map(Into::into)
                 },
-                TensorEnum::U32(lhs) => {
+                DynTensor::U32(lhs) => {
                     let scalar = $rhs.extract::<u32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for i32 tensor"))?;
                     lhs.$method(scalar).map_err(to_value_error).map(Into::into)
                 },
@@ -140,8 +140,8 @@ macro_rules! impl_arith_binary {
 macro_rules! impl_arith_unary {
     ($t:ident, $method:ident) => {
         match &$t.inner {
-            TensorEnum::F32(t) => Ok(t.$method().into()),
-            TensorEnum::F64(t) => Ok(t.$method().into()),
+            DynTensor::F32(t) => Ok(t.$method().into()),
+            DynTensor::F64(t) => Ok(t.$method().into()),
             _ => Err(PyValueError::new_err(format!("dtype {} not support {:?}", stringify!($method), $t.dtype()))),
         }
     };
@@ -195,12 +195,12 @@ impl PyTensor {
 
     fn dtype(&self) -> PyDType {
         match &self.inner {
-            TensorEnum::Bool(_) => PyDType::Bool,
-            TensorEnum::F32(_) => PyDType::Float32,
-            TensorEnum::F64(_) => PyDType::Float64,
-            TensorEnum::U32(_) => PyDType::UInt32,
-            TensorEnum::I32(_) => PyDType::Int32,
-            TensorEnum::U8(_) => PyDType::UInt8,
+            DynTensor::Bool(_) => PyDType::Bool,
+            DynTensor::F32(_) => PyDType::Float32,
+            DynTensor::F64(_) => PyDType::Float64,
+            DynTensor::U32(_) => PyDType::UInt32,
+            DynTensor::I32(_) => PyDType::Int32,
+            DynTensor::U8(_) => PyDType::UInt8,
         }
     }
 
@@ -324,6 +324,39 @@ impl PyTensor {
         impl_arith_unary!(self, sigmoid)
     }
 
+    fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
+        if let Ok(index) = index.extract::<usize>() {
+            return impl_method!(self, t, t.index(index).map_err(to_value_error).map(Into::into));
+        }
+        if let Ok(index) = index.extract::<(usize,)>() {
+            return impl_method!(self, t, t.index(index).map_err(to_value_error).map(Into::into));
+        }
+        if let Ok(index) = index.extract::<(usize, usize)>() {
+            return impl_method!(self, t, t.index(index).map_err(to_value_error).map(Into::into));
+        }
+        if let Ok(index) = index.extract::<(usize, usize, usize)>() {
+            return impl_method!(self, t, t.index(index).map_err(to_value_error).map(Into::into));
+        }
+        if let Ok(index) = index.extract::<(usize, usize, usize, usize)>() {
+            return impl_method!(self, t, t.index(index).map_err(to_value_error).map(Into::into));
+        }
+        if let Ok(index) = index.extract::<(usize, usize, usize, usize, usize)>() {
+            return impl_method!(self, t, t.index(index).map_err(to_value_error).map(Into::into));
+        }
+        if let Ok(index) = index.extract::<Vec<usize>>() {
+            match index.len() {
+                1 => return impl_method!(self, t, t.index((index[0],)).map_err(to_value_error).map(Into::into)),
+                2 => return impl_method!(self, t, t.index((index[0], index[1],)).map_err(to_value_error).map(Into::into)),
+                3 => return impl_method!(self, t, t.index((index[0], index[1], index[2],)).map_err(to_value_error).map(Into::into)),
+                4 => return impl_method!(self, t, t.index((index[0], index[1], index[2], index[3])).map_err(to_value_error).map(Into::into)),
+                5 => return impl_method!(self, t, t.index((index[0], index[1], index[2], index[3], index[4])).map_err(to_value_error).map(Into::into)),
+                _ => return Err(PyValueError::new_err(format!("unsupport vector with len {} as index", index.len()))),
+            }
+        }
+
+        Err(PyValueError::new_err(format!("unspport index type {}", index)))
+    }
+
     fn __str__(&self) -> String {
         impl_method!(self, t, format!("{}", t))
     }
@@ -338,7 +371,7 @@ macro_rules! impl_convert_with_type {
     ($variant:ident, $inner:ty) => {
         impl From<Tensor<$inner>> for PyTensor {
             fn from(t: Tensor<$inner>) -> Self {
-                PyTensor { inner: TensorEnum::$variant(t) }
+                PyTensor { inner: DynTensor::$variant(t) }
             }
         }
     };
