@@ -4,8 +4,12 @@
 //!
 use crate::{FloatCategory, FloatDType, IntCategory, IntDType, NumCategory, NumDType, Result, Tensor, WithDType};
 
-impl<T: WithDType> Tensor<T> {
-    fn fmt_debug(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+// =================================================================================== //
+//                      Debug 
+// =================================================================================== //
+
+impl<T: WithDType> std::fmt::Debug for Tensor<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "Tensor[")?;
         match self.dims() {
             [] => {
@@ -35,13 +39,10 @@ impl<T: WithDType> Tensor<T> {
     }
 }
 
-impl<T: WithDType> std::fmt::Debug for Tensor<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.fmt_debug(f)
-    }
-}
+// =================================================================================== //
+//                  Options for Tensor pretty printing
+// =================================================================================== //
 
-/// Options for Tensor pretty printing
 #[derive(Debug, Clone)]
 pub struct PrinterOptions {
     pub precision: usize,
@@ -404,35 +405,61 @@ fn get_summarized_data<T: WithDType>(t: &Tensor<T>, edge_items: usize) -> Result
     }
 }
 
-struct DisplayOp;
+trait Display<T: WithDType> {
+    fn fmt_display(tensor: &Tensor<T>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let po: std::sync::MutexGuard<'_, PrinterOptions> = PRINT_OPTS.lock().unwrap();
+        let summarize = tensor.element_count() > po.threshold;
+        let to_display = if summarize {
+            match get_summarized_data(tensor, po.edge_items) {
+                Ok(v) => v,
+                Err(err) => return write!(f, "{err:?}"),
+            }
+        } else {
+            tensor.clone()
+        };
 
-trait Display<T: NumDType> {
-    fn fmt_display(
-        tensor: &Tensor<T>, 
-        to_display: Tensor<T>, 
-        f: &mut std::fmt::Formatter,
-        summarize: bool,
-        po: std::sync::MutexGuard<'_, PrinterOptions>
-    ) -> std::fmt::Result;
-}
+        Self::do_fmt_display(tensor, to_display, f, summarize, po)?;
 
-impl<T: NumDType> Display<T> for DisplayOp 
-where 
-    Self: DisplayCategory<T>,
-{
-    fn fmt_display(
+        write!(
+            f,
+            "Tensor[{:?}, {}]",
+            tensor.dims(),
+            tensor.dtype(),
+        )
+    }
+
+    fn do_fmt_display(
         tensor: &Tensor<T>, 
         to_display: Tensor<T>, 
         f: &mut std::fmt::Formatter,
         summarize: bool,
         po: std::sync::MutexGuard<'_, PrinterOptions>
     ) -> std::fmt::Result {
-        DisplayOp::fmt_display_category(tensor, to_display, f, summarize, po)
+        let tf = IntFormatter::new();
+        let max_w = tf.max_width(&to_display);
+        tf.fmt_tensor(tensor, 1, max_w, summarize, &po, f)
+    }
+}
+
+struct DisplayOp;
+
+impl<T: NumDType> Display<T> for DisplayOp 
+where 
+    Self: DisplayCategory<T>,
+{
+    fn do_fmt_display(
+        tensor: &Tensor<T>, 
+        to_display: Tensor<T>, 
+        f: &mut std::fmt::Formatter,
+        summarize: bool,
+        po: std::sync::MutexGuard<'_, PrinterOptions>
+    ) -> std::fmt::Result {
+        DisplayOp::do_fmt_display_category(tensor, to_display, f, summarize, po)
     }
 }
 
 trait DisplayCategory<T: NumDType, C: NumCategory = <T as NumDType>::Category> {
-    fn fmt_display_category(
+    fn do_fmt_display_category(
         tensor: &Tensor<T>, 
         to_display: Tensor<T>, 
         f: &mut std::fmt::Formatter,
@@ -442,7 +469,7 @@ trait DisplayCategory<T: NumDType, C: NumCategory = <T as NumDType>::Category> {
 }
 
 impl<T: IntDType> DisplayCategory<T, IntCategory> for DisplayOp {
-    fn fmt_display_category(
+    fn do_fmt_display_category(
         tensor: &Tensor<T>, 
         to_display: Tensor<T>, 
         f: &mut std::fmt::Formatter,
@@ -457,7 +484,7 @@ impl<T: IntDType> DisplayCategory<T, IntCategory> for DisplayOp {
 } 
 
 impl<T: FloatDType> DisplayCategory<T, FloatCategory> for DisplayOp {
-    fn fmt_display_category(
+    fn do_fmt_display_category(
         tensor: &Tensor<T>, 
         to_display: Tensor<T>, 
         f: &mut std::fmt::Formatter,
@@ -473,56 +500,15 @@ impl<T: FloatDType> DisplayCategory<T, FloatCategory> for DisplayOp {
     }
 } 
 
-impl<T: NumDType> std::fmt::Display for Tensor<T> 
+impl Display<bool> for DisplayOp {
+    
+}
+
+impl<T: WithDType> std::fmt::Display for Tensor<T> 
 where 
     DisplayOp: Display<T>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let po: std::sync::MutexGuard<'_, PrinterOptions> = PRINT_OPTS.lock().unwrap();
-        let summarize = self.element_count() > po.threshold;
-        let to_display = if summarize {
-            match get_summarized_data(self, po.edge_items) {
-                Ok(v) => v,
-                Err(err) => return write!(f, "{err:?}"),
-            }
-        } else {
-            self.clone()
-        };
-
-        DisplayOp::fmt_display(self, to_display, f, summarize, po)?;
-
-        write!(
-            f,
-            "Tensor[{:?}, {}]",
-            self.dims(),
-            self.dtype(),
-        )
+        DisplayOp::fmt_display(self, f)
     }
 }
-
-impl std::fmt::Display for Tensor<bool> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let po: std::sync::MutexGuard<'_, PrinterOptions> = PRINT_OPTS.lock().unwrap();
-        let summarize = self.element_count() > po.threshold;
-        let to_display = if summarize {
-            match get_summarized_data(self, po.edge_items) {
-                Ok(v) => v,
-                Err(err) => return write!(f, "{err:?}"),
-            }
-        } else {
-            self.clone()
-        };
-
-        let tf: IntFormatter<bool> = IntFormatter::new();
-        let max_w = tf.max_width(&to_display);
-        tf.fmt_tensor(self, 1, max_w, summarize, &po, f)?;
-
-        write!(
-            f,
-            "Tensor[{:?}, {}]",
-            self.dims(),
-            self.dtype(),
-        )
-    }
-}
-

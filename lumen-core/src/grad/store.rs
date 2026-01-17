@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ops::Index};
 use crate::{FloatDType, Tensor, TensorId};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GradStore<T: FloatDType>(HashMap<TensorId, Tensor<T>>);
 
 impl<T: FloatDType> GradStore<T> {
@@ -47,6 +47,14 @@ impl<T: FloatDType> GradStore<T> {
     /// Get the tensor ids of the stored gradient tensors
     pub fn get_ids(&self) -> impl Iterator<Item = &TensorId> {
         self.0.keys()
+    }
+
+    pub fn tensors(&self) -> impl Iterator<Item = &Tensor<T>> {
+        self.0.values()
+    }
+
+    pub fn iter(&self) -> std::collections::hash_map::Iter<'_, TensorId, Tensor<T>> {
+        self.0.iter()
     }
 
     pub fn len(&self) -> usize {

@@ -3,7 +3,7 @@ use crate::{AutogradMetaT, Dim, Error, IntTensor, NumDType, Result, WithDType};
 use super::Tensor;
 
 impl<T: WithDType> Tensor<T> {
-    fn indexes(&self, indexers: &[Indexer]) -> Result<Self> {
+    pub fn indexes(&self, indexers: &[Indexer]) -> Result<Self> {
         let mut x = self.clone();
         let mut current_dim = 0;
         for indexer in indexers.iter() {

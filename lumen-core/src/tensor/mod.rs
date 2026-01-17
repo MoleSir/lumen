@@ -37,6 +37,10 @@ impl TensorId {
         static COUNTER: atomic::AtomicUsize = atomic::AtomicUsize::new(1);
         Self(COUNTER.fetch_add(1, atomic::Ordering::Relaxed))
     }
+
+    pub fn value(&self) -> usize {
+        self.0
+    }
 }
 
 impl<T: WithDType> Hash for Tensor<T> {
