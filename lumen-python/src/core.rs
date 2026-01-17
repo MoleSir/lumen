@@ -1,5 +1,5 @@
-use lumen_core::{DynTensor, IndexOp, NumDType, Tensor};
-use pyo3::{exceptions::{PyRuntimeError, PyTypeError, PyValueError}, prelude::*};
+use lumen_core::{DynTensor, Indexer, NumDType, Tensor};
+use pyo3::{exceptions::{PyRuntimeError, PyTypeError, PyValueError}, prelude::*, types::{PyList, PySlice, PyTuple}};
 use paste::paste;
 
 #[pyclass(name = "Tensor")]
@@ -325,36 +325,30 @@ impl PyTensor {
     }
 
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
-        if let Ok(index) = index.extract::<usize>() {
-            return impl_method!(self, t, t.index(index).map_err(to_value_error).map(Into::into));
-        }
-        if let Ok(index) = index.extract::<(usize,)>() {
-            return impl_method!(self, t, t.index(index).map_err(to_value_error).map(Into::into));
-        }
-        if let Ok(index) = index.extract::<(usize, usize)>() {
-            return impl_method!(self, t, t.index(index).map_err(to_value_error).map(Into::into));
-        }
-        if let Ok(index) = index.extract::<(usize, usize, usize)>() {
-            return impl_method!(self, t, t.index(index).map_err(to_value_error).map(Into::into));
-        }
-        if let Ok(index) = index.extract::<(usize, usize, usize, usize)>() {
-            return impl_method!(self, t, t.index(index).map_err(to_value_error).map(Into::into));
-        }
-        if let Ok(index) = index.extract::<(usize, usize, usize, usize, usize)>() {
-            return impl_method!(self, t, t.index(index).map_err(to_value_error).map(Into::into));
-        }
-        if let Ok(index) = index.extract::<Vec<usize>>() {
-            match index.len() {
-                1 => return impl_method!(self, t, t.index((index[0],)).map_err(to_value_error).map(Into::into)),
-                2 => return impl_method!(self, t, t.index((index[0], index[1],)).map_err(to_value_error).map(Into::into)),
-                3 => return impl_method!(self, t, t.index((index[0], index[1], index[2],)).map_err(to_value_error).map(Into::into)),
-                4 => return impl_method!(self, t, t.index((index[0], index[1], index[2], index[3])).map_err(to_value_error).map(Into::into)),
-                5 => return impl_method!(self, t, t.index((index[0], index[1], index[2], index[3], index[4])).map_err(to_value_error).map(Into::into)),
-                _ => return Err(PyValueError::new_err(format!("unsupport vector with len {} as index", index.len()))),
+        let mut indexers = Vec::new();
+
+        if let Ok(tuple) = index.cast::<PyTuple>() {
+            for item in tuple {
+                indexers.push(py_to_indexer(&item)?);
             }
+        } else if let Ok(list) = index.cast::<PyList>() {
+            for item in list {
+                indexers.push(py_to_indexer(&item)?);
+            }
+        } else {
+            indexers.push(py_to_indexer(index)?);
         }
 
-        Err(PyValueError::new_err(format!("unspport index type {}", index)))
+        let res_inner = match &self.inner {
+            DynTensor::Bool(t) => DynTensor::Bool(t.indexes(&indexers).map_err(to_value_error)?),
+            DynTensor::F32(t) => DynTensor::F32(t.indexes(&indexers).map_err(to_value_error)?),
+            DynTensor::F64(t) => DynTensor::F64(t.indexes(&indexers).map_err(to_value_error)?),
+            DynTensor::I32(t) => DynTensor::I32(t.indexes(&indexers).map_err(to_value_error)?),
+            DynTensor::U32(t) => DynTensor::U32(t.indexes(&indexers).map_err(to_value_error)?),
+            DynTensor::U8(t) => DynTensor::U8(t.indexes(&indexers).map_err(to_value_error)?),
+        };
+
+        Ok(PyTensor { inner: res_inner })
     }
 
     fn __str__(&self) -> String {
@@ -366,6 +360,33 @@ impl PyTensor {
     }
 }
 
+
+fn py_to_indexer(obj: &Bound<'_, PyAny>) -> PyResult<Indexer> {
+    if let Ok(idx) = obj.extract::<usize>() {
+        return Ok(Indexer::Select(idx));
+    }
+
+    if let Ok(slice_obj) = obj.cast::<PySlice>() {
+        let indices = slice_obj.indices(isize::MAX)?;
+        if indices.start < 0 {
+            return Err(PyValueError::new_err(format!("start {} < 0", indices.start)));
+        }
+        let start: usize = indices.start as usize;
+
+        if indices.step < 0 {
+            return Err(PyValueError::new_err(format!("step {} < 0", indices.step)));
+        }
+        let step: usize = indices.step as usize;
+
+        return Ok(Indexer::Slice(lumen_core::Slice {
+            start,
+            end: Some(indices.stop),
+            step,
+        }));
+    }
+    
+    Err(PyTypeError::new_err(format!("Unsupported index type: {}", obj.get_type())))
+}
 
 macro_rules! impl_convert_with_type {
     ($variant:ident, $inner:ty) => {

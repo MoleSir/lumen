@@ -4,8 +4,6 @@ import lumen.nn
 
 lumen.nn.hello()
 
-from tokenizers.models import Model
-
 
 t1 = Tensor.zeros((3, 3, 3))
 t2 = Tensor.ones((5, 5), DType.Int32)
@@ -36,9 +34,11 @@ print(lhs)
 print('============')
 print(lhs[0])
 print('============')
-print(lhs[(0)])
+print(lhs[(1)])
 print('============')
 print(lhs[(0, 2)])
 print('============')
 print(lhs[(1, 2)])
+print('============')
+print(lhs[[0, 1]])
 # print(lhs[[1, 2, 2]])
