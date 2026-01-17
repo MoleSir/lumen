@@ -1,4 +1,4 @@
-use lumen_core::{DynTensor, Indexer, NumDType, Tensor};
+use lumen_core::{DynTensor, GradStore, Indexer, NumDType, Tensor, TensorId};
 use pyo3::{exceptions::{PyRuntimeError, PyTypeError, PyValueError}, prelude::*, types::{PyList, PySlice, PyTuple}};
 use paste::paste;
 
@@ -19,15 +19,17 @@ pub enum PyDType {
     UInt8,
 }
 
-// #[derive(Clone)]
-// pub enum DynTensor {
-//     Bool(Tensor<bool>),
-//     F32(Tensor<f32>),
-//     F64(Tensor<f64>),
-//     I32(Tensor<i32>),
-//     U32(Tensor<u32>),
-//     U8(Tensor<u8>),
-// }
+#[pyclass(name = "GradStore")]
+#[derive(Clone)]
+pub struct PyGradStore {
+    pub inner: DynGradStore,
+}
+
+#[derive(Clone)]
+pub enum DynGradStore {
+    F32(GradStore<f32>),
+    F64(GradStore<f64>),
+}
 
 macro_rules! impl_contruct {
     ($method:ident, $dtype:ident, $shape:ident) => {
@@ -43,7 +45,7 @@ macro_rules! impl_contruct {
     };
 }
 
-macro_rules! impl_method {
+macro_rules! impl_varient_method {
     ($self:ident, $t:ident, $expr:expr) => {
         match &$self.inner {
             DynTensor::Bool($t) => $expr,
@@ -190,7 +192,7 @@ impl PyTensor {
     }
 
     fn dims(&self) -> Vec<usize> {
-        impl_method!(self, t, t.dims().to_vec())
+        impl_varient_method!(self, t, t.dims().to_vec())
     }
 
     fn dtype(&self) -> PyDType {
@@ -201,6 +203,28 @@ impl PyTensor {
             DynTensor::U32(_) => PyDType::UInt32,
             DynTensor::I32(_) => PyDType::Int32,
             DynTensor::U8(_) => PyDType::UInt8,
+        }
+    }
+
+    fn set_requires_grad(&self, mode: bool) -> PyResult<()> {
+        match &self.inner {
+            DynTensor::Bool(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
+            DynTensor::F32(t) => Ok(t.set_requires_grad(mode)),
+            DynTensor::F64(t) => Ok(t.set_requires_grad(mode)),
+            DynTensor::U32(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
+            DynTensor::I32(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
+            DynTensor::U8(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
+        }
+    }
+
+    fn requires_grad(&self) -> PyResult<bool> {
+        match &self.inner {
+            DynTensor::Bool(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
+            DynTensor::F32(t) => Ok(t.requires_grad()),
+            DynTensor::F64(t) => Ok(t.requires_grad()),
+            DynTensor::U32(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
+            DynTensor::I32(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
+            DynTensor::U8(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
         }
     }
 
@@ -324,6 +348,39 @@ impl PyTensor {
         impl_arith_unary!(self, sigmoid)
     }
 
+    #[pyo3(signature = (other, rtol=None, atol=None))]
+    fn allclose(&self, other: &Self, rtol: Option<f64>, atol: Option<f64>) -> PyResult<bool> {
+        let rtol = rtol.unwrap_or(1e-5);
+        let atol = atol.unwrap_or(1e-8);
+        
+        match (&self.inner, &other.inner) {
+            (DynTensor::F32(this), DynTensor::F32(other)) => Ok(this.allclose(other, rtol, atol)),
+            (DynTensor::F64(this), DynTensor::F64(other)) => Ok(this.allclose(other, rtol, atol)),
+            (DynTensor::U32(this), DynTensor::U32(other)) => Ok(this.allclose(other, rtol, atol)),
+            (DynTensor::I32(this), DynTensor::I32(other)) => Ok(this.allclose(other, rtol, atol)),
+            (DynTensor::U8(this), DynTensor::U8(other)) => Ok(this.allclose(other, rtol, atol)),
+            (DynTensor::Bool(this), DynTensor::Bool(other)) => Ok(this.eq(other)),
+            _ => Ok(false)
+        }
+    }
+
+    fn backward(&self) -> PyResult<PyGradStore> {
+        match &self.inner {
+            DynTensor::Bool(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
+            DynTensor::F32(t) => {
+                let grads = t.backward().map_err(to_value_error)?;
+                Ok(PyGradStore { inner: DynGradStore::F32(grads) })
+            },
+            DynTensor::F64(t) => {
+                let grads = t.backward().map_err(to_value_error)?;
+                Ok(PyGradStore { inner: DynGradStore::F64(grads) })
+            },
+            DynTensor::U32(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
+            DynTensor::I32(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
+            DynTensor::U8(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
+        }
+    }
+
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
         let mut indexers = Vec::new();
 
@@ -339,27 +396,114 @@ impl PyTensor {
             indexers.push(py_to_indexer(index)?);
         }
 
-        let res_inner = match &self.inner {
-            DynTensor::Bool(t) => DynTensor::Bool(t.indexes(&indexers).map_err(to_value_error)?),
-            DynTensor::F32(t) => DynTensor::F32(t.indexes(&indexers).map_err(to_value_error)?),
-            DynTensor::F64(t) => DynTensor::F64(t.indexes(&indexers).map_err(to_value_error)?),
-            DynTensor::I32(t) => DynTensor::I32(t.indexes(&indexers).map_err(to_value_error)?),
-            DynTensor::U32(t) => DynTensor::U32(t.indexes(&indexers).map_err(to_value_error)?),
-            DynTensor::U8(t) => DynTensor::U8(t.indexes(&indexers).map_err(to_value_error)?),
-        };
+        let res_inner = impl_varient_method!(self, t, t.indexes(&indexers).map_err(to_value_error).map(Into::into)?);
 
         Ok(PyTensor { inner: res_inner })
     }
 
     fn __str__(&self) -> String {
-        impl_method!(self, t, format!("{}", t))
+        impl_varient_method!(self, t, format!("{}", t))
     }
 
     fn __repr__(&self) -> String {
-        impl_method!(self, t, format!("Tensor({}, shape={:?}, dtype={:?})", t, t.shape(), t.dtype()))
+        impl_varient_method!(self, t, format!("Tensor({}, shape={:?}, dtype={:?})", t, t.shape(), t.dtype()))
     }
 }
 
+#[pymethods]
+impl PyGradStore {
+    fn __getitem__(&self, tensor: PyTensor) -> PyResult<Option<PyTensor>> {
+        match &self.inner {
+            DynGradStore::F32(grads) => {
+                if let DynTensor::F32(tensor) = &tensor.inner {
+                    Ok(grads.get(tensor).cloned().map(Into::into))
+                } else {
+                    Err(PyValueError::new_err(format!("expect f32 tenspor, but got {:?}", tensor.dtype())))
+                }
+            }
+            DynGradStore::F64(grads) => {
+                if let DynTensor::F64(tensor) = &tensor.inner {
+                    Ok(grads.get(tensor).cloned().map(Into::into))
+                } else {
+                    Err(PyValueError::new_err(format!("expect f64 tenspor, but got {:?}", tensor.dtype())))
+                }
+            }
+        }
+    }
+
+    fn __iter__(&self) -> PyGradStoreIter {
+        let items: Vec<(TensorId, DynTensor)> = match &self.inner {
+            DynGradStore::F32(store) => {
+                store.iter()
+                    .map(|(k, v)| (*k, DynTensor::F32(v.clone())))
+                    .collect()
+            },
+            DynGradStore::F64(store) => {
+                store.iter()
+                    .map(|(k, v)| (*k, DynTensor::F64(v.clone())))
+                    .collect()
+            },
+        };
+
+        PyGradStoreIter {
+            iter: items.into_iter(),
+        }
+    }
+
+    fn items(&self) -> PyGradStoreIter {
+        self.__iter__()
+    }
+
+    fn keys(&self) -> Vec<usize> {
+        match &self.inner {
+            DynGradStore::F32(store) => store.get_ids().map(|k| k.value()).collect(),
+            DynGradStore::F64(store) => store.get_ids().map(|k| k.value()).collect(),
+        }
+    }
+
+    fn values(&self) -> Vec<PyTensor> {
+        match &self.inner {
+            DynGradStore::F32(store) => {
+                store.tensors()
+                    .map(|v| PyTensor { inner: DynTensor::F32(v.clone()) })
+                    .collect()
+            },
+            DynGradStore::F64(store) => {
+                store.tensors()
+                    .map(|v| PyTensor { inner: DynTensor::F64(v.clone()) })
+                    .collect()
+            },
+        }
+    }
+    
+    fn __len__(&self) -> usize {
+        match &self.inner {
+            DynGradStore::F32(store) => store.len(),
+            DynGradStore::F64(store) => store.len(),
+        }
+    }
+}
+
+#[pyclass]
+pub struct PyGradStoreIter {
+    iter: std::vec::IntoIter<(TensorId, DynTensor)>,
+}
+
+#[pymethods]
+impl PyGradStoreIter {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<(usize, PyTensor)> {        
+        slf.iter.next().map(|(id, dyn_tensor)| {
+            let py_id = id.value();            
+            let py_tensor = PyTensor { inner: dyn_tensor };
+            
+            (py_id, py_tensor)
+        })
+    }
+}
 
 fn py_to_indexer(obj: &Bound<'_, PyAny>) -> PyResult<Indexer> {
     if let Ok(idx) = obj.extract::<usize>() {
