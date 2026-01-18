@@ -1,4 +1,4 @@
-use crate::{AutogradMetaT, DTypeConvert, Error, Result, WithDType};
+use crate::{AutogradMetaT, DTypeConvert, Error, Result, TensorOrScalar, WithDType};
 use super::Tensor;
 
 impl<T: WithDType> Tensor<T> {
@@ -29,50 +29,36 @@ impl<T: WithDType> Tensor<T> {
         Ok(())
     }
 
-    pub fn assign<A: AssignToTensor<T>>(&self, source: A) -> Result<()> {
-        A::assign_to(source, self)
-    }
-}
-
-pub trait AssignToTensor<T: WithDType> {
-    fn assign_to(src: Self, dst: &Tensor<T>) -> Result<()>;
-}
-
-impl<T: WithDType> AssignToTensor<T> for T {
-    fn assign_to(src: T, dst: &Tensor<T>) -> Result<()> {
-        let mut storage = dst.storage_mut(0);
-        for storage_index in dst.layout().storage_indices() {
-            storage.set_unchecked(storage_index, src);
+    // no grad record
+    pub fn assign(&self, source: impl Into<TensorOrScalar<T>>) -> Result<()> {
+        match source.into() {
+            TensorOrScalar::Scalar(src) => {
+                let mut storage = self.storage_mut(0);
+                for storage_index in self.layout().storage_indices() {
+                    storage.set_unchecked(storage_index, src);
+                }
+                Ok(())
+            }
+            TensorOrScalar::Tensor(src) => {
+                if src.shape() != self.shape() {
+                    Err(Error::ShapeMismatchCopyFrom { dst: self.shape().clone(), src: src.shape().clone() })?
+                }
+        
+                let mut storage = self.storage_mut(0);
+        
+                for (self_storage_index, src_value) in self.layout().storage_indices().zip(src.iter()) {
+                    storage.set_unchecked(self_storage_index, src_value);
+                }
+        
+                Ok(())
+            }
         }
-
-        Ok(())
     }
 }
 
-impl<T: WithDType> AssignToTensor<T> for &Tensor<T> {
-    fn assign_to(src: &Tensor<T>, dst: &Tensor<T>) -> Result<()> {
-        if src.shape() != dst.shape() {
-            Err(Error::ShapeMismatchCopyFrom { dst: dst.shape().clone(), src: src.shape().clone() })?
-        }
-
-        let mut storage = dst.storage_mut(0);
-
-        for (self_storage_index, src_value) in dst.layout().storage_indices().zip(src.iter()) {
-            storage.set_unchecked(self_storage_index, src_value);
-        }
-
-        Ok(())
-    }
-}
-
-impl<T: WithDType> AssignToTensor<T> for Tensor<T> {
-    fn assign_to(src: Tensor<T>, dst: &Tensor<T>) -> Result<()> {
-        <&Tensor<T> as AssignToTensor<T>>::assign_to(&src, dst)
-    }
-}
 
 impl<From: WithDType> Tensor<From> {
-    pub fn to_dtype<To: WithDType>(&self) -> Tensor<To> 
+    pub fn cast<To: WithDType>(&self) -> Tensor<To> 
     where
         From: DTypeConvert<To>,
     {
@@ -115,37 +101,37 @@ mod tests {
     }
 
     #[test]
-    fn test_to_dtype_i32_to_f32() {
+    fn test_cast_i32_to_f32() {
         let a = Tensor::new(&[1i32, 2, 3]).unwrap();
-        let b: Tensor<f32> = a.to_dtype();
+        let b: Tensor<f32> = a.cast();
         assert_eq!(b.shape(), a.shape());
         let expected = Tensor::new(&[1.0f32, 2.0, 3.0]).unwrap();
         assert!(b.allclose(&expected, 1e-6, 1e-6));
     }
 
     #[test]
-    fn test_to_dtype_f64_to_i32() {
+    fn test_cast_f64_to_i32() {
         let a = Tensor::new(&[1.5f64, 2.7, 3.0]).unwrap();
-        let b: Tensor<i32> = a.to_dtype();
+        let b: Tensor<i32> = a.cast();
         assert_eq!(b.shape(), a.shape());
         let expected = Tensor::new(&[1i32, 2, 3]).unwrap(); // cast truncates
         assert_eq!(b.to_vec(), expected.to_vec());
     }
 
     #[test]
-    fn test_to_dtype_2d() {
+    fn test_cast_2d() {
         let a = Tensor::new(&[[1i32, 2], [3, 4]]).unwrap();
-        let b: Tensor<f64> = a.to_dtype();
+        let b: Tensor<f64> = a.cast();
         assert_eq!(b.shape(), a.shape());
         let expected = Tensor::new(&[[1.0, 2.0], [3.0, 4.0]]).unwrap();
         assert!(b.allclose(&expected, 1e-12, 1e-12));
     }
 
     #[test]
-    fn test_copy_vs_to_dtype() {
+    fn test_copy_vs_cast() {
         let a = Tensor::new(&[1i32, 2, 3]).unwrap();
         let b = a.copy();
-        let c: Tensor<f32> = a.to_dtype();
+        let c: Tensor<f32> = a.cast();
 
         assert_eq!(b.to_vec(), a.to_vec());
 

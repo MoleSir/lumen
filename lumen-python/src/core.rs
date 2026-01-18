@@ -1,4 +1,4 @@
-use lumen_core::{DynTensor, GradStore, Indexer, NumDType, Tensor, TensorId};
+use lumen_core::{DynTensor, GradStore, Indexer, NumDType, Shape, Slice, Tensor, TensorId, D};
 use pyo3::{exceptions::{PyRuntimeError, PyTypeError, PyValueError}, prelude::*, types::{PyList, PySlice, PyTuple}};
 use paste::paste;
 
@@ -58,17 +58,50 @@ macro_rules! impl_varient_method {
     };
 }
 
+macro_rules! impl_numdtype_varient_method {
+    ($self:ident, $t:ident, $expr:expr, $msg:expr) => {
+        match &$self.inner {
+            DynTensor::Bool(_) => Err(PyValueError::new_err(format!("bool unsupport {}", $msg))),
+            DynTensor::F32($t) => $expr,
+            DynTensor::F64($t) => $expr,
+            DynTensor::U32($t) => $expr,
+            DynTensor::I32($t) => $expr,
+            DynTensor::U8($t) => $expr,
+        }
+    };
+}
+
+macro_rules! impl_reduce {
+    ($op:ident, $self:ident, $dim:ident, $keep_dim:ident) => {
+        paste! {
+            match $dim {
+                Some(dim) => {
+                    let dim = py_to_dim(dim);
+                    if $keep_dim {
+                        impl_numdtype_varient_method!($self, t, t.[<$op _keepdim>](dim).map_err(to_value_error).map(Into::into), stringify!($op))
+                    } else {
+                        impl_numdtype_varient_method!($self, t, t.$op(dim).map_err(to_value_error).map(Into::into), stringify!($op))
+                    }
+                }
+                None => {
+                    impl_numdtype_varient_method!($self, t, t.[<$op _all>]().map_err(to_value_error).map(Into::into), stringify!($op))
+                }
+            }
+        }
+    };
+}
+
 // lhs : Tensor or Scalar
 macro_rules! impl_arith_binary_lhs {
     ($lhs:ident, $rhs:ident, $method:ident) => {
         paste! {
             if let Ok(lhs) = $lhs.extract::<PyTensor>() {
                 match (&lhs.inner, &$rhs.inner) {
-                    (DynTensor::F32(lhs), DynTensor::F32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                    (DynTensor::F64(lhs), DynTensor::F64(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                    (DynTensor::U32(lhs), DynTensor::U32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                    (DynTensor::I32(lhs), DynTensor::I32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                    (DynTensor::U8(lhs), DynTensor::U8(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::F32(lhs), DynTensor::F32(rhs)) => lhs.[<broadcast_ $method>](rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::F64(lhs), DynTensor::F64(rhs)) => lhs.[<broadcast_ $method>](rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::U32(lhs), DynTensor::U32(rhs)) => lhs.[<broadcast_ $method>](rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::I32(lhs), DynTensor::I32(rhs)) => lhs.[<broadcast_ $method>](rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::U8(lhs), DynTensor::U8(rhs)) => lhs.[<broadcast_ $method>](rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
                     _ => Err(PyTypeError::new_err(format!("unsupport {} with {:?} and {:?}", stringify!($method), lhs.dtype(), $rhs.dtype())))
                 }
             } else {
@@ -102,38 +135,40 @@ macro_rules! impl_arith_binary_lhs {
 
 macro_rules! impl_arith_binary {
     ($lhs:ident, $rhs:ident, $method:ident) => {
-        if let Ok(rhs) = $rhs.extract::<PyTensor>() {
-            match (&$lhs.inner, &rhs.inner) {
-                (DynTensor::F32(lhs), DynTensor::F32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                (DynTensor::F64(lhs), DynTensor::F64(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                (DynTensor::U32(lhs), DynTensor::U32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                (DynTensor::I32(lhs), DynTensor::I32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                (DynTensor::U8(lhs), DynTensor::U8(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
-                _ => Err(PyTypeError::new_err(format!("unsupport {} with {:?} and {:?}", stringify!($method), $lhs.dtype(), rhs.dtype())))
-            }
-        } else {
-            match &$lhs.inner {
-                DynTensor::U8(lhs) => {
-                    let scalar = $rhs.extract::<u8>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for f32 tensor"))?;                
-                    lhs.$method(scalar).map_err(to_value_error).map(Into::into)
-                },
-                DynTensor::F32(lhs) => {
-                    let scalar = $rhs.extract::<f32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or float for f32 tensor"))?;                
-                    lhs.$method(scalar).map_err(to_value_error).map(Into::into)
-                },
-                DynTensor::F64(lhs) => {
-                    let scalar = $rhs.extract::<f64>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or float for f64 tensor"))?;
-                    lhs.$method(scalar).map_err(to_value_error).map(Into::into)
-                },
-                DynTensor::I32(lhs) => {
-                    let scalar = $rhs.extract::<i32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for i32 tensor"))?;
-                    lhs.$method(scalar).map_err(to_value_error).map(Into::into)
-                },
-                DynTensor::U32(lhs) => {
-                    let scalar = $rhs.extract::<u32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for i32 tensor"))?;
-                    lhs.$method(scalar).map_err(to_value_error).map(Into::into)
-                },
-                _ => Err(pyo3::exceptions::PyTypeError::new_err("Unsupported dtype for scalar add")),
+        paste! {
+            if let Ok(rhs) = $rhs.extract::<PyTensor>() {
+                match (&$lhs.inner, &rhs.inner) {
+                    (DynTensor::F32(lhs), DynTensor::F32(rhs)) => lhs.[<broadcast_ $method>](rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::F64(lhs), DynTensor::F64(rhs)) => lhs.[<broadcast_ $method>](rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::U32(lhs), DynTensor::U32(rhs)) => lhs.[<broadcast_ $method>](rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::I32(lhs), DynTensor::I32(rhs)) => lhs.[<broadcast_ $method>](rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::U8(lhs), DynTensor::U8(rhs)) => lhs.[<broadcast_ $method>](rhs).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    _ => Err(PyTypeError::new_err(format!("unsupport {} with {:?} and {:?}", stringify!($method), $lhs.dtype(), rhs.dtype())))
+                }
+            } else {
+                match &$lhs.inner {
+                    DynTensor::U8(lhs) => {
+                        let scalar = $rhs.extract::<u8>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for f32 tensor"))?;                
+                        lhs.$method(scalar).map_err(to_value_error).map(Into::into)
+                    },
+                    DynTensor::F32(lhs) => {
+                        let scalar = $rhs.extract::<f32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or float for f32 tensor"))?;                
+                        lhs.$method(scalar).map_err(to_value_error).map(Into::into)
+                    },
+                    DynTensor::F64(lhs) => {
+                        let scalar = $rhs.extract::<f64>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or float for f64 tensor"))?;
+                        lhs.$method(scalar).map_err(to_value_error).map(Into::into)
+                    },
+                    DynTensor::I32(lhs) => {
+                        let scalar = $rhs.extract::<i32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for i32 tensor"))?;
+                        lhs.$method(scalar).map_err(to_value_error).map(Into::into)
+                    },
+                    DynTensor::U32(lhs) => {
+                        let scalar = $rhs.extract::<u32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for i32 tensor"))?;
+                        lhs.$method(scalar).map_err(to_value_error).map(Into::into)
+                    },
+                    _ => Err(pyo3::exceptions::PyTypeError::new_err("Unsupported dtype for scalar add")),
+                }
             }
         }
     };
@@ -153,19 +188,22 @@ macro_rules! impl_arith_unary {
 impl PyTensor {
     #[staticmethod]
     #[pyo3(signature = (shape, dtype=None))]
-    fn zeros(shape: Vec<usize>, dtype: Option<PyDType>) -> PyResult<Self> {
+    fn zeros(shape: &Bound<'_, PyAny>, dtype: Option<PyDType>) -> PyResult<Self> {
+        let shape = py_to_shape(shape)?;
         impl_contruct!(zeros, dtype, shape);
     }
 
     #[staticmethod]
     #[pyo3(signature = (shape, dtype=None))]
-    fn ones(shape: Vec<usize>, dtype: Option<PyDType>) -> PyResult<Self> {
+    fn ones(shape: &Bound<'_, PyAny>, dtype: Option<PyDType>) -> PyResult<Self> {
+        let shape = py_to_shape(shape)?;
         impl_contruct!(ones, dtype, shape);
     }
 
     #[staticmethod]
     #[pyo3(signature = (shape, min=None, max=None, dtype=None))]
-    fn rand(shape: Vec<usize>, min: Option<f32>, max: Option<f32>, dtype: Option<PyDType>) -> PyResult<Self> {
+    fn rand(shape: &Bound<'_, PyAny>, min: Option<f32>, max: Option<f32>, dtype: Option<PyDType>) -> PyResult<Self> {
+        let shape = py_to_shape(shape)?;
         let min = min.unwrap_or(0.0);
         let max = max.unwrap_or(1.0);
         let dtype = dtype.unwrap_or(PyDType::Float32);
@@ -179,7 +217,9 @@ impl PyTensor {
 
     #[staticmethod]
     #[pyo3(signature = (shape, mean=None, std=None, dtype=None))]
-    fn randn(shape: Vec<usize>, mean: Option<f32>, std: Option<f32>, dtype: Option<PyDType>) -> PyResult<Self> {
+    fn randn(shape: &Bound<'_, PyAny>, mean: Option<f32>, std: Option<f32>, dtype: Option<PyDType>) -> PyResult<Self> {
+        let shape = py_to_shape(shape)?;
+        
         let mean = mean.unwrap_or(0.0);
         let std = std.unwrap_or(1.0);
         let dtype = dtype.unwrap_or(PyDType::Float32);
@@ -276,6 +316,30 @@ impl PyTensor {
         impl_arith_binary!(self, rhs, div)
     }
 
+    fn eq(&self, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
+        impl_arith_binary!(self, rhs, eq)
+    }
+
+    fn ne(&self, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
+        impl_arith_binary!(self, rhs, ne)
+    }
+
+    fn le(&self, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
+        impl_arith_binary!(self, rhs, le)
+    }
+
+    fn ge(&self, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
+        impl_arith_binary!(self, rhs, ge)
+    }
+
+    fn lt(&self, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
+        impl_arith_binary!(self, rhs, lt)
+    }
+
+    fn gt(&self, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
+        impl_arith_binary!(self, rhs, gt)
+    }
+
     fn floor(&self) -> PyResult<Self> {
         impl_arith_unary!(self, floor)
     }
@@ -348,6 +412,89 @@ impl PyTensor {
         impl_arith_unary!(self, sigmoid)
     }
 
+    #[pyo3(signature = (dim=None, keep_dim=false))]
+    fn sum(&self, dim: Option<isize>, keep_dim: bool) -> PyResult<Self> {
+        return impl_reduce!(sum, self, dim, keep_dim);
+    }
+
+    #[pyo3(signature = (dim=None, keep_dim=false))]
+    fn min(&self, dim: Option<isize>, keep_dim: bool) -> PyResult<Self> {
+        return impl_reduce!(min, self, dim, keep_dim);
+    }
+
+    #[pyo3(signature = (dim=None, keep_dim=false))]
+    fn max(&self, dim: Option<isize>, keep_dim: bool) -> PyResult<Self> {
+        return impl_reduce!(min, self, dim, keep_dim);
+    }
+
+    #[pyo3(signature = (dim=None, keep_dim=false))]
+    fn mean(&self, dim: Option<isize>, keep_dim: bool) -> PyResult<Self> {
+        return impl_reduce!(min, self, dim, keep_dim);
+    }
+
+    #[pyo3(signature = (dim=None, keep_dim=false, unbiased=true))]
+    fn var(&self, dim: Option<isize>, keep_dim: bool, unbiased: bool) -> PyResult<Self> {
+        if unbiased {
+            match dim {
+                Some(dim) => {
+                    let dim = py_to_dim(dim);
+                    if keep_dim {
+                        impl_numdtype_varient_method!(self, t, t.var_unbiased_keepdim(dim).map_err(to_value_error).map(Into::into), "var")
+                    } else {
+                        impl_numdtype_varient_method!(self, t, t.var_unbiased(dim).map_err(to_value_error).map(Into::into), stringify!($op))
+                    }
+                }
+                None => {
+                    impl_numdtype_varient_method!(self, t, t.var_unbiased_all().map_err(to_value_error).map(Into::into), stringify!($op))
+                }
+            }
+        } else {
+            match dim {
+                Some(dim) => {
+                    let dim = py_to_dim(dim);
+                    if keep_dim {
+                        impl_numdtype_varient_method!(self, t, t.var_keepdim(dim).map_err(to_value_error).map(Into::into), "var")
+                    } else {
+                        impl_numdtype_varient_method!(self, t, t.var(dim).map_err(to_value_error).map(Into::into), stringify!($op))
+                    }
+                }
+                None => {
+                    impl_numdtype_varient_method!(self, t, t.var_all().map_err(to_value_error).map(Into::into), stringify!($op))
+                }
+            }
+        }
+    }
+
+    fn neg(&self) -> PyResult<Self> {
+        match &self.inner {
+            DynTensor::F32(t) => Ok(t.neg().into()),
+            DynTensor::F64(t) => Ok(t.neg().into()),
+            DynTensor::I32(t) => Ok(t.neg().into()),
+            DynTensor::U32(_) => Err(PyValueError::new_err("u32 tensor not support neg")),
+            DynTensor::U8(_) => Err(PyValueError::new_err("u8 tensor not support neg")),
+            DynTensor::Bool(_) => Err(PyValueError::new_err("bool tensor not support neg")),
+        }
+    }
+
+    fn __matmul__(&self, rhs: &PyTensor) -> PyResult<Self> {
+        self.matmul(rhs)
+    }
+
+    fn __rmatmul__(&self, lhs: &PyTensor) -> PyResult<Self> {
+        lhs.matmul(self)
+    }
+
+    fn matmul(&self, rhs: &PyTensor) -> PyResult<Self> {
+        match (&self.inner, &rhs.inner) {
+            (DynTensor::F32(lhs), DynTensor::F32(rhs)) => lhs.matmul(rhs).map_err(to_value_error).map(Into::into),
+            (DynTensor::F64(lhs), DynTensor::F64(rhs)) => lhs.matmul(rhs).map_err(to_value_error).map(Into::into),
+            (DynTensor::U32(lhs), DynTensor::U32(rhs)) => lhs.matmul(rhs).map_err(to_value_error).map(Into::into),
+            (DynTensor::I32(lhs), DynTensor::I32(rhs)) => lhs.matmul(rhs).map_err(to_value_error).map(Into::into),
+            (DynTensor::U8(lhs), DynTensor::U8(rhs)) =>  lhs.matmul(rhs).map_err(to_value_error).map(Into::into),
+            _ => Err(PyTypeError::new_err(format!("unsupport matmul with {:?} and {:?}", self.dtype(), rhs.dtype())))
+        } 
+    }
+
     #[pyo3(signature = (other, rtol=None, atol=None))]
     fn allclose(&self, other: &Self, rtol: Option<f64>, atol: Option<f64>) -> PyResult<bool> {
         let rtol = rtol.unwrap_or(1e-5);
@@ -362,6 +509,102 @@ impl PyTensor {
             (DynTensor::Bool(this), DynTensor::Bool(other)) => Ok(this.eq(other)),
             _ => Ok(false)
         }
+    }
+
+    fn squeeze(&self, dim: isize) -> PyResult<Self> {
+        let dim = py_to_dim(dim);
+        return impl_varient_method!(self, t, t.squeeze(dim).map_err(to_value_error).map(Into::into));
+    }
+
+    fn unsqueeze(&self, dim: isize) -> PyResult<Self> {
+        let dim = py_to_dim(dim);    
+        return impl_varient_method!(self, t, t.unsqueeze(dim).map_err(to_value_error).map(Into::into));
+    }
+
+    fn narrow(&self, dim: isize, start: usize, len: usize) -> PyResult<Self> {
+        let dim = py_to_dim(dim);    
+        return impl_varient_method!(self, t, t.narrow(dim, start, len).map_err(to_value_error).map(Into::into));
+    }
+
+    fn slice(&self, dim: isize, slice: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let dim = py_to_dim(dim);    
+        let slice = py_to_slice(slice)?;
+        return impl_varient_method!(self, t, t.slice(dim, &slice).map_err(to_value_error).map(Into::into));
+    }
+
+    fn reshape(&self, shape: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let shape = py_to_shape(shape)?;
+        return impl_varient_method!(self, t, t.reshape(shape).map_err(to_value_error).map(Into::into));
+    }
+
+    fn transpose(&self, dim1: isize, dim2: isize) -> PyResult<Self> {
+        let dim1 = py_to_dim(dim1);
+        let dim2 = py_to_dim(dim2);
+        return impl_varient_method!(self, t, t.transpose(dim1, dim2).map_err(to_value_error).map(Into::into));
+    }
+
+    fn permute(&self, dims: Vec<usize>) -> PyResult<Self> {
+        return impl_varient_method!(self, t, t.permute(dims).map_err(to_value_error).map(Into::into));
+    }
+
+    #[staticmethod]
+    fn cat(tensors: Vec<Self>, dim: isize) -> PyResult<Self> {
+        let dim = py_to_dim(dim);
+        if tensors.is_empty() {
+            Err(PyValueError::new_err("empty cat"))
+        } else {
+            let a0 = &tensors[0];
+            return impl_varient_method!(
+                a0, 
+                a0, 
+                {
+                    let mut vec = vec![a0.clone()];
+                    for a in tensors.iter().skip(1) {
+                        let t = a.inner.as_tensor().map_err(to_value_error)?;
+                        vec.push(t);   
+                    }
+                    Tensor::cat(&vec, dim).map_err(to_value_error).map(Into::into)
+                }
+            );
+        }
+    }
+
+    #[staticmethod]
+    fn stack(tensors: Vec<Self>, dim: isize) -> PyResult<Self> {
+        let unsqueezed_tensors: PyResult<Vec<_>> = tensors.into_iter()
+            .map(|t| t.unsqueeze(dim))
+            .collect(); 
+        Self::cat(unsqueezed_tensors?, dim)
+    }
+
+    fn split(&self, dim: isize) -> PyResult<Vec<Self>> {
+        let dim = py_to_dim(dim);
+        return impl_varient_method!(self, t, t.split(dim).map_err(to_value_error).map(|v| v.into_iter().map(Into::into).collect()));
+    }
+
+    fn chunk(&self, chunks: usize, dim: isize) -> PyResult<Vec<Self>> {
+        let dim = py_to_dim(dim);
+        return impl_varient_method!(self, t, t.chunk(chunks, dim).map_err(to_value_error).map(|v| v.into_iter().map(Into::into).collect()));
+    }
+
+    fn flatten(&self, start_dim: isize, end_dim: isize) -> PyResult<Self> {
+        let start_dim = py_to_dim(start_dim);
+        let end_dim = py_to_dim(end_dim);
+        impl_varient_method!(self, t, t.flatten(start_dim, end_dim).map_err(to_value_error).map(Into::into))
+    }
+
+    fn flatten_all(&self) -> PyResult<Self> {
+        impl_varient_method!(self, t, t.flatten_all().map_err(to_value_error).map(Into::into))
+    }
+
+    fn repeat_dim(&self, dim: isize, times: usize) -> PyResult<Self> {
+        let dim = py_to_dim(dim);
+        impl_varient_method!(self, t, t.repeat_dim(dim, times).map_err(to_value_error).map(Into::into))
+    }
+
+    fn broadcast_as(&self, shape: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let shape = py_to_shape(shape)?;
+        impl_varient_method!(self, t, t.broadcast_as(shape).map_err(to_value_error).map(Into::into))
     }
 
     fn backward(&self) -> PyResult<PyGradStore> {
@@ -505,11 +748,28 @@ impl PyGradStoreIter {
     }
 }
 
+fn py_to_shape(obj: &Bound<'_, PyAny>) -> PyResult<Shape> {
+    if let Ok(dim) = obj.extract::<usize>() {
+        Ok(dim.into())
+    } else if let Ok(vec) = obj.extract::<Vec<usize>>() {
+        Ok(vec.into())
+    } else {
+        Err(PyTypeError::new_err(format!("Unsupported shape type: {}", obj.get_type())))
+    }
+}
+
 fn py_to_indexer(obj: &Bound<'_, PyAny>) -> PyResult<Indexer> {
     if let Ok(idx) = obj.extract::<usize>() {
         return Ok(Indexer::Select(idx));
     }
+    if let Ok(slice) = py_to_slice(obj) {
+        return Ok(Indexer::Slice(slice))
+    }
+    
+    Err(PyTypeError::new_err(format!("Unsupported index type: {}", obj.get_type())))
+}
 
+fn py_to_slice(obj: &Bound<'_, PyAny>) -> PyResult<Slice> {
     if let Ok(slice_obj) = obj.cast::<PySlice>() {
         let indices = slice_obj.indices(isize::MAX)?;
         if indices.start < 0 {
@@ -522,14 +782,21 @@ fn py_to_indexer(obj: &Bound<'_, PyAny>) -> PyResult<Indexer> {
         }
         let step: usize = indices.step as usize;
 
-        return Ok(Indexer::Slice(lumen_core::Slice {
+        return Ok(Slice {
             start,
             end: Some(indices.stop),
             step,
-        }));
+        });
     }
-    
-    Err(PyTypeError::new_err(format!("Unsupported index type: {}", obj.get_type())))
+    Err(PyTypeError::new_err(format!("Unsupported slice type: {}", obj.get_type())))
+}
+
+fn py_to_dim(dim: isize) -> D {
+    if dim >= 0 {
+        D::Index(dim as usize)
+    } else {
+        D::Minus((-dim) as usize)
+    }
 }
 
 macro_rules! impl_convert_with_type {

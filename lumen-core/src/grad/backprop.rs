@@ -59,8 +59,8 @@ impl<T: FloatDType> Tensor<T> {
                         }
                         Op::Binary(lhs, rhs, BinaryOp::Minimum)
                         | Op::Binary(lhs, rhs, BinaryOp::Maximum) => {
-                            let mask_lhs = (*node).eq(lhs)?.to_dtype();
-                            let mask_rhs = (*node).eq(rhs)?.to_dtype();
+                            let mask_lhs = (*node).eq(lhs)?.cast();
+                            let mask_rhs = (*node).eq(rhs)?.cast();
     
                             // If both masks are 1 one the same point, we want to scale the
                             // gradient by 0.5 rather than 1.
@@ -100,8 +100,8 @@ impl<T: FloatDType> Tensor<T> {
                         }
                         Op::BinaryScalarRhs(lhs, rhs, BinaryOp::Maximum) |
                         Op::BinaryScalarRhs(lhs, rhs, BinaryOp::Minimum) => {
-                            let mask_lhs = (*node).eq(lhs)?.to_dtype();                            
-                            let mask_rhs = (*node).eq(*rhs)?.to_dtype();
+                            let mask_lhs = (*node).eq(lhs)?.cast();                            
+                            let mask_rhs = (*node).eq(*rhs)?.cast();
                             let lhs_grad = mask_lhs.mul(&grad)?.div(&(&mask_rhs + T::one()))?;
                             let lhs_sum_grad = grads.or_insert(lhs)?;
                             lhs_sum_grad.add_(&lhs_grad)?;
@@ -139,8 +139,8 @@ impl<T: FloatDType> Tensor<T> {
                         }
                         Op::BinaryScalarLhs(lhs, rhs, BinaryOp::Maximum) |
                         Op::BinaryScalarLhs(lhs, rhs, BinaryOp::Minimum) => {
-                            let mask_lhs = (*node).eq(*lhs)?.to_dtype();
-                            let mask_rhs = (*node).eq(rhs)?.to_dtype();
+                            let mask_lhs = (*node).eq(*lhs)?.cast();
+                            let mask_rhs = (*node).eq(rhs)?.cast();
                             let rhs_grad = mask_rhs.mul(&grad)?.div(&(&mask_lhs + T::one()))?;                            
                             let rhs_sum_grad = grads.or_insert(rhs)?;
                             rhs_sum_grad.add_(&rhs_grad)?;
@@ -230,7 +230,7 @@ impl<T: FloatDType> Tensor<T> {
                         }
                         Op::Unary(arg, UnaryOp::Relu) => {
                             let sum_grad = grads.or_insert(arg)?;
-                            let relu_grad = arg.ge(&arg.zeros_like()?)?.to_dtype::<T>();
+                            let relu_grad = arg.ge(&arg.zeros_like()?)?.cast::<T>();
                             sum_grad.add_(&(&grad * relu_grad))?;
                         }
                         Op::Unary(arg, UnaryOp::Silu) => {
@@ -248,7 +248,7 @@ impl<T: FloatDType> Tensor<T> {
                         }
                         Op::Unary(arg, UnaryOp::LeakyRelu(negative_slope)) => {
                             let sum_grad = grads.or_insert(arg)?;
-                            let mask = arg.ge(&arg.zeros_like()?)?.to_dtype::<T>();
+                            let mask = arg.ge(&arg.zeros_like()?)?.cast::<T>();
                         
                             let ones = mask.ones_like()?;
                             let inv_mask = ones.sub(&mask)?; 
@@ -292,14 +292,14 @@ impl<T: FloatDType> Tensor<T> {
                         Op::Reduce(arg, ReduceOp::Max, reduced_dims) => {
                             let node = Self::broadcast_back(arg, node, reduced_dims)?;
                             let grad = Self::broadcast_back(arg, &grad, reduced_dims)?;
-                            let grad = node.eq(arg)?.to_dtype().mul(&grad)?;
+                            let grad = node.eq(arg)?.cast().mul(&grad)?;
                             let sum_grad = grads.or_insert(arg)?;
                             sum_grad.add_(&grad.broadcast_as(sum_grad.dims())?)?;
                         }
                         Op::Reduce(arg, ReduceOp::Min, reduced_dims) => {
                             let node = Self::broadcast_back(arg, node, reduced_dims)?;
                             let grad = Self::broadcast_back(arg, &grad, reduced_dims)?;
-                            let grad = node.eq(arg)?.to_dtype().mul(&grad)?;
+                            let grad = node.eq(arg)?.cast().mul(&grad)?;
                             let sum_grad = grads.or_insert(arg)?;
                             sum_grad.add_(&grad.broadcast_as(sum_grad.dims())?)?;
                         }

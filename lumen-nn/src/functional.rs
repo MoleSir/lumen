@@ -131,7 +131,7 @@ pub fn dropout<T: FloatDType>(xs: &Tensor<T>, drop_p: T) -> NnResult<Tensor<T>> 
 
     let rand = Tensor::<T>::rand(T::zero(), T::one(), xs.shape())?;
     let scale = T::one() / (T::one() - drop_p);
-    let mask = rand.ge(drop_p)?.to_dtype() * scale;
+    let mask = rand.ge(drop_p)?.cast() * scale;
     Ok(xs * mask)
 }
 
