@@ -1,4 +1,4 @@
-use lumen_core::{DynTensor, GradStore, Indexer, NumDType, Shape, Slice, Tensor, TensorId, D};
+use lumen_core::{DynTensor, GradStore, Indexer, NoGradGuard, NumDType, Shape, Slice, Tensor, TensorId, D};
 use pyo3::{exceptions::{PyRuntimeError, PyTypeError, PyValueError}, prelude::*, types::{PyList, PySlice, PyTuple}};
 use paste::paste;
 
@@ -29,6 +29,51 @@ pub struct PyGradStore {
 pub enum DynGradStore {
     F32(GradStore<f32>),
     F64(GradStore<f64>),
+}
+
+#[pyclass]
+pub struct PyNoGradGuard {
+    guard: Option<NoGradGuard>,
+}
+
+impl Drop for PyNoGradGuard {
+    fn drop(&mut self) {
+        self.guard.take();
+    }
+}
+
+#[pymethods]
+impl PyNoGradGuard {
+    #[new]
+    fn new() -> Self {
+        Self {
+            guard: None,
+        }
+    }
+    fn __enter__<'p>(mut slf: PyRefMut<'p, Self>) -> PyResult<PyRefMut<'p, Self>> {
+        slf.guard = Some(NoGradGuard::new());
+        Ok(slf)
+    }
+     
+    fn __exit__(&mut self, _exc_type: &Bound<'_, PyAny>, _exc_value: &Bound<'_, PyAny>, _traceback: &Bound<'_, PyAny>) -> PyResult<bool> {
+        self.guard.take();
+        Ok(false)
+    }
+}
+
+#[pyfunction]
+pub fn no_grad() -> PyNoGradGuard {
+    PyNoGradGuard::new()
+}
+
+#[pyfunction]
+pub fn set_grad_enabled(enabled: bool) {
+    lumen_core::set_grad_enabled(enabled);
+}
+
+#[pyfunction]
+pub fn is_grad_enabled() -> bool {
+    lumen_core::is_grad_enabled()
 }
 
 macro_rules! impl_contruct {

@@ -70,7 +70,27 @@ def test_base_grad():
         print(id, tensor)
 
     
+def test_no_grad():
+    with lumen.no_grad():
+        lhs = Tensor.randn((2, 3))
+        rhs = Tensor.ones((2, 3))
+
+        lhs.set_requires_grad(True)
+        rhs.set_requires_grad(True)
+
+        res = lhs + rhs
+        print(res.requires_grad())
+
+    lhs = Tensor.randn((2, 3))
+    rhs = Tensor.ones((3))
+
+    lhs.set_requires_grad(True)
+    rhs.set_requires_grad(True)
+
+    res = lhs + rhs
+    print(res.requires_grad())
 
 
+test_no_grad()
 
-test_base_grad()
+# test_base_grad()

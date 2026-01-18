@@ -6,6 +6,13 @@ Scalar = Union[float, int]
 TensorOrScaler = Union[Tensor, Scalar]
 
 
+def set_grad_enabled(mode: bool) -> None: ...
+
+def is_grad_enabled() -> None: ...
+
+def no_grad(): ...
+
+
 class DType:
     Float32: "DType"
     Float64: "DType"
