@@ -16,10 +16,8 @@ def test_dtype_conversion():
 
 def test_tensor_item():
     t = Tensor([42.0])
-    # Based on stub, item() returns a Tensor (scalar)
     scalar_tensor = t.item()
-    assert scalar_tensor.dims() == []
-    assert scalar_tensor.allclose(Tensor.new(42.0))
+    assert scalar_tensor == 42.0
 
 
 # ---- Math Operations ----

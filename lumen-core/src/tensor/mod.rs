@@ -82,10 +82,10 @@ impl<T: WithDType> Tensor<T> {
         Ok(v)
     }
 
-    pub fn item(&self) -> Result<Self> {
-        let scalar = self.to_scalar()?;
-        Tensor::new(scalar)
-    }
+    // pub fn item(&self) -> Result<Self> {
+    //     let scalar = self.to_scalar()?;
+    //     Tensor::new(scalar)
+    // }
 
     pub fn set_scalar(&self, val: T) -> Result<()> {
         self.check_scalar()?;

@@ -334,8 +334,25 @@ impl PyTensor {
         Tensor::falses(shape).map_err(to_value_error).map(Into::<PyTensor>::into)
     }
 
+    fn dim(&self, dim: isize) -> PyResult<usize> {
+        let dim = py_to_dim(dim);
+        impl_varient_method!(self, t, t.dim(dim).map_err(to_value_error))
+    }
+
+    fn rank(&self) -> usize {
+        impl_varient_method!(self, t, t.rank())
+    }
+
+    fn is_contiguous(&self) -> bool {
+        impl_varient_method!(self, t, t.is_contiguous())
+    }
+
     fn dims(&self) -> Vec<usize> {
         impl_varient_method!(self, t, t.dims().to_vec())
+    }
+
+    fn element_count(&self) -> usize {
+        impl_varient_method!(self, t, t.element_count())
     }
 
     fn dtype(&self) -> PyDType {
@@ -371,12 +388,28 @@ impl PyTensor {
         }
     }
 
+    fn detach(&self) -> PyResult<Self> {
+        match &self.inner {
+            DynTensor::F32(t) => Ok(PyTensor::from(t.detach())),
+            DynTensor::F64(t) => Ok(PyTensor::from(t.detach())),
+            _ => Err(PyRuntimeError::new_err(format!("{:?} tensor no grad!", self.dtype()))),
+        }
+    }
+
+    fn copy(&self) -> PyResult<Self> {
+        impl_varient_method!(self, t, Ok(PyTensor::from(t.copy())))
+    }
+
     fn to_dtype(&self, dtype: PyDType) -> Self {
         impl_varient_method!(self, t, to_dtype(t, dtype))
     }
 
-    fn item(&self) -> PyResult<Self> {
-        impl_varient_method!(self, t, t.item().map_err(to_value_error).map(Into::into))
+    fn item<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        impl_varient_method!(self, t, {
+            let val = t.to_scalar().map_err(to_value_error)?;
+            let val = val.into_pyobject(py)?.to_owned();
+            Ok(val.into_any())
+        })
     }
 
     fn __add__(&self, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
