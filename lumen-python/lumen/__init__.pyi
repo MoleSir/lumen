@@ -4,6 +4,7 @@ from typing import List, Tuple, Union, Optional, Sequence, Any, Iterator
 
 Scalar = Union[float, int]
 TensorOrScaler = Union[Tensor, Scalar]
+ShapeLike = Union[Sequence[int], int, None]
 
 
 def set_grad_enabled(mode: bool) -> None: ...
@@ -32,30 +33,38 @@ class Tensor:
     # ---- factory ----
     
     @staticmethod
-    def zeros(shape: Sequence[int], dtype: Optional[DType] = None) -> Tensor:
+    def zeros(shape: ShapeLike, dtype: Optional[DType] = None, requires_grad: bool = False) -> Tensor:
         ...
 
     @staticmethod
-    def ones(shape: Sequence[int], dtype: Optional[DType] = None) -> Tensor:
+    def ones(shape: ShapeLike, dtype: Optional[DType] = None, requires_grad: bool = False) -> Tensor:
         ...
 
     @staticmethod
     def rand(
-        shape: Sequence[int], 
+        shape: ShapeLike, 
         min: Optional[float] = 0.0, 
         max: Optional[float] = 1.0, 
-        dtype: Optional[DType] = None
+        dtype: Optional[DType] = None,
+        requires_grad: bool = False
     ) -> Tensor:
         ...
 
     @staticmethod
     def randn(
-        shape: Sequence[int], 
+        shape: ShapeLike, 
         mean: Optional[float] = 0.0, 
         std: Optional[float] = 1.0, 
-        dtype: Optional[DType] = None
+        dtype: Optional[DType] = None,
+        requires_grad: bool = False
     ) -> Tensor:
         ...
+
+    @staticmethod
+    def trues(shape: ShapeLike) -> Tensor: ...
+
+    @staticmethod
+    def falses(shape: ShapeLike) -> Tensor: ...
 
     # ---- attr ----
 
@@ -183,6 +192,16 @@ class Tensor:
     def split(self, dim: int) -> List[Tensor]: ...
 
     def chunk(self, chunks: int, dim: int) -> List[Tensor]: ...
+
+    # ---- condition ----
+
+    def if_else(self, true_val: TensorOrScaler, false_val: TensorOrScaler) -> Tensor: ...
+
+    def true_count(self) -> int: ...
+
+    def false_count(self) -> int: ...
+
+    def masked_fill(self, mask: Tensor, value: TensorOrScaler) -> Tensor: ...
 
     # ---- autograd ----
 

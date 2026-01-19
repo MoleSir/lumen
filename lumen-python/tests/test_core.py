@@ -69,7 +69,7 @@ def test_base_grad():
     for id, tensor in grads.items():
         print(id, tensor)
 
-    
+
 def test_no_grad():
     with lumen.no_grad():
         lhs = Tensor.randn((2, 3))
@@ -90,6 +90,13 @@ def test_no_grad():
     res = lhs + rhs
     print(res.requires_grad())
 
+
+def test_shape():
+    pass
+
+
+def test_condition():
+    pass
 
 test_no_grad()
 

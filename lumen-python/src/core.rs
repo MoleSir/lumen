@@ -1,4 +1,4 @@
-use lumen_core::{DynTensor, GradStore, Indexer, NoGradGuard, NumDType, Shape, Slice, Tensor, TensorId, D};
+use lumen_core::{DynTensor, GradStore, Indexer, NoGradGuard, NumDType, Shape, Slice, Tensor, TensorId, Var, D};
 use pyo3::{exceptions::{PyRuntimeError, PyTypeError, PyValueError}, prelude::*, types::{PyList, PySlice, PyTuple}};
 use paste::paste;
 
@@ -50,6 +50,7 @@ impl PyNoGradGuard {
             guard: None,
         }
     }
+    
     fn __enter__<'p>(mut slf: PyRefMut<'p, Self>) -> PyResult<PyRefMut<'p, Self>> {
         slf.guard = Some(NoGradGuard::new());
         Ok(slf)
@@ -77,15 +78,23 @@ pub fn is_grad_enabled() -> bool {
 }
 
 macro_rules! impl_contruct {
-    ($method:ident, $dtype:ident, $shape:ident) => {
+    ($method:ident, $dtype:ident, $shape:ident, $requires_grad:ident) => {
         let target_dtype = $dtype.unwrap_or(PyDType::Float32);
-        return match target_dtype {
-            PyDType::Bool => Tensor::<bool>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            PyDType::Float32 => Tensor::<f32>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            PyDType::Float64 => Tensor::<f64>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            PyDType::UInt32 => Tensor::<u32>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            PyDType::Int32 => Tensor::<i32>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            PyDType::UInt8 => Tensor::<u8>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+        if $requires_grad {
+            return match target_dtype {
+                PyDType::Float32 => Var::<f32>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+                PyDType::Float64 => Var::<f64>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+                _ => Err(PyRuntimeError::new_err(format!("{:?} tensor no grad!", target_dtype))),
+            }
+        } else {
+            return match target_dtype {
+                PyDType::Bool => Tensor::<bool>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+                PyDType::Float32 => Tensor::<f32>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+                PyDType::Float64 => Tensor::<f64>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+                PyDType::UInt32 => Tensor::<u32>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+                PyDType::Int32 => Tensor::<i32>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+                PyDType::UInt8 => Tensor::<u8>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            }
         }
     };
 }
@@ -232,48 +241,64 @@ macro_rules! impl_arith_unary {
 #[pymethods]
 impl PyTensor {
     #[staticmethod]
-    #[pyo3(signature = (shape, dtype=None))]
-    fn zeros(shape: &Bound<'_, PyAny>, dtype: Option<PyDType>) -> PyResult<Self> {
+    #[pyo3(signature = (shape, dtype=None, requires_grad=false))]
+    fn zeros(shape: &Bound<'_, PyAny>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
         let shape = py_to_shape(shape)?;
-        impl_contruct!(zeros, dtype, shape);
+        impl_contruct!(zeros, dtype, shape, requires_grad);
     }
 
     #[staticmethod]
-    #[pyo3(signature = (shape, dtype=None))]
-    fn ones(shape: &Bound<'_, PyAny>, dtype: Option<PyDType>) -> PyResult<Self> {
+    #[pyo3(signature = (shape, dtype=None, requires_grad=false))]
+    fn ones(shape: &Bound<'_, PyAny>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
         let shape = py_to_shape(shape)?;
-        impl_contruct!(ones, dtype, shape);
+        impl_contruct!(ones, dtype, shape, requires_grad);
     }
 
     #[staticmethod]
-    #[pyo3(signature = (shape, min=None, max=None, dtype=None))]
-    fn rand(shape: &Bound<'_, PyAny>, min: Option<f32>, max: Option<f32>, dtype: Option<PyDType>) -> PyResult<Self> {
+    #[pyo3(signature = (shape, min=None, max=None, dtype=None, requires_grad=false))]
+    fn rand(shape: &Bound<'_, PyAny>, min: Option<f32>, max: Option<f32>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
         let shape = py_to_shape(shape)?;
         let min = min.unwrap_or(0.0);
         let max = max.unwrap_or(1.0);
         let dtype = dtype.unwrap_or(PyDType::Float32);
 
-        match dtype {
-            PyDType::Float32 => Tensor::rand(min, max, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            PyDType::Float64 => Tensor::rand(min.to_f64(), max.to_f64(), shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            dtype => Err(PyValueError::new_err(format!("dtype {:?} no support rand", dtype)))
+        match (dtype, requires_grad) {
+            (PyDType::Float32, true) => Var::rand(min, max, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (PyDType::Float32, false) => Tensor::rand(min, max, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (PyDType::Float64, true) => Var::rand(min.to_f64(), max.to_f64(), shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (PyDType::Float64, false) => Tensor::rand(min.to_f64(), max.to_f64(), shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (dtype, _) => Err(PyValueError::new_err(format!("dtype {:?} no support rand", dtype)))
         }
     }
 
     #[staticmethod]
-    #[pyo3(signature = (shape, mean=None, std=None, dtype=None))]
-    fn randn(shape: &Bound<'_, PyAny>, mean: Option<f32>, std: Option<f32>, dtype: Option<PyDType>) -> PyResult<Self> {
+    #[pyo3(signature = (shape, mean=None, std=None, dtype=None, requires_grad=false))]
+    fn randn(shape: &Bound<'_, PyAny>, mean: Option<f32>, std: Option<f32>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
         let shape = py_to_shape(shape)?;
         
         let mean = mean.unwrap_or(0.0);
         let std = std.unwrap_or(1.0);
         let dtype = dtype.unwrap_or(PyDType::Float32);
 
-        match dtype {
-            PyDType::Float32 => Tensor::randn(mean, std, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            PyDType::Float64 => Tensor::rand(mean.to_f64(), std.to_f64(), shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            dtype => Err(PyValueError::new_err(format!("dtype {:?} no support randn", dtype)))
+        match (dtype, requires_grad) {
+            (PyDType::Float32, true) => Var::randn(mean, std, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (PyDType::Float32, false) => Tensor::randn(mean, std, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (PyDType::Float64, true) => Var::rand(mean.to_f64(), std.to_f64(), shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (PyDType::Float64, false) => Tensor::rand(mean.to_f64(), std.to_f64(), shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (dtype, _) => Err(PyValueError::new_err(format!("dtype {:?} no support randn", dtype)))
         }
+    }
+
+    #[staticmethod]
+    fn trues(shape: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let shape = py_to_shape(shape)?;
+        Tensor::trues(shape).map_err(to_value_error).map(Into::<PyTensor>::into)
+    }
+
+    #[staticmethod]
+    fn falses(shape: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let shape = py_to_shape(shape)?;
+        Tensor::falses(shape).map_err(to_value_error).map(Into::<PyTensor>::into)
     }
 
     fn dims(&self) -> Vec<usize> {
@@ -652,6 +677,76 @@ impl PyTensor {
         impl_varient_method!(self, t, t.broadcast_as(shape).map_err(to_value_error).map(Into::into))
     }
 
+    fn if_else(&self, true_val: &Bound<'_, PyAny>, false_val: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let confition_val = self.to_bool();
+        match (true_val.extract::<PyTensor>(), false_val.extract::<PyTensor>()) {
+            (Ok(true_val), Ok(false_val)) => {
+                match (&true_val.inner, &false_val.inner) {
+                    (DynTensor::F32(true_val), DynTensor::F32(false_val)) => confition_val.if_else(true_val, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::F64(true_val), DynTensor::F64(false_val)) => confition_val.if_else(true_val, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::U32(true_val), DynTensor::U32(false_val)) => confition_val.if_else(true_val, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::I32(true_val), DynTensor::I32(false_val)) => confition_val.if_else(true_val, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::U8(true_val), DynTensor::U8(false_val)) => confition_val.if_else(true_val, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    (DynTensor::Bool(true_val), DynTensor::Bool(false_val)) => confition_val.if_else(true_val, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    _ => Err(PyValueError::new_err(format!("true_val dtype {:?} != false_val dtype {:?} dtype", true_val.dtype(), false_val.dtype()))),
+                }
+            }
+            (Ok(true_val), Err(_)) => {
+                match &true_val.inner {
+                    DynTensor::F32(true_val) => confition_val.if_else(true_val, false_val.extract::<f32>()?).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    DynTensor::F64(true_val) => confition_val.if_else(true_val, false_val.extract::<f64>()?).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    DynTensor::U8(true_val) => confition_val.if_else(true_val, false_val.extract::<u8>()?).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    DynTensor::U32(true_val) => confition_val.if_else(true_val, false_val.extract::<u32>()?).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    DynTensor::I32(true_val) => confition_val.if_else(true_val, false_val.extract::<i32>()?).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    DynTensor::Bool(true_val) => confition_val.if_else(true_val, false_val.extract::<bool>()?).map_err(to_value_error).map(Into::<PyTensor>::into),                        
+                }
+            }
+            (Err(_), Ok(false_val)) => {
+                match &false_val.inner {
+                    DynTensor::F32(false_val) => confition_val.if_else(true_val.extract::<f32>()?, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    DynTensor::F64(false_val) => confition_val.if_else(true_val.extract::<f64>()?, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    DynTensor::U8(false_val) => confition_val.if_else(true_val.extract::<u8>()?, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    DynTensor::U32(false_val) => confition_val.if_else(true_val.extract::<u32>()?, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    DynTensor::I32(false_val) => confition_val.if_else(true_val.extract::<i32>()?, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
+                    DynTensor::Bool(false_val) => confition_val.if_else(true_val.extract::<bool>()?, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),                        
+                }
+            }
+            (Err(_), Err(_)) => {
+                if true_val.is_instance_of::<pyo3::types::PyFloat>() || false_val.is_instance_of::<pyo3::types::PyFloat>() {
+                    let t = true_val.extract::<f64>()?;
+                    let f = false_val.extract::<f64>()?;
+                    confition_val.if_else(t, f).map_err(to_value_error).map(Into::<PyTensor>::into)
+                }
+
+                else if true_val.is_instance_of::<pyo3::types::PyBool>() && false_val.is_instance_of::<pyo3::types::PyBool>() {
+                    let t = true_val.extract::<bool>()?;
+                    let f = false_val.extract::<bool>()?;
+                    confition_val.if_else(t, f).map_err(to_value_error).map(Into::<PyTensor>::into)
+                }
+
+                else {
+                    let t = true_val.extract::<i32>()?;
+                    let f = false_val.extract::<i32>()?;
+                    confition_val.if_else(t, f).map_err(to_value_error).map(Into::<PyTensor>::into)
+                }
+            }
+        }
+    }
+
+    fn true_count(&self) -> PyResult<usize> {
+        let bool_tensor = self.to_bool();
+        Ok(bool_tensor.true_count())
+    }
+
+    fn false_count(&self) -> PyResult<usize> {
+        let bool_tensor = self.to_bool();
+        Ok(bool_tensor.false_count())
+    }
+
+    fn masked_fill(self_: Bound<'_, Self>, mask: &Self, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        mask.if_else(value, self_.as_any())
+    }
+
     fn backward(&self) -> PyResult<PyGradStore> {
         match &self.inner {
             DynTensor::Bool(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
@@ -696,6 +791,19 @@ impl PyTensor {
     fn __repr__(&self) -> String {
         impl_varient_method!(self, t, format!("Tensor({}, shape={:?}, dtype={:?})", t, t.shape(), t.dtype()))
     }
+}
+
+impl PyTensor {
+    fn to_bool(&self) -> Tensor<bool> {
+        match &self.inner {
+            DynTensor::Bool(t) => t.clone(),
+            DynTensor::F32(t) => t.cast::<bool>(),
+            DynTensor::F64(t) => t.cast::<bool>(),
+            DynTensor::U32(t) => t.cast::<bool>(),
+            DynTensor::U8(t) => t.cast::<bool>(),
+            DynTensor::I32(t) => t.cast::<bool>(),
+        }
+    } 
 }
 
 #[pymethods]
@@ -794,7 +902,9 @@ impl PyGradStoreIter {
 }
 
 fn py_to_shape(obj: &Bound<'_, PyAny>) -> PyResult<Shape> {
-    if let Ok(dim) = obj.extract::<usize>() {
+    if obj.is_none() {
+        Ok(().into())
+    } else if let Ok(dim) = obj.extract::<usize>() {
         Ok(dim.into())
     } else if let Ok(vec) = obj.extract::<Vec<usize>>() {
         Ok(vec.into())
