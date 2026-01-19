@@ -63,8 +63,7 @@ impl Tensor<bool> {
 
 impl<T: WithDType> Tensor<T> {
     pub fn masked_fill(&self, mask: &Tensor<bool>, value: impl Into<TensorOrScalar<T>>) -> Result<Tensor<T>> {
-        let mask = mask.not();
-        mask.if_else(self, value)
+        mask.if_else(value, self)
     }
 }
 

@@ -540,3 +540,14 @@ impl<S: WithDType> ToTensor<S> for Vec<S> {
 
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::Tensor;
+
+    #[test]
+    fn test_shape() {
+        let t = Tensor::<f64>::ones(()).unwrap();
+        println!("{}", t);
+    }
+}
