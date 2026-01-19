@@ -10,14 +10,13 @@ impl<T: FloatDType> GradStore<T> {
         GradStore(HashMap::new())
     }
 
-    /// Get the gradient tensor corresponding to the given tensor id
-    pub fn get_id(&self, id: TensorId) -> Option<&Tensor<T>> {
-        self.0.get(&id)
-    }
-
     /// Get the gradient tensor associated with the given tensor
     pub fn get(&self, tensor: &Tensor<T>) -> Option<&Tensor<T>> {
         self.0.get(&tensor.id())
+    }
+
+    pub fn get_by_index(&self, index: usize) -> Option<&Tensor<T>> {
+        self.0.get(&index)
     }
 
     /// Remove the gradient tensor associated with the given tensor, returning it if it exists

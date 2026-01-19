@@ -358,6 +358,10 @@ impl PyTensor {
         }
     }
 
+    fn item(&self) -> PyResult<Self> {
+        impl_varient_method!(self, t, t.item().map_err(to_value_error).map(Into::into))
+    }
+
     fn __add__(&self, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
         self.add(rhs)
     }
@@ -804,6 +808,10 @@ impl PyTensor {
         Ok(PyTensor { inner: res_inner })
     }
 
+    fn __eq__(&self, other: &Self) -> PyResult<bool> {
+        self.allclose(other, Some(0.0), Some(0.0))
+    }
+
     fn __str__(&self) -> String {
         impl_varient_method!(self, t, format!("{}", t))
     }
@@ -917,23 +925,37 @@ where
 
 #[pymethods]
 impl PyGradStore {
-    fn __getitem__(&self, tensor: PyTensor) -> PyResult<Option<PyTensor>> {
-        match &self.inner {
-            DynGradStore::F32(grads) => {
-                if let DynTensor::F32(tensor) = &tensor.inner {
-                    Ok(grads.get(tensor).cloned().map(Into::into))
-                } else {
-                    Err(PyValueError::new_err(format!("expect f32 tenspor, but got {:?}", tensor.dtype())))
+    fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Option<PyTensor>> {
+        if let Ok(tensor) = index.extract::<PyTensor>() {
+            match &self.inner {
+                DynGradStore::F32(grads) => {
+                    if let DynTensor::F32(tensor) = &tensor.inner {
+                        Ok(grads.get(tensor).cloned().map(Into::into))
+                    } else {
+                        Err(PyValueError::new_err(format!("expect f32 tenspor, but got {:?}", tensor.dtype())))
+                    }
+                }
+                DynGradStore::F64(grads) => {
+                    if let DynTensor::F64(tensor) = &tensor.inner {
+                        Ok(grads.get(tensor).cloned().map(Into::into))
+                    } else {
+                        Err(PyValueError::new_err(format!("expect f64 tenspor, but got {:?}", tensor.dtype())))
+                    }
                 }
             }
-            DynGradStore::F64(grads) => {
-                if let DynTensor::F64(tensor) = &tensor.inner {
-                    Ok(grads.get(tensor).cloned().map(Into::into))
-                } else {
-                    Err(PyValueError::new_err(format!("expect f64 tenspor, but got {:?}", tensor.dtype())))
-                }
+        } else if let Ok(id) = index.extract::<usize> () {
+            match &self.inner {
+                DynGradStore::F32(grads) => Ok(grads.get_by_index(id).cloned().map(Into::into)),
+                DynGradStore::F64(grads) => Ok(grads.get_by_index(id).cloned().map(Into::into)),
             }
+        } else {
+            Err(PyValueError::new_err(format!("unsupport index: {}", index)))
         }
+
+    }
+
+    fn __contains__(&self, index: &Bound<'_, PyAny>) -> PyResult<bool> {
+        self.__getitem__(index).map(|opt| opt.is_some())
     }
 
     fn __iter__(&self) -> PyGradStoreIter {

@@ -6,6 +6,7 @@ Scalar = Union[float, int, bool]
 TensorOrScaler = Union[Tensor, Scalar]
 ShapeLike = Union[Sequence[int], int, None]
 ToTensor = Union[Scalar, Sequence[Scalar], Sequence[Sequence[Scalar]], Sequence[Sequence[Sequence[Scalar]]]]
+Index = Union[int, slice]
 
 
 def set_grad_enabled(mode: bool) -> None: ...
@@ -85,6 +86,11 @@ class Tensor:
 
     def set_requires_grad(self, mode: bool) -> None:
         ...
+
+    def item(self) -> Tensor: ...
+
+    # ---- index ----
+    def __getitem__(self, index: Index | Sequence[Index]) -> Tensor: ...
 
     # ---- op ----
 
@@ -215,7 +221,8 @@ class Tensor:
 
 
 class GradStore:
-    def __getitem__(self, index: int) -> Tensor: ...
+    def __getitem__(self, index: int | Tensor) -> Tensor: ...
+    def __contains__(self, index: int | Tensor) -> bool: ...
 
     def items(self) -> Iterator[Tuple[int, Tensor]]: ...
     def keys(self) -> Iterator[int]: ...

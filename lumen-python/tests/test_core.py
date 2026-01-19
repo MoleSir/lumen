@@ -1,118 +1,99 @@
+import pytest
 import lumen
 from lumen import Tensor, DType
-import lumen.nn
 
 
-def test_new():
+def test_tensor_init_list():
     t = Tensor([1, 2, 3])
-    print(t)
+    assert t.dims() == [3]
 
+
+def test_tensor_init_nested():
     t = Tensor([[1., 2, 3], [1, 2, 3]])
-    print(t)
+    assert t.dims() == [2, 3]
 
-    t = Tensor.new([[1., 2, 3], [4, 5, 6]], dtype=DType.Float64)
-    print(t)
 
+def test_new_with_options():
     t = Tensor.new([[1, 2, 3], [4, 5, 6]], dtype=DType.Float64, requires_grad=True)
-    print(t, t.requires_grad())
+    assert t.dims() == [2, 3]
+    assert t.dtype() == DType.Float64
+    assert t.requires_grad() is True
 
 
-def test_base_op():
+def test_factory_methods():
     t1 = Tensor.zeros((3, 3, 3))
+    assert t1.dims() == [3, 3, 3]
+
     t2 = Tensor.ones((5, 5), DType.Int32)
+    assert t2.dtype() == DType.Int32
 
-    print(t1.dims())
-    print(t1.dtype())
 
-    print(t2.dims())
-    print(t2.dtype())
+def test_arithmetic_ops():
+    lhs = Tensor.ones((2, 3)) 
+    rhs = Tensor.ones((2, 3)) 
+    
+    res = lhs + rhs
+    assert res.allclose(Tensor.new([[2., 2., 2.], [2., 2., 2.]]))
 
-    print(Tensor.rand((2, 3)).dims())
-    print(Tensor.rand((2, 3), min=1.0, max=3.0, dtype=DType.Float64))
+    res_scalar = lhs + 2.0
+    assert res_scalar.allclose(Tensor.new([[3., 3., 3.], [3., 3., 3.]]))
 
-    lhs = Tensor.randn((2, 3))
-    rhs = Tensor.ones((2, 3))
-    print(lhs.add(rhs))
-    print(lhs.add(2))
-    print(lhs.sub(rhs))
-    print(lhs.mul(rhs))
-    print(lhs.div(rhs))
-    print(Tensor.zeros((5, 3)).sin())
 
-    print(1 - lhs.relu())
-    print(3 * lhs.relu())
+def test_slicing_basic():
+    t = Tensor([[1, 2, 3], [4, 5, 6]])
+    
+    # t[0] -> [1, 2, 3]
+    assert t[0].dims() == [3]    
+    # assert t[0, 1].item() == 2
 
-    print('============')
-    print(lhs)
-    print('============')
-    print(lhs[0])
-    print('============')
-    print(lhs[(1)])
-    print('============')
-    print(lhs[(0, 2)])
-    print('============')
-    print(lhs[(1, 2)])
-    print('============')
-    print(lhs[[0, 1]])
-    # print(lhs[[1, 2, 2]])
 
+def test_slicing_advanced():
     t = Tensor.randn((5, 5, 5))
-
-    print(t[0:3, 1:2, 1])
-
-
-def test_base_grad():
-    lhs = Tensor.randn((2, 3))
-    rhs = Tensor.ones((2, 3))
-    print(lhs.requires_grad(), rhs.requires_grad())
-
-    lhs.set_requires_grad(True)
-    rhs.set_requires_grad(True)
-    print(lhs.requires_grad(), rhs.requires_grad())
-
-    res = lhs + rhs
-    print(res.requires_grad())
-
-    grads = res.backward()
-
-    print(grads[lhs])
-    print(grads[rhs])
-
-    print(grads[lhs].allclose(grads[rhs]))
-
-    for id, tensor in grads.items():
-        print(id, tensor)
+    
+    # t[0:3, 1:2, 1]
+    slice_res = t[0:3, 1:2, 1]
+    assert slice_res.dims() == [3, 1] 
+    
+    # lhs[[0, 1]]
+    lhs = Tensor([[10, 20], [30, 40]])
+    selected = lhs[[0, 1]]
+    assert selected.dims() == []
 
 
-def test_no_grad():
+def test_simple_backward():
+    x = Tensor.ones((2, 2), requires_grad=True)
+    y = Tensor.ones((2, 2), requires_grad=True)
+    
+    z = x + y # z = x + y, dz/dx = 1, dz/dy = 1
+    
+    assert z.requires_grad() is True
+    
+    grads = z.backward()
+    
+    assert x in grads
+    assert y in grads
+    
+    expected = Tensor.ones((2, 2))
+    assert grads[x].allclose(expected)
+    assert grads[y].allclose(expected)
+
+
+def test_complex_backward():
+    x = Tensor([2.0], requires_grad=True)
+    # y = x^2 * 3
+    # dy/dx = 6x -> 当 x=2, grad=12
+    y = (x * x) * 3.0 
+    
+    grads = y.backward()
+    assert grads[x].item() == Tensor.new(12.0)
+    
+
+def test_no_grad_mode():
     with lumen.no_grad():
-        lhs = Tensor.randn((2, 3))
-        rhs = Tensor.ones((2, 3))
-
-        lhs.set_requires_grad(True)
-        rhs.set_requires_grad(True)
-
-        res = lhs + rhs
-        print(res.requires_grad())
-
-    lhs = Tensor.randn((2, 3))
-    rhs = Tensor.ones((3))
-
-    lhs.set_requires_grad(True)
-    rhs.set_requires_grad(True)
-
-    res = lhs + rhs
-    print(res.requires_grad())
-
-
-def test_shape():
-    pass
-
-
-def test_condition():
-    pass
-
-
-test_new()
-# test_no_grad()
-# test_base_grad()
+        x = Tensor.randn((2, 3), requires_grad=True)
+        y = x + 1.0
+        assert y.requires_grad() is False 
+    
+    z = Tensor.randn((2, 3), requires_grad=True)
+    res = z + 1.0
+    assert res.requires_grad() is True
