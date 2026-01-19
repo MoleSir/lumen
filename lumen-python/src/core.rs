@@ -1,4 +1,4 @@
-use lumen_core::{DTypeConvert, DynTensor, GradStore, Indexer, NoGradGuard, NumDType, Shape, Slice, Tensor, TensorId, Var, WithDType, D};
+use lumen_core::{DType, DTypeConvert, DynTensor, GradStore, Indexer, NoGradGuard, NumDType, Shape, Slice, Tensor, TensorId, Var, WithDType, D};
 use pyo3::{exceptions::{PyRuntimeError, PyTypeError, PyValueError}, prelude::*, types::{PyList, PySlice, PyTuple}};
 use paste::paste;
 
@@ -17,6 +17,19 @@ pub enum PyDType {
     Int32,
     UInt32,
     UInt8,
+}
+
+impl PyDType {
+    fn to_dtype(&self) -> DType {
+        match self {
+            Self::Bool => DType::Bool,
+            Self::Float32 => DType::F32,
+            Self::Float64 => DType::F64,
+            Self::UInt32 => DType::U32,
+            Self::Int32 => DType::I32,
+            Self::UInt8 => DType::U8,
+        }
+    }
 }
 
 #[pyclass(name = "GradStore")]
@@ -251,7 +264,7 @@ impl PyTensor {
     fn new(to_tensor: &Bound<'_, PyAny>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
         let mut tensor = Self::new_impl(to_tensor)?;
         if let Some(dtype) = dtype {
-            tensor = impl_varient_method!(tensor, t, to_dtype(t, dtype));
+            tensor = tensor.to_dtype(dtype);
         }
         if requires_grad {
             tensor.set_requires_grad(true)?;
@@ -356,6 +369,10 @@ impl PyTensor {
             DynTensor::I32(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
             DynTensor::U8(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
         }
+    }
+
+    fn to_dtype(&self, dtype: PyDType) -> Self {
+        impl_varient_method!(self, t, to_dtype(t, dtype))
     }
 
     fn item(&self) -> PyResult<Self> {
@@ -518,12 +535,12 @@ impl PyTensor {
 
     #[pyo3(signature = (dim=None, keep_dim=false))]
     fn max(&self, dim: Option<isize>, keep_dim: bool) -> PyResult<Self> {
-        return impl_reduce!(min, self, dim, keep_dim);
+        return impl_reduce!(max, self, dim, keep_dim);
     }
 
     #[pyo3(signature = (dim=None, keep_dim=false))]
     fn mean(&self, dim: Option<isize>, keep_dim: bool) -> PyResult<Self> {
-        return impl_reduce!(min, self, dim, keep_dim);
+        return impl_reduce!(mean, self, dim, keep_dim);
     }
 
     #[pyo3(signature = (dim=None, keep_dim=false, unbiased=true))]
@@ -913,6 +930,9 @@ where
       + DTypeConvert<u8>
 
 {
+    if T::DTYPE == dtype.to_dtype() {
+        return PyTensor::from(tensor.clone())
+    }
     match dtype {
         PyDType::Bool => tensor.cast::<bool>().into(),
         PyDType::Float32 => tensor.cast::<f32>().into(),
@@ -1085,22 +1105,11 @@ fn py_to_dim(dim: isize) -> D {
     }
 }
 
-macro_rules! impl_convert_with_type {
-    ($variant:ident, $inner:ty) => {
-        impl From<Tensor<$inner>> for PyTensor {
-            fn from(t: Tensor<$inner>) -> Self {
-                PyTensor { inner: DynTensor::$variant(t) }
-            }
-        }
-    };
-}
-
-impl_convert_with_type!(Bool, bool);
-impl_convert_with_type!(F32, f32);
-impl_convert_with_type!(F64, f64);
-impl_convert_with_type!(I32, i32);
-impl_convert_with_type!(U32, u32);
-impl_convert_with_type!(U8, u8);
+impl<T: WithDType> From<Tensor<T>> for PyTensor {
+    fn from(value: Tensor<T>) -> PyTensor {
+        PyTensor { inner: T::into_dyn(value) }
+    }
+} 
 
 
 fn to_value_error(e: lumen_core::Error) -> PyErr {

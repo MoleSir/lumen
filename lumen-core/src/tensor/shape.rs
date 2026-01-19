@@ -574,6 +574,20 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_unsqueeze() -> Result<()> {
+        let t = Tensor::<i32>::zeros((2, 1, 3))?;
+        let sq = t.squeeze(1)?;
+        println!("{}", sq);
+        assert_eq!(sq.dims(), vec![2, 3]);
+
+        let unsq = sq.unsqueeze(0)?;
+        println!("{}", unsq);
+        assert_eq!(unsq.dims(), vec![1, 2, 3]);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_cat_1d() -> Result<()> {
         let a = Tensor::new(&[1, 2, 3])?;
         let b = Tensor::new(&[4, 5, 6])?;

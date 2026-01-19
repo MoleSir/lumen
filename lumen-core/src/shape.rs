@@ -456,6 +456,7 @@ impl Dim for D {
             Self::Minus1 => Ok(rank),
             Self::Minus2 if rank >= 1 => Ok(rank - 1),
             Self::Minus(u) if *u > 0 && rank + 1 >= *u => Ok(rank + 1 - *u),
+            Self::Index(u) => u.to_index_plus_one(shape, op),
             _ => Err(self.out_of_range(shape, op))?,
         }
     }

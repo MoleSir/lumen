@@ -437,7 +437,8 @@ trait Display<T: WithDType> {
     ) -> std::fmt::Result {
         let tf = IntFormatter::new();
         let max_w = tf.max_width(&to_display);
-        tf.fmt_tensor(tensor, 1, max_w, summarize, &po, f)
+        tf.fmt_tensor(tensor, 1, max_w, summarize, &po, f)?;
+        writeln!(f)
     }
 }
 

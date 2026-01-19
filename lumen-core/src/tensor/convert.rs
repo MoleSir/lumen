@@ -62,6 +62,12 @@ impl<From: WithDType> Tensor<From> {
     where
         From: DTypeConvert<To>,
     {
+        // if TypeId::of::<From>() == TypeId::of::<To>() {
+        //     let self_any = self as &dyn Any;            
+        //     if let Some(same_tensor) = self_any.downcast_ref::<Tensor<To>>() {
+        //         return same_tensor.clone();
+        //     }
+        // }
         let storage = self.storage_read().copy_map(self.layout(), From::convert);
         Tensor::<To>::from_storage(storage, self.shape())
     }
