@@ -2,9 +2,10 @@
 from typing import List, Tuple, Union, Optional, Sequence, Any, Iterator
 
 
-Scalar = Union[float, int]
+Scalar = Union[float, int, bool]
 TensorOrScaler = Union[Tensor, Scalar]
 ShapeLike = Union[Sequence[int], int, None]
+ToTensor = Union[Scalar, Sequence[Scalar], Sequence[Sequence[Scalar]], Sequence[Sequence[Sequence[Scalar]]]]
 
 
 def set_grad_enabled(mode: bool) -> None: ...
@@ -30,8 +31,13 @@ class Tensor:
     N-dimensional Tensor library implemented in Rust.
     """
 
+    def __init__(to_tensor: ToTensor, dtype: Optional[DType] = None, requires_grad: bool = False) -> Tensor: ...
+
     # ---- factory ----
-    
+
+    @staticmethod
+    def new(to_tensor: ToTensor, dtype: Optional[DType] = None, requires_grad: bool = False) -> Tensor: ...
+
     @staticmethod
     def zeros(shape: ShapeLike, dtype: Optional[DType] = None, requires_grad: bool = False) -> Tensor:
         ...

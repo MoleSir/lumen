@@ -1,4 +1,4 @@
-use lumen_core::{DynTensor, GradStore, Indexer, NoGradGuard, NumDType, Shape, Slice, Tensor, TensorId, Var, D};
+use lumen_core::{DTypeConvert, DynTensor, GradStore, Indexer, NoGradGuard, NumDType, Shape, Slice, Tensor, TensorId, Var, WithDType, D};
 use pyo3::{exceptions::{PyRuntimeError, PyTypeError, PyValueError}, prelude::*, types::{PyList, PySlice, PyTuple}};
 use paste::paste;
 
@@ -240,6 +240,26 @@ macro_rules! impl_arith_unary {
 
 #[pymethods]
 impl PyTensor {
+    #[new]
+    #[pyo3(signature = (to_tensor, dtype=None, requires_grad=false))]
+    fn __init__(to_tensor: &Bound<'_, PyAny>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
+        Self::new(to_tensor, dtype, requires_grad)
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (to_tensor, dtype=None, requires_grad=false))]
+    fn new(to_tensor: &Bound<'_, PyAny>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
+        let mut tensor = Self::new_impl(to_tensor)?;
+        if let Some(dtype) = dtype {
+            tensor = impl_varient_method!(tensor, t, to_dtype(t, dtype));
+        }
+        if requires_grad {
+            tensor.set_requires_grad(true)?;
+        }
+
+        Ok(tensor)
+    }
+
     #[staticmethod]
     #[pyo3(signature = (shape, dtype=None, requires_grad=false))]
     fn zeros(shape: &Bound<'_, PyAny>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
@@ -793,6 +813,50 @@ impl PyTensor {
     }
 }
 
+macro_rules! impl_new_scaler {
+    ($to_tensor:ident, $t:ty) => {
+        if let Ok(v) = $to_tensor.extract::<$t>() {
+            return Tensor::new(v).map_err(to_value_error).map(Into::into)
+        } 
+    };
+}
+
+macro_rules! impl_new_1d {
+    ($to_tensor:ident, $t:ty) => {
+        if let Ok(v) = $to_tensor.extract::<Vec<$t>>() {
+            return Tensor::new(v).map_err(to_value_error).map(Into::into);
+        }
+    }
+}
+
+macro_rules! impl_new_2d {
+    ($to_tensor:ident, $t:ty) => {
+        if let Ok(v) = $to_tensor.extract::<Vec<Vec<$t>>>() {
+            let n = v.len();
+            let m = v.first().map(|x| x.len()).unwrap_or(0);
+            let flat: Vec<$t> = v.into_iter().flatten().collect();
+            let t = Tensor::new(flat).map_err(to_value_error)?.reshape((n, m)).map_err(to_value_error)?;
+            return Ok(t.into())
+        }
+    };
+}
+
+macro_rules! impl_new_3d {
+    ($to_tensor:ident, $t:ty) => {
+        if let Ok(v) = $to_tensor.extract::<Vec<Vec<Vec<$t>>>>() {
+            let n1 = v.len();
+            let n2 = v.first().map(|x| x.len()).unwrap_or(0);
+            let n3 = v.first().and_then(|x| x.first()).map(|x| x.len()).unwrap_or(0);
+            let flat: Vec<$t> = v.into_iter().flatten().flatten().collect();
+            return Tensor::new(flat)
+                .map_err(to_value_error)?
+                .reshape((n1, n2, n3))
+                .map_err(to_value_error)
+                .map(Into::into)
+        }
+    }
+}
+
 impl PyTensor {
     fn to_bool(&self) -> Tensor<bool> {
         match &self.inner {
@@ -804,6 +868,51 @@ impl PyTensor {
             DynTensor::I32(t) => t.cast::<bool>(),
         }
     } 
+
+    fn new_impl(to_tensor: &Bound<'_, PyAny>) -> PyResult<Self> {
+        // ===== scalar =====
+        impl_new_scaler!(to_tensor, bool);
+        impl_new_scaler!(to_tensor, i32);
+        impl_new_scaler!(to_tensor, f32);
+
+        // ===== 1D =====
+        impl_new_1d!(to_tensor, bool);
+        impl_new_1d!(to_tensor, i32);
+        impl_new_1d!(to_tensor, f32);
+
+        // ===== 2D =====
+        impl_new_2d!(to_tensor, bool);
+        impl_new_2d!(to_tensor, i32);
+        impl_new_2d!(to_tensor, f32);
+
+        // ===== 3D =====
+        impl_new_3d!(to_tensor, bool);
+        impl_new_3d!(to_tensor, i32);
+        impl_new_3d!(to_tensor, f32);
+
+        Err(PyTypeError::new_err("Unsupported type for Tensor initialization",))
+    }
+}
+
+fn to_dtype<T>(tensor: &Tensor<T>, dtype: PyDType) -> PyTensor 
+where 
+    T:  WithDType
+      + DTypeConvert<bool>
+      + DTypeConvert<f32>
+      + DTypeConvert<f64>
+      + DTypeConvert<u32>
+      + DTypeConvert<i32>
+      + DTypeConvert<u8>
+
+{
+    match dtype {
+        PyDType::Bool => tensor.cast::<bool>().into(),
+        PyDType::Float32 => tensor.cast::<f32>().into(),
+        PyDType::Float64 => tensor.cast::<f64>().into(),
+        PyDType::UInt32 => tensor.cast::<u32>().into(),
+        PyDType::Int32 => tensor.cast::<i32>().into(),
+        PyDType::UInt8 => tensor.cast::<u8>().into(),
+    }
 }
 
 #[pymethods]

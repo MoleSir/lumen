@@ -3,6 +3,20 @@ from lumen import Tensor, DType
 import lumen.nn
 
 
+def test_new():
+    t = Tensor([1, 2, 3])
+    print(t)
+
+    t = Tensor([[1., 2, 3], [1, 2, 3]])
+    print(t)
+
+    t = Tensor.new([[1., 2, 3], [4, 5, 6]], dtype=DType.Float64)
+    print(t)
+
+    t = Tensor.new([[1, 2, 3], [4, 5, 6]], dtype=DType.Float64, requires_grad=True)
+    print(t, t.requires_grad())
+
+
 def test_base_op():
     t1 = Tensor.zeros((3, 3, 3))
     t2 = Tensor.ones((5, 5), DType.Int32)
@@ -98,6 +112,7 @@ def test_shape():
 def test_condition():
     pass
 
-test_no_grad()
 
+test_new()
+# test_no_grad()
 # test_base_grad()
