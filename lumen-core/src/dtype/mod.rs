@@ -180,11 +180,11 @@ macro_rules! impl_dtype_convert_from {
     };
 }
 
-impl_dtype_convert_from!(u8,  { u8, i32, u32, f32, f64 });
-impl_dtype_convert_from!(i32, { u8, i32, u32, f32, f64 });
-impl_dtype_convert_from!(u32, { u8, i32, u32, f32, f64 });
-impl_dtype_convert_from!(f32, { u8, i32, u32, f32, f64 });
-impl_dtype_convert_from!(f64, { u8, i32, u32, f32, f64 });
+impl_dtype_convert_from!(u8,  { i32, u32, f32, f64 });
+impl_dtype_convert_from!(i32, { u8, u32, f32, f64 });
+impl_dtype_convert_from!(u32, { u8, i32, f32, f64 });
+impl_dtype_convert_from!(f32, { u8, i32, u32, f64 });
+impl_dtype_convert_from!(f64, { u8, i32, u32, f32 });
 
 impl<T: NumDType> DTypeConvert<T> for bool {
     fn convert(self) -> T {
@@ -195,5 +195,11 @@ impl<T: NumDType> DTypeConvert<T> for bool {
 impl<T: NumDType> DTypeConvert<bool> for T {
     fn convert(self) -> bool {
         self == T::zero() 
+    }
+}
+
+impl<T: WithDType> DTypeConvert<T> for T {
+    fn convert(self) -> Self {
+        self 
     }
 }
