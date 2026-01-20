@@ -1,6 +1,2 @@
 
-def hello() -> None:
-    """
-    Test function
-    """
-    ...
+def hello() -> None: ...

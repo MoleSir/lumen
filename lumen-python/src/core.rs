@@ -112,6 +112,7 @@ macro_rules! impl_contruct {
     };
 }
 
+#[macro_export]
 macro_rules! impl_varient_method {
     ($self:ident, $t:ident, $expr:expr) => {
         match &$self.inner {
@@ -125,6 +126,7 @@ macro_rules! impl_varient_method {
     };
 }
 
+#[macro_export]
 macro_rules! impl_numdtype_varient_method {
     ($self:ident, $t:ident, $expr:expr, $msg:expr) => {
         match &$self.inner {
@@ -134,6 +136,29 @@ macro_rules! impl_numdtype_varient_method {
             DynTensor::U32($t) => $expr,
             DynTensor::I32($t) => $expr,
             DynTensor::U8($t) => $expr,
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! impl_floatdtype_varient_method {
+    ($self:ident, $t:ident, $expr:expr, $msg:expr) => {
+        match &$self.inner {
+            DynTensor::F32($t) => $expr,
+            DynTensor::F64($t) => $expr,
+            _ => Err(PyValueError::new_err(format!("{:?} dtype unsupport {}", $self.dtype(), $msg))),
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! impl_intdtype_varient_method {
+    ($self:ident, $t:ident, $expr:expr, $msg:expr) => {
+        match &$self.inner {
+            DynTensor::U8($t) => $expr,
+            DynTensor::U32($t) => $expr,
+            DynTensor::I32($t) => $expr,
+            _ => Err(PyValueError::new_err(format!("{:?} dtype unsupport {}", $self.dtype(), $msg))),
         }
     };
 }
@@ -355,7 +380,7 @@ impl PyTensor {
         impl_varient_method!(self, t, t.element_count())
     }
 
-    fn dtype(&self) -> PyDType {
+    pub fn dtype(&self) -> PyDType {
         match &self.inner {
             DynTensor::Bool(_) => PyDType::Bool,
             DynTensor::F32(_) => PyDType::Float32,
@@ -1130,7 +1155,7 @@ fn py_to_slice(obj: &Bound<'_, PyAny>) -> PyResult<Slice> {
     Err(PyTypeError::new_err(format!("Unsupported slice type: {}", obj.get_type())))
 }
 
-fn py_to_dim(dim: isize) -> D {
+pub fn py_to_dim(dim: isize) -> D {
     if dim >= 0 {
         D::Index(dim as usize)
     } else {
@@ -1143,7 +1168,6 @@ impl<T: WithDType> From<Tensor<T>> for PyTensor {
         PyTensor { inner: T::into_dyn(value) }
     }
 } 
-
 
 fn to_value_error(e: lumen_core::Error) -> PyErr {
     PyValueError::new_err(e.to_string())

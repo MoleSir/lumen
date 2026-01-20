@@ -1,3 +1,4 @@
-from .. import nn
+from .._lumen import nn as rust_nn 
 
-hello = nn.hello
+hello = rust_nn.hello
+

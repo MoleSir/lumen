@@ -16,3 +16,4 @@ build-backend = "maturin"
 python-source = "."
 bindings = "pyo3"
 features = ["pyo3/extension-module"]
+module-name = "lumen._lumen"
