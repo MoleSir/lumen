@@ -1,6 +1,6 @@
 use lumen_core::DynTensor;
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyFloat};
-use crate::{core::{py_to_dim, PyTensor}, impl_floatdtype_varient_method, impl_intdtype_varient_method};
+use crate::{core::{py_to_dim, to_value_error, PyTensor}, impl_floatdtype_varient_method, impl_intdtype_varient_method};
 use lumen_nn::functional as F;
 
 // ============================================================================= //
@@ -203,8 +203,4 @@ pub fn functional(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 
     Ok(())
-}
-
-fn to_value_error(e: lumen_nn::NnCtxError) -> PyErr {
-    PyValueError::new_err(e.to_string())
 }

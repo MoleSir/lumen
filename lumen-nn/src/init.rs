@@ -185,7 +185,7 @@ impl<T: FloatDType> Init<T> {
         self.init_with(shape, fan_in, fan_out).map(Buffer::new)
     }
 
-    fn do_init_with(&self, shape: impl Into<Shape>, fan_in: Option<usize>, fan_out: Option<usize>) -> NnResult<Tensor<T>> {
+    pub fn do_init_with(&self, shape: impl Into<Shape>, fan_in: Option<usize>, fan_out: Option<usize>) -> NnResult<Tensor<T>> {
         let shape = shape.into();
         let result = match self {
             Init::Uninit => Tensor::uninit(shape),
