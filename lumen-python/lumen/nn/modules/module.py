@@ -179,7 +179,7 @@ class Module:
     def eval(self):
         self.train(False)
 
-    def __setattr__(self, name: str, value: Union[Parameter, 'Module']) -> None:
+    def __setattr__(self, name: str, value: Union[Parameter, Buffer, 'Module']) -> None:
         super().__setattr__(name, value)
         if isinstance(value, Parameter):
             self.register_parameter(name, value)

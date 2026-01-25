@@ -1,4 +1,4 @@
-use lumen_core::{DType, DTypeConvert, DynTensor, Indexer, NumDType, Shape, Slice, Tensor, Var, WithDType, D};
+use lumen_core::{DType, DTypeConvert, DynTensor, Indexer, Shape, Slice, Tensor, Var, WithDType, D};
 use pyo3::{exceptions::{PyRuntimeError, PyTypeError, PyValueError}, prelude::*, types::{PyList, PySlice, PyTuple}};
 use paste::paste;
 
@@ -216,34 +216,34 @@ macro_rules! impl_arith_inplace_binary {
     ($lhs:ident, $rhs:ident, $method:ident) => {
         if let Ok(rhs) = $rhs.extract::<PyTensor>() {
             match (&$lhs.inner, &rhs.inner) {
-                (DynTensor::F32(lhs), DynTensor::F32(rhs)) => lhs.$method(rhs).map_err(to_value_error),
-                (DynTensor::F64(lhs), DynTensor::F64(rhs)) => lhs.$method(rhs).map_err(to_value_error),
-                (DynTensor::U32(lhs), DynTensor::U32(rhs)) => lhs.$method(rhs).map_err(to_value_error),
-                (DynTensor::I32(lhs), DynTensor::I32(rhs)) => lhs.$method(rhs).map_err(to_value_error),
-                (DynTensor::U8(lhs), DynTensor::U8(rhs)) => lhs.$method(rhs).map_err(to_value_error),
+                (DynTensor::F32(lhs), DynTensor::F32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::into),
+                (DynTensor::F64(lhs), DynTensor::F64(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::into),
+                (DynTensor::U32(lhs), DynTensor::U32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::into),
+                (DynTensor::I32(lhs), DynTensor::I32(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::into),
+                (DynTensor::U8(lhs), DynTensor::U8(rhs)) => lhs.$method(rhs).map_err(to_value_error).map(Into::into),
                 _ => Err(PyTypeError::new_err(format!("unsupport {} with {:?} and {:?}", stringify!($method), $lhs.dtype(), rhs.dtype())))
             }
         } else {
             match &$lhs.inner {
                 DynTensor::U8(lhs) => {
                     let scalar = $rhs.extract::<u8>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for f32 tensor"))?;                
-                    lhs.$method(scalar).map_err(to_value_error)
+                    lhs.$method(scalar).map_err(to_value_error).map(Into::into)
                 },
                 DynTensor::F32(lhs) => {
                     let scalar = $rhs.extract::<f32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or float for f32 tensor"))?;                
-                    lhs.$method(scalar).map_err(to_value_error)
+                    lhs.$method(scalar).map_err(to_value_error).map(Into::into)
                 },
                 DynTensor::F64(lhs) => {
                     let scalar = $rhs.extract::<f64>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or float for f64 tensor"))?;
-                    lhs.$method(scalar).map_err(to_value_error)
+                    lhs.$method(scalar).map_err(to_value_error).map(Into::into)
                 },
                 DynTensor::I32(lhs) => {
                     let scalar = $rhs.extract::<i32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for i32 tensor"))?;
-                    lhs.$method(scalar).map_err(to_value_error)
+                    lhs.$method(scalar).map_err(to_value_error).map(Into::into)
                 },
                 DynTensor::U32(lhs) => {
                     let scalar = $rhs.extract::<u32>().map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected Tensor or int for i32 tensor"))?;
-                    lhs.$method(scalar).map_err(to_value_error)
+                    lhs.$method(scalar).map_err(to_value_error).map(Into::into)
                 },
                 _ => Err(pyo3::exceptions::PyTypeError::new_err("Unsupported dtype for scalar add")),
             }
@@ -291,6 +291,10 @@ impl PyTensor {
         impl_contruct!(zeros, dtype, shape, requires_grad);
     }
 
+    fn zeros_like(&self) -> PyResult<Self> {
+        impl_varient_method!(self, t, t.zeros_like().map_err(to_value_error).map(Into::into))
+    }
+
     #[staticmethod]
     #[pyo3(signature = (shape, dtype=None, requires_grad=false))]
     fn ones(shape: &Bound<'_, PyAny>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
@@ -298,26 +302,41 @@ impl PyTensor {
         impl_contruct!(ones, dtype, shape, requires_grad);
     }
 
+    fn ones_like(&self) -> PyResult<Self> {
+        impl_varient_method!(self, t, t.ones_like().map_err(to_value_error).map(Into::into))
+    }
+
     #[staticmethod]
     #[pyo3(signature = (shape, min=None, max=None, dtype=None, requires_grad=false))]
-    fn rand(shape: &Bound<'_, PyAny>, min: Option<f32>, max: Option<f32>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
+    fn rand(shape: &Bound<'_, PyAny>, min: Option<f64>, max: Option<f64>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
         let shape = py_to_shape(shape)?;
         let min = min.unwrap_or(0.0);
         let max = max.unwrap_or(1.0);
         let dtype = dtype.unwrap_or(PyDType::Float32);
 
         match (dtype, requires_grad) {
-            (PyDType::Float32, true) => Var::rand(min, max, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            (PyDType::Float32, false) => Tensor::rand(min, max, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            (PyDType::Float64, true) => Var::rand(min.to_f64(), max.to_f64(), shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            (PyDType::Float64, false) => Tensor::rand(min.to_f64(), max.to_f64(), shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (PyDType::Float32, true) => Var::rand(min as f32, max as f32, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (PyDType::Float32, false) => Tensor::rand(min as f32, max as f32, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (PyDType::Float64, true) => Var::rand(min, max, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (PyDType::Float64, false) => Tensor::rand(min, max, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
             (dtype, _) => Err(PyValueError::new_err(format!("dtype {:?} no support rand", dtype)))
+        }
+    }
+
+    #[pyo3(signature = (min=None, max=None))]
+    fn rand_like(&self, min: Option<f64>, max: Option<f64>) -> PyResult<Self> {
+        let min = min.unwrap_or(0.0);
+        let max = max.unwrap_or(1.0);
+        match &self.inner {
+            DynTensor::F32(t) => t.rand_like(min as f32, max as f32).map_err(to_value_error).map(Into::<PyTensor>::into),
+            DynTensor::F64(t) => t.rand_like(min, max).map_err(to_value_error).map(Into::<PyTensor>::into),
+            _ => Err(PyValueError::new_err(format!("dtype {:?} no support rand", self.dtype())))
         }
     }
 
     #[staticmethod]
     #[pyo3(signature = (shape, mean=None, std=None, dtype=None, requires_grad=false))]
-    fn randn(shape: &Bound<'_, PyAny>, mean: Option<f32>, std: Option<f32>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
+    fn randn(shape: &Bound<'_, PyAny>, mean: Option<f64>, std: Option<f64>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
         let shape = py_to_shape(shape)?;
         
         let mean = mean.unwrap_or(0.0);
@@ -325,11 +344,22 @@ impl PyTensor {
         let dtype = dtype.unwrap_or(PyDType::Float32);
 
         match (dtype, requires_grad) {
-            (PyDType::Float32, true) => Var::randn(mean, std, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            (PyDType::Float32, false) => Tensor::randn(mean, std, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            (PyDType::Float64, true) => Var::rand(mean.to_f64(), std.to_f64(), shape).map_err(to_value_error).map(Into::<PyTensor>::into),
-            (PyDType::Float64, false) => Tensor::rand(mean.to_f64(), std.to_f64(), shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (PyDType::Float32, true) => Var::randn(mean as f32, std as f32, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (PyDType::Float32, false) => Tensor::randn(mean as f32, std as f32, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (PyDType::Float64, true) => Var::rand(mean, std, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+            (PyDType::Float64, false) => Tensor::rand(mean, std, shape).map_err(to_value_error).map(Into::<PyTensor>::into),
             (dtype, _) => Err(PyValueError::new_err(format!("dtype {:?} no support randn", dtype)))
+        }
+    }
+
+    #[pyo3(signature = (mean=None, std=None))]
+    fn randn_like(&self, mean: Option<f64>, std: Option<f64>) -> PyResult<Self> {
+        let mean = mean.unwrap_or(0.0);
+        let std = std.unwrap_or(1.0);
+        match &self.inner {
+            DynTensor::F32(t) => t.randn_like(mean as f32, std as f32).map_err(to_value_error).map(Into::<PyTensor>::into),
+            DynTensor::F64(t) => t.randn_like(mean, std).map_err(to_value_error).map(Into::<PyTensor>::into),
+            _ => Err(PyValueError::new_err(format!("dtype {:?} no support rand", self.dtype())))
         }
     }
 
@@ -471,19 +501,19 @@ impl PyTensor {
         impl_arith_binary!(self, rhs, div)
     }
 
-    fn add_(&self, rhs: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn add_(&self, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
         impl_arith_inplace_binary!(self, rhs, add_)
     }
 
-    fn sub_(&self, rhs: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn sub_(&self, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
         impl_arith_inplace_binary!(self, rhs, sub_)
     }
 
-    fn mul_(&self, rhs: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn mul_(&self, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
         impl_arith_inplace_binary!(self, rhs, mul_)
     }
 
-    fn div_(&self, rhs: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn div_(&self, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
         impl_arith_inplace_binary!(self, rhs, div_)
     }
 
@@ -885,8 +915,8 @@ impl PyTensor {
         Ok(PyTensor { inner: res_inner })
     }
 
-    fn __eq__(&self, other: &Self) -> PyResult<bool> {
-        self.allclose(other, Some(0.0), Some(0.0))
+    fn __eq__(&self, other: &Self) -> bool {
+        self.__hash__() == other.__hash__()
     }
 
     fn __str__(&self) -> String {
@@ -895,6 +925,10 @@ impl PyTensor {
 
     fn __repr__(&self) -> String {
         impl_varient_method!(self, t, format!("{:?}", t))
+    }
+
+    fn  __hash__(&self) -> usize {
+        impl_varient_method!(self, t, t.id().value())
     }
 }
 

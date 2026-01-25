@@ -191,12 +191,13 @@ impl<T: NumDType> Tensor<T> {
 macro_rules! binary_inplace_op_impl {
     ($fn_name:ident) => {
         paste! {
-            pub fn [< $fn_name _ >](&self, rhs: impl Into<TensorOrScalar<T>>) -> Result<()> {
+            pub fn [< $fn_name _ >](&self, rhs: impl Into<TensorOrScalar<T>>) -> Result<Self> {
                 let rhs = rhs.into();
                 match rhs {
-                    TensorOrScalar::Scalar(rhs) => Self::binary_op_scalar_inplace(self, rhs, T::$fn_name, stringify!([< $fn_name _scalar_ >])),
-                    TensorOrScalar::Tensor(rhs) => Self::binary_op_inplace(self, &rhs, T::$fn_name, stringify!([< $fn_name _scalar >])),
+                    TensorOrScalar::Scalar(rhs) => Self::binary_op_scalar_inplace(self, rhs, T::$fn_name, stringify!([< $fn_name _scalar_ >]))?,
+                    TensorOrScalar::Tensor(rhs) => Self::binary_op_inplace(self, &rhs, T::$fn_name, stringify!([< $fn_name _scalar >]))?,
                 }
+                Ok(self.clone())
             }
         }
     };

@@ -30,4 +30,6 @@ for name, p in l.named_buffers():
 
 
 import torch
+
+torch.nn.Sequential
 torch.optim.SGD

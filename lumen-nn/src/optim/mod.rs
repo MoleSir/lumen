@@ -1,7 +1,9 @@
 mod sgd;
+mod adam;
 mod adamw;
 mod momentum;
 pub use sgd::*;
+pub use adam::*;
 pub use adamw::*;
 pub use momentum::*;
 
