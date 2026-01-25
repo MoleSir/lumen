@@ -55,7 +55,7 @@ The `Dataset` trait acts as the interface to your raw data. It abstracts away th
 
 - Responsibility: Random access to data items.
 - Key Methods: get(index) and len().
-- Extensibility: Can be wrapped with MapDataset for lazy transformations or SelectionDataset for subsetting (e.g., train/test splits).
+- Extensibility: Can be wrapped with MapDataset for lazy transformations or SubsetDataset for subsetting (e.g., train/test splits).
 
 ### `Batcher`
 

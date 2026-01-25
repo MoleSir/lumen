@@ -1,6 +1,6 @@
 mod core;
 mod nn;
-mod dataset;
+mod io;
 use pyo3::wrap_pymodule;
 use pyo3::prelude::*;
 
@@ -13,6 +13,5 @@ fn _lumen(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(core::is_grad_enabled, m)?)?;
     m.add_function(wrap_pyfunction!(core::no_grad, m)?)?;
     m.add_wrapped(wrap_pymodule!(nn::nn))?;
-    m.add_wrapped(wrap_pymodule!(dataset::dataset))?;
     Ok(())
 }
