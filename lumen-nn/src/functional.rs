@@ -203,6 +203,54 @@ pub fn leaky_relu<T: FloatDType>(xs: &Tensor<T>, negative_slope: T) -> NnResult<
 //                         Loss 
 // ============================================================================= //
 
+#[derive(Debug, Clone, Copy)]
+pub enum LossReduction {
+    Mean,
+    Sum,
+}
+
+pub(crate) fn reduction_loss<T: FloatDType>(loss: Tensor<T>, reduction: Option<LossReduction>) -> NnResult<Tensor<T>> {
+    let loss = match reduction {
+        None => loss,
+        Some(LossReduction::Mean) => loss.mean_all().map_err(NnError::Core)?,
+        Some(LossReduction::Sum) => loss.mean_all().map_err(NnError::Core)?,
+    };
+    Ok(loss)
+}
+
+pub(crate) fn reduction_display(reduction: Option<LossReduction>) -> &'static str {
+    match reduction {
+        None => "none",
+        Some(LossReduction::Mean) => "mean",
+        Some(LossReduction::Sum) => "sum",
+    }
+}
+
+pub fn l1_loss<T: FloatDType>(
+    input: &Tensor<T>, 
+    target: &Tensor<T>, 
+    reduction: Option<LossReduction>
+) -> NnResult<Tensor<T>> {
+    let loss = input.sub(target)?.abs();
+    reduction_loss(loss, reduction)
+}
+
+/// Computes the Mean Squared Error loss.
+///
+/// ## Arguments
+///
+/// * `input` - Input tensor.
+/// * `target` - Target tensor.
+/// * `reduction` - None / Mean / Sum
+pub fn mse_loss<T: FloatDType>(
+    input: &Tensor<T>, 
+    target: &Tensor<T>,
+    reduction: Option<LossReduction>
+) -> NnResult<Tensor<T>> {
+    let loss = input.sub(target)?.sqr();
+    reduction_loss(loss, reduction)
+}
+
 /// Computes the Negative Log Likelihood loss.
 ///
 /// Expects the input to contain log-probabilities (e.g., from `log_softmax`).
@@ -220,23 +268,6 @@ pub fn nll_loss<T: FloatDType>(input: &Tensor<T>, target: impl Into<IntTensor>) 
     let gathered = input.gather(target, 1)?;
     let neg_loss = gathered.neg();
     let out = neg_loss.mean_all()?;
-    Ok(out)
-}
-
-/// Computes the Mean Squared Error loss.
-///
-/// Measures the element-wise mean squared error.
-///
-/// ## Arguments
-///
-/// * `input` - Input tensor.
-/// * `target` - Target tensor.
-///
-/// ## Returns
-///
-/// * Scalar tensor representing the mean loss.
-pub fn mse_loss<T: FloatDType>(input: &Tensor<T>, target: &Tensor<T>) -> NnResult<Tensor<T>> {
-    let out = input.sub(target)?.sqr().mean_all()?;
     Ok(out)
 }
 

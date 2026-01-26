@@ -248,7 +248,7 @@ pub trait Module<T: FloatDType> : Sized {
     //                     Override method
     // ================================================================= // 
 
-    fn extra_repr(&self) -> String {
+    fn extra_display(&self) -> String {
         String::new()
     }
 
@@ -662,8 +662,9 @@ impl<'a, T: FloatDType> TensorVisitorMut<T> for LoadTensorsVisitor<'a> {
                     Err(NnError::ShapeUnmatchWhenLoadParam(param.shape().clone(), src.shape().clone()))?;
                 }
 
+                let requires_grad = param.requires_grad();
                 *param = src_tensor.clone();
-                param.set_requires_grad(true); 
+                param.set_requires_grad(requires_grad); 
                 Ok(())
             }
             None => {
@@ -721,7 +722,7 @@ impl<'a, 'b, T: FloatDType> ModuleVisitor<T> for DisplayVisitor<'a, 'b> {
         write!(self.f, "{}", M::module_name())?;
 
         // print Module Name
-        let extra = module.extra_repr();
+        let extra = module.extra_display();
         if !extra.is_empty() {
             write!(self.f, "({}", extra)?;
         } else {

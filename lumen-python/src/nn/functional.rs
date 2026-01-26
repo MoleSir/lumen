@@ -1,7 +1,7 @@
 use lumen_core::DynTensor;
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyFloat};
 use crate::{core::{py_to_dim, to_value_error, PyTensor}, impl_floatdtype_varient_method, impl_intdtype_varient_method};
-use lumen_nn::functional as F;
+use lumen_nn::functional::{self as F, LossReduction};
 
 // ============================================================================= //
 //                         Common 
@@ -94,13 +94,30 @@ fn nll_loss(input: &PyTensor, target: &PyTensor) -> PyResult<PyTensor> {
 }
 
 #[pyfunction]
-fn mse_loss(input: &PyTensor, target: &PyTensor) -> PyResult<PyTensor> {
+#[pyo3(signature = (input, target, reduction="none"))]
+fn l1_loss(input: &PyTensor, target: &PyTensor, reduction: &str) -> PyResult<PyTensor> {
+    let reduction = py_to_reduction(reduction)?;
     match (&input.inner, &target.inner) {
         (DynTensor::F32(input), DynTensor::F32(target)) => {
-            F::mse_loss(input, target).map_err(to_value_error).map(Into::into)
+            F::l1_loss(input, target, reduction).map_err(to_value_error).map(Into::into)
         }
         (DynTensor::F64(input), DynTensor::F64(target)) => {
-            F::mse_loss(input, target).map_err(to_value_error).map(Into::into)
+            F::l1_loss(input, target, reduction).map_err(to_value_error).map(Into::into)
+        }
+        _ => Err(PyValueError::new_err(format!("not float dtype in messloss")))
+    }
+}
+
+#[pyfunction]
+#[pyo3(signature = (input, target, reduction="none"))]
+fn mse_loss(input: &PyTensor, target: &PyTensor, reduction: &str) -> PyResult<PyTensor> {
+    let reduction = py_to_reduction(reduction)?;
+    match (&input.inner, &target.inner) {
+        (DynTensor::F32(input), DynTensor::F32(target)) => {
+            F::mse_loss(input, target, reduction).map_err(to_value_error).map(Into::into)
+        }
+        (DynTensor::F64(input), DynTensor::F64(target)) => {
+            F::mse_loss(input, target, reduction).map_err(to_value_error).map(Into::into)
         }
         _ => Err(PyValueError::new_err(format!("not float dtype in messloss")))
     }
@@ -166,6 +183,15 @@ fn layer_norm(input: &PyTensor, weight: Option<&PyTensor>, bias: Option<&PyTenso
     }
 }
 
+fn py_to_reduction(reduction: &str) -> PyResult<Option<LossReduction>> {
+    match reduction {
+        "none" => Ok(None),
+        "sum" => Ok(Some(LossReduction::Sum)),
+        "mean" => Ok(Some(LossReduction::Mean)),
+        _ => Err(PyValueError::new_err(format!("unsupport reduction {}", reduction)))
+    }
+}
+
 #[pyfunction]
 #[pyo3(signature = (input, weight, eps=1e-5))]
 fn rms_norm(input: &PyTensor, weight: &PyTensor, eps: f64) -> PyResult<PyTensor> {
@@ -195,6 +221,7 @@ pub fn functional(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_function(wrap_pyfunction!(nll_loss, m)?)?;
     m.add_function(wrap_pyfunction!(mse_loss, m)?)?;
+    m.add_function(wrap_pyfunction!(l1_loss, m)?)?;
     m.add_function(wrap_pyfunction!(cross_entropy, m)?)?;
     m.add_function(wrap_pyfunction!(cross_entropy_indices, m)?)?;
 

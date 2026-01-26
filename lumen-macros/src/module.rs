@@ -32,7 +32,7 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
     };
 
     // module attr
-    let mut custom_repr_fn_name: Option<syn::Ident> = None;
+    let mut custom_display_fn_name: Option<syn::Ident> = None;
     let mut custom_set_train_name: Option<syn::Ident> = None;
     
     for attr in &ast.attrs {
@@ -42,7 +42,7 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
                 if meta.path.is_ident("display") {
                     let value = meta.value()?; 
                     let s: syn::LitStr = value.parse()?; 
-                    custom_repr_fn_name = Some(syn::Ident::new(&s.value(), s.span()));
+                    custom_display_fn_name = Some(syn::Ident::new(&s.value(), s.span()));
                     return Ok(());
                 }          
                 if meta.path.is_ident("train") {
@@ -58,9 +58,9 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
     }
     
     // module display
-    let extra_repr_fn = if let Some(fn_name) = custom_repr_fn_name {
+    let extra_display_fn = if let Some(fn_name) = custom_display_fn_name {
         quote! {
-            fn extra_repr(&self) -> String {
+            fn extra_display(&self) -> String {
                 self.#fn_name()
             }
         }
@@ -240,7 +240,7 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
                 Ok(())
             }
 
-            #extra_repr_fn
+            #extra_display_fn
             #set_train_fn
         }
 

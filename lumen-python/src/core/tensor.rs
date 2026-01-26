@@ -1,7 +1,6 @@
 use lumen_core::{DType, DTypeConvert, DynTensor, Indexer, Shape, Slice, Tensor, Var, WithDType, D};
 use pyo3::{exceptions::{PyRuntimeError, PyTypeError, PyValueError}, prelude::*, types::{PyList, PySlice, PyTuple}};
 use paste::paste;
-
 use super::{DynGradStore, PyGradStore};
 
 #[pyclass(name = "Tensor", subclass)]
@@ -10,6 +9,11 @@ pub struct PyTensor {
     pub inner: DynTensor,
 }
 
+impl PyTensor {
+    pub fn from_inner(inner: DynTensor) -> Self {
+        Self { inner }
+    }
+}
 
 #[pyclass(name = "DType", eq, eq_int)]
 #[derive(Clone, Copy, Debug, PartialEq)]

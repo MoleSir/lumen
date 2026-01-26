@@ -4,16 +4,16 @@ use crate::{functional::{reduction_display, LossReduction}, NnResult};
 
 #[derive(Module)]
 #[module(display = "display")]
-pub struct MseLoss {
+pub struct L1Loss {
     #[module(skip)]
     reduction: Option<LossReduction>,
 }
 
-impl MseLoss {
+impl L1Loss {
     pub fn new(reduction: Option<LossReduction>) -> Self {
         Self {reduction }
     }
-
+    
     pub fn forward<T: FloatDType>(&self, input: &Tensor<T>, target: &Tensor<T>) -> NnResult<Tensor<T>> {
         crate::functional::mse_loss(input, target, self.reduction)
     }

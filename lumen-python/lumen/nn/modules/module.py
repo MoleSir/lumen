@@ -212,17 +212,40 @@ class Module:
     #              State dcit
     ##################################################################
 
-    def state_dicts(self) -> Iterator['Tensor']:
-        for param in self.parameters():
-            yield param
-        for buffer in self.buffers():
-            yield buffer   
-
-    def named_state_dicts(self) -> Iterator[Tuple[str, 'Tensor']]:
+    def state_dict(self) -> Iterator[Tuple[str, 'Tensor']]:
         for name, param in self.named_parameters():
             yield name, param
         for name, buffer in self.named_buffers():
             yield name, buffer        
+
+    def load_state_dict(self, state_dict: Mapping[str, Tensor], strict: bool = True):
+        self._load_state_dict(state_dict, strict, '')
+    
+    def _load_state_dict(self, state_dict: Mapping[str, Tensor], strict: bool, prefix: str = ''):
+        names = list(self._parameters.keys())
+        for name in names:
+            param_name = prefix + ('.' if prefix else '') + name
+            src_tensor = state_dict.get(param_name)
+            if src_tensor is None:
+                if strict:
+                    raise ValueError(f"Not Found tensor '{name}'")
+            else:
+                origin_param = self._parameters[name]
+                self._parameters[name] = Parameter(src_tensor, requires_grad=origin_param.requires_grad())
+
+        names = list(self._buffers.keys())
+        for name in names:
+            buffer_name = prefix + ('.' if prefix else '') + name
+            src_tensor = state_dict.get(buffer_name)
+            if src_tensor is None:
+                if strict:
+                    raise ValueError(f"Not Found tensor '{name}'")
+            else:
+                self._buffers[name] = Buffer(src_tensor)
+
+        for name, module in self._modules.items():
+            submodule_prefix = prefix + ('.' if prefix else '') + name
+            module._load_state_dict(state_dict, strict, submodule_prefix)
 
     ##################################################################
     #              Apply

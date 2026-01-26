@@ -66,4 +66,4 @@ class Mlp(Module):
 
 print(Mlp([2, 4, 1]))
 
-import torch
+import torch.nn.functional

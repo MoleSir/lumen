@@ -16,6 +16,7 @@ crate-type = ["cdylib"]
 [dependencies]
 lumen-core = { workspace = true }
 lumen-nn = { workspace = true }
+lumen-io = { workspace = true }
 pyo3 = { version = "0.27", features = ["auto-initialize"] }
 paste = { workspace = true }
 

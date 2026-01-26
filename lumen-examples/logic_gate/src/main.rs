@@ -1,5 +1,5 @@
 use lumen_core::{FloatDType, Tensor};
-use lumen_nn::{optim::{Optimizer, SGD}, Linear, Module, MseLoss, Sigmoid};
+use lumen_nn::{functional::LossReduction, optim::{Optimizer, SGD}, Linear, Module, MseLoss, Sigmoid};
 
 #[derive(Module)]
 pub struct Mlp<T: FloatDType> {
@@ -51,7 +51,7 @@ fn result_main() -> anyhow::Result<()> {
 
     let mlp = Mlp::<f64>::from_archs([2, 4, 1])?;
     let mut optimizer = SGD::new(mlp.params(), 0.2);
-    let criterion = MseLoss;
+    let criterion = MseLoss::new(Some(LossReduction::Mean));
 
     for _ in 0..5000 {
         let output = mlp.forward(&input)?;
