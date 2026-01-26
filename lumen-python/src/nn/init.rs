@@ -20,11 +20,6 @@ impl PyInit {
     }
 
     #[staticmethod]
-    pub fn empty() -> Self {
-        Self { inner: Init::Empty }
-    }
-
-    #[staticmethod]
     pub fn ones() -> Self {
         Self { inner: Init::Ones }
     }
@@ -80,8 +75,8 @@ impl PyInit {
     pub fn init(&self, shape: &Bound<'_, PyAny>, dtype: PyDType, fan_in: Option<usize>, fan_out: Option<usize>) -> PyResult<PyTensor> {
         let shape = py_to_shape(shape)?;
         match dtype {
-            PyDType::Float32 => self.to_f32().do_init_with(shape, fan_in, fan_out).map_err(to_value_error).map(Into::into),
-            PyDType::Float64 => self.to_f64().do_init_with(shape, fan_in, fan_out).map_err(to_value_error).map(Into::into),
+            PyDType::Float32 => self.to_f32().apply(shape, fan_in, fan_out).map_err(to_value_error).map(Into::into),
+            PyDType::Float64 => self.to_f64().apply(shape, fan_in, fan_out).map_err(to_value_error).map(Into::into),
             _ => Err(PyValueError::new_err(format!("init unsupport dtype {:?}", dtype)))
         }
     }
@@ -95,7 +90,6 @@ impl PyInit {
     pub fn to_f32(&self) -> Init<f32> {
         match self.inner {
             Init::Uninit => Init::Uninit,
-            Init::Empty => Init::Empty,
             Init::Constant { value } => Init::Constant { value: value as f32 },
             Init::Ones => Init::Ones,
             Init::Zeros => Init::Zeros,

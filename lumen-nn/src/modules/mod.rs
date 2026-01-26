@@ -22,6 +22,7 @@ use std::{collections::HashMap, convert::Infallible, path::Path};
 use std::any::type_name;
 use lumen_core::{DynTensor, FloatDType, NumDType, Tensor};
 use thiserrorctx::Context;
+use crate::init::EmptyInitGuard;
 use crate::{init::Init, NnCtxError, NnError, NnResult};
 use paste::paste;
 
@@ -271,7 +272,8 @@ pub trait ModuleInit<T: FloatDType> : Module<T> {
     }
 
     fn from_safetensors<P: AsRef<Path>>(config: &Self::Config, path: P) -> Result<Self, Self::Error> {
-        let mut model = Self::init_with(config, Init::Empty)?;
+        let _guard = EmptyInitGuard::new();
+        let mut model = Self::init_default(config)?;
         model.load_safetensors(path, true)?;
         Ok(model)
     }

@@ -1,11 +1,10 @@
 use lumen_core::{FloatDType, Shape, Tensor};
-
 use crate::{Buffer, NnError, NnResult, Parameter};
+use std::cell::Cell;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Init<T: FloatDType> {
     Uninit,
-    Empty,
 
     /// Fills tensor with specified value everywhere
     Constant {
@@ -152,13 +151,9 @@ impl<T: FloatDType> Init<T> {
 }
 
 impl<T: FloatDType> Init<T> {
-    /// Inits a tensor parameter of given shape with values depending on init kind.
-    ///
-    /// # Params
-    ///
-    /// - shape: Shape of the initiated tensor.
+    #[inline]
     pub fn init(&self, shape: impl Into<Shape>) -> NnResult<Tensor<T>> {
-        self.do_init_with(shape, None, None)
+        self.apply(shape, None, None)
     }
 
     #[inline]
@@ -171,8 +166,9 @@ impl<T: FloatDType> Init<T> {
         self.init(shape).map(Buffer::new)
     }
 
+    #[inline]
     pub fn init_with(&self, shape: impl Into<Shape>, fan_in: usize, fan_out: usize) -> NnResult<Tensor<T>> {
-        self.do_init_with(shape, Some(fan_in), Some(fan_out))
+        self.apply(shape, Some(fan_in), Some(fan_out))
     }
 
     #[inline]
@@ -185,31 +181,34 @@ impl<T: FloatDType> Init<T> {
         self.init_with(shape, fan_in, fan_out).map(Buffer::new)
     }
 
-    pub fn do_init_with(&self, shape: impl Into<Shape>, fan_in: Option<usize>, fan_out: Option<usize>) -> NnResult<Tensor<T>> {
+    pub fn apply(&self, shape: impl Into<Shape>, fan_in: Option<usize>, fan_out: Option<usize>) -> NnResult<Tensor<T>> {
         let shape = shape.into();
-        let result = match self {
-            Init::Uninit => Tensor::uninit(shape),
-            Init::Empty => Tensor::empty(shape),
-            Init::Constant { value } => Tensor::full(shape, *value),
-            Init::Ones => Tensor::ones(shape),
-            Init::Zeros => Tensor::zeros(shape),
-            Init::Uniform { min, max } => Tensor::rand(*min, *max, shape),
-            Init::Normal { mean, std } => Tensor::randn(*mean, *std, shape),
-            Init::KaimingUniform { gain, fan_out_only } => {
-                let a = T::from_f64(3.0).sqrt() * *gain * self.kaiming_std(*fan_out_only, fan_in, fan_out);
-                Tensor::rand(-a, a, shape)
-            }
-            Init::KaimingNormal { gain, fan_out_only } => {
-                let std = *gain * self.kaiming_std(*fan_out_only, fan_in, fan_out);
-                Tensor::randn(T::zero(), std, shape)
-            }
-            Init::XavierUniform { gain } => {
-                let a = T::from_f64(3.0).sqrt() * *gain * self.xavier_std(fan_in, fan_out);
-                Tensor::rand(-a, a, shape)
-            }
-            Init::XavierNormal { gain } => {
-                let std = *gain * self.xavier_std(fan_in, fan_out);
-                Tensor::randn(T::zero(), std, shape)
+        let result = if is_empty_init() {
+            Tensor::empty(shape)
+        } else {
+            match self {
+                Init::Uninit => Tensor::uninit(shape),
+                Init::Constant { value } => Tensor::full(shape, *value),
+                Init::Ones => Tensor::ones(shape),
+                Init::Zeros => Tensor::zeros(shape),
+                Init::Uniform { min, max } => Tensor::rand(*min, *max, shape),
+                Init::Normal { mean, std } => Tensor::randn(*mean, *std, shape),
+                Init::KaimingUniform { gain, fan_out_only } => {
+                    let a = T::from_f64(3.0).sqrt() * *gain * self.kaiming_std(*fan_out_only, fan_in, fan_out);
+                    Tensor::rand(-a, a, shape)
+                }
+                Init::KaimingNormal { gain, fan_out_only } => {
+                    let std = *gain * self.kaiming_std(*fan_out_only, fan_in, fan_out);
+                    Tensor::randn(T::zero(), std, shape)
+                }
+                Init::XavierUniform { gain } => {
+                    let a = T::from_f64(3.0).sqrt() * *gain * self.xavier_std(fan_in, fan_out);
+                    Tensor::rand(-a, a, shape)
+                }
+                Init::XavierNormal { gain } => {
+                    let std = *gain * self.xavier_std(fan_in, fan_out);
+                    Tensor::randn(T::zero(), std, shape)
+                }
             }
         };
 
@@ -241,5 +240,32 @@ impl<T: FloatDType> Init<T> {
              provide fan_out.",
         );
         T::two() / T::from_usize(fan_in + fan_out).sqrt()
+    }
+}
+
+thread_local! {
+    static EMPTY_INIT: Cell<bool> = Cell::new(false);
+}
+
+fn is_empty_init() -> bool {
+    EMPTY_INIT.with(|c| c.get())
+}
+
+fn set_empty_init(enabled: bool) {
+    EMPTY_INIT.with(|c| c.set(enabled));
+}
+
+pub struct EmptyInitGuard;
+
+impl EmptyInitGuard {
+    pub fn new() -> Self {
+        set_empty_init(true);
+        Self
+    }
+}
+
+impl Drop for EmptyInitGuard {
+    fn drop(&mut self) {
+        set_empty_init(false);
     }
 }

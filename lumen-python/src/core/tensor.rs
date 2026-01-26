@@ -286,6 +286,20 @@ impl PyTensor {
 
     #[staticmethod]
     #[pyo3(signature = (shape, dtype=None, requires_grad=false))]
+    fn uninit(shape: &Bound<'_, PyAny>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
+        let shape = py_to_shape(shape)?;
+        impl_contruct!(uninit, dtype, shape, requires_grad);
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (shape, dtype=None, requires_grad=false))]
+    fn empty(shape: &Bound<'_, PyAny>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
+        let shape = py_to_shape(shape)?;
+        impl_contruct!(empty, dtype, shape, requires_grad);
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (shape, dtype=None, requires_grad=false))]
     fn zeros(shape: &Bound<'_, PyAny>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
         let shape = py_to_shape(shape)?;
         impl_contruct!(zeros, dtype, shape, requires_grad);
