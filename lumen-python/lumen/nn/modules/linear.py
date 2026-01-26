@@ -35,3 +35,6 @@ class Linear(Module):
     def forward(self, x: Tensor) -> Tensor:
         return F.linear(x, self.weight, self.bias)
     
+    def extra_repr(self):
+        return f'in_features={self.in_features}, out_features={self.out_features}'
+    

@@ -8,9 +8,10 @@ pub struct PyParameter {}
 #[pymethods]
 impl PyParameter {
     #[new]
-    pub fn new(data: &PyTensor) -> PyResult<(Self, PyTensor)> {        
+    #[pyo3(signature = (data, requires_grad=true))]
+    pub fn new(data: &PyTensor, requires_grad: bool) -> PyResult<(Self, PyTensor)> {        
         let new_tensor_base = data.clone(); 
-        new_tensor_base.detach()?.set_requires_grad(true)?;
+        new_tensor_base.detach()?.set_requires_grad(requires_grad)?;
         Ok((PyParameter {}, new_tensor_base))
     }
 }

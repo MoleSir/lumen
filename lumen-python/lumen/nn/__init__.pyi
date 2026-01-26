@@ -3,7 +3,7 @@ from typing import Optional
 
 
 class Parameter(Tensor):
-    def __init__(self, data: Tensor) -> None: ...
+    def __init__(self, data: Tensor, requires_grad: bool = True) -> None: ...
 
 
 class Buffer(Tensor):

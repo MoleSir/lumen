@@ -10,9 +10,10 @@ def test_dtype_conversion():
     
     t_int = t.to_dtype(DType.Int32)
     assert t_int.dtype() == DType.Int32
-    # Expect truncation or rounding depending on implementation, 
-    # assuming standard casting behavior: 1, 2
     assert t_int.allclose(Tensor([1, 2], dtype=DType.Int32))
+
+    t_int = t.to_dtype(DType.Float64)
+    assert t_int.dtype() == DType.Float64
 
 def test_tensor_item():
     t = Tensor([42.0])
