@@ -15,14 +15,14 @@ pub enum DynGradStore {
     F64(GradStore<f64>),
 }
 
-#[pyclass]
+#[pyclass(name = "NoGradGuard")]
 pub struct PyNoGradGuard {
     guard: Option<NoGradGuard>,
 }
 
 impl Drop for PyNoGradGuard {
     fn drop(&mut self) {
-        self.guard.take();
+        self.unlock();
     }
 }
 
@@ -34,21 +34,14 @@ impl PyNoGradGuard {
             guard: None,
         }
     }
-    
-    fn __enter__<'p>(mut slf: PyRefMut<'p, Self>) -> PyResult<PyRefMut<'p, Self>> {
-        slf.guard = Some(NoGradGuard::new());
-        Ok(slf)
-    }
-     
-    fn __exit__(&mut self, _exc_type: &Bound<'_, PyAny>, _exc_value: &Bound<'_, PyAny>, _traceback: &Bound<'_, PyAny>) -> PyResult<bool> {
-        self.guard.take();
-        Ok(false)
-    }
-}
 
-#[pyfunction]
-pub fn no_grad() -> PyNoGradGuard {
-    PyNoGradGuard::new()
+    fn lock(&mut self) {
+        self.guard = Some(NoGradGuard::new())
+    }
+
+    fn unlock(&mut self) {
+        self.guard.take();
+    }
 }
 
 #[pyfunction]
@@ -60,7 +53,6 @@ pub fn set_grad_enabled(enabled: bool) {
 pub fn is_grad_enabled() -> bool {
     lumen_core::is_grad_enabled()
 }
-
 
 #[pymethods]
 impl PyGradStore {

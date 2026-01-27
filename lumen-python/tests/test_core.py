@@ -1,5 +1,6 @@
 import math
 from lumen import Tensor, DType
+import lumen
 
 
 # ---- Type & Attributes ----
@@ -220,6 +221,24 @@ def test_split_chunk():
 
 
 # ---- Advanced Autograd ----
+
+def test_no_gard():
+    x = Tensor.new(2.0, requires_grad=True)
+    y = x * x + x
+    assert y.requires_grad() == True
+
+    with lumen.no_grad():
+        y = x * x + x
+        assert y.requires_grad() == False
+
+    @lumen.no_grad()
+    def test():
+        x = Tensor.new(2.0, requires_grad=True)
+        y = x * x + x
+        assert y.requires_grad() == False
+    
+    test()
+
 
 def test_autograd_reuse_graph():
     x = Tensor.new(2.0, requires_grad=True)

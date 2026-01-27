@@ -6,6 +6,7 @@ mod norm;
 mod geometric;
 mod param;
 mod buffer;
+mod loss;
 
 pub use common::*;
 pub use activation::*;
@@ -15,6 +16,7 @@ pub use norm::*;
 pub use param::*;
 pub use buffer::*;
 pub use geometric::*;
+pub use loss::*;
 
 use std::fmt;
 use std::marker::PhantomData;
