@@ -76,9 +76,9 @@ impl MnistDataset {
     }
 
     fn new<P: AsRef<Path>>(split: MnistSplit, cache_dir: Option<P>) -> MnistResult<Self> {
-        let root = Self::download(split, cache_dir)?;
-        let images = Self::read_images(&root, split)?;
-        let labels = Self::read_labels(&root, split)?;
+        let (image_path, label_path) = Self::download(split, cache_dir)?;
+        let images = Self::read_images(&image_path)?;
+        let labels = Self::read_labels(&label_path)?;
 
         let items: Vec<_> = images
             .into_iter()
@@ -92,9 +92,7 @@ impl MnistDataset {
         Ok( Self { dataset } )
     }
 
-    fn read_images<P: AsRef<Path>>(root: &P, split: MnistSplit) -> MnistResult<Vec<Vec<u8>>> {
-        let file_path = root.as_ref().join(split.image_file_name());
-
+    fn read_images<P: AsRef<Path>>(file_path: &P) -> MnistResult<Vec<Vec<u8>>> {
         // Read number of images from 16-byte header metadata
         let mut f = File::open(file_path)?;
         let mut buf = [0u8; 4];
@@ -114,9 +112,7 @@ impl MnistDataset {
         Ok(images)
     }
 
-    fn read_labels<P: AsRef<Path>>(root: &P, split: MnistSplit) -> MnistResult<Vec<u8>> {
-        let file_path = root.as_ref().join(split.label_file_name());
-        
+    fn read_labels<P: AsRef<Path>>(file_path: &P) -> MnistResult<Vec<u8>> {        
         // Read number of labels from 8-byte header metadata
         let mut f = File::open(file_path)?;
         let mut buf = [0u8; 4];
@@ -131,7 +127,7 @@ impl MnistDataset {
         Ok(buf_labels)
     }
 
-    fn download<P: AsRef<Path>>(split: MnistSplit, cache_dir: Option<P>) -> MnistResult<PathBuf> {
+    fn download<P: AsRef<Path>>(split: MnistSplit, cache_dir: Option<P>) -> MnistResult<(PathBuf, PathBuf)> {
         match cache_dir {
             Some(p) => Self::do_download(split, p.as_ref()),
             None => {
@@ -144,21 +140,21 @@ impl MnistDataset {
         }
     }
 
-    fn do_download(split: MnistSplit, cache_dir: &Path) -> MnistResult<PathBuf> {
+    fn do_download(split: MnistSplit, cache_dir: &Path) -> MnistResult<(PathBuf, PathBuf)> {
         let split_dir = cache_dir.join("mnist").join(split.as_str());
-
-        match split {
-            MnistSplit::Train => {
-                Self::download_file(TRAIN_IMAGES, &split_dir)?;
-                Self::download_file(TRAIN_LABELS, &split_dir)?;
-            }
-            MnistSplit::Test => {
-                Self::download_file(TEST_IMAGES, &split_dir)?;
-                Self::download_file(TEST_LABELS, &split_dir)?;
-            }
+        if !split_dir.exists() {
+            std::fs::create_dir_all(&split_dir)?;
         }
 
-        Ok(split_dir)
+        let (train_name, label_name) = match split {
+            MnistSplit::Train => (TRAIN_IMAGES, TRAIN_LABELS),
+            MnistSplit::Test => (TEST_IMAGES, TEST_LABELS),
+        };
+
+        Ok((
+            Self::download_file(train_name, &split_dir)?,
+            Self::download_file(label_name, &split_dir)?
+        ))
     }
 
     fn download_file<P: AsRef<Path>>(name: &str, dest_dir: &P) -> MnistResult<PathBuf> {
@@ -224,20 +220,6 @@ enum MnistSplit {
 }
 
 impl MnistSplit {
-    fn image_file_name(&self) -> &'static str {
-        match self {
-            Self::Test => TEST_IMAGES,
-            Self::Train => TRAIN_IMAGES
-        }
-    } 
-
-    fn label_file_name(&self) -> &'static str {
-        match self {
-            Self::Test => TEST_LABELS,
-            Self::Train => TRAIN_LABELS
-        }
-    } 
-
     fn as_str(&self) -> &'static str {
         match self {
             Self::Train => "train",
