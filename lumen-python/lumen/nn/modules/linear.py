@@ -12,8 +12,8 @@ class Linear(Module):
             in_features: int, 
             out_features: int, 
             bias: bool, 
-            init: Optional[Init]=None, 
-            dtype: Optional[DType]=None
+            dtype: Optional[DType]=None,
+            init: Optional[Init]=None
     ):
         super().__init__()
         self.in_features = in_features
@@ -28,7 +28,7 @@ class Linear(Module):
 
         self.weight = init.init_param((out_features, in_features), dtype, in_features, out_features)
         if bias:
-            self.bias = init.zeros().init_param((out_features,), dtype=dtype)
+            self.bias = Init.zeros().init_param((out_features,), dtype=dtype)
         else:
             self.bias = None
         

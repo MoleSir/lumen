@@ -7,11 +7,21 @@ from .module import Module
 
 
 class MSELoss(Module):
-    def __init__(self):
+    def __init__(self, reduction="none"):
         super().__init__()
+        self.reduction = reduction
 
     def forward(self, input: Tensor, target: Tensor) -> Tensor:
-        return F.mse_loss(input, target)
+        return F.mse_loss(input, target, self.reduction)
+    
+
+class L1Loss(Module):
+    def __init__(self, reduction="none"):
+        super().__init__()
+        self.reduction = reduction
+
+    def forward(self, input: Tensor, target: Tensor) -> Tensor:
+        return F.l1_loss(input, target, self.reduction)
     
 
 class CrossEntropyLoss(Module):
