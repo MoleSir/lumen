@@ -83,7 +83,7 @@ class DataLoaderIter(Generic[Item, Batch]):
             raise StopIteration
 
         real_end = min(end, total_len)
-        batch_indices = self.loader.indices[begin:real_end]
+        batch_indices = self.indices[begin:real_end]
         items = [self.loader.dataset[i] for i in batch_indices]
         
         self.cursor = end
