@@ -14,6 +14,6 @@ leaky_relu = F.leaky_relu
 nll_loss = F.nll_loss
 mse_loss = F.mse_loss
 cross_entropy = F.cross_entropy
-cross_entropy_indices = F.cross_entropy_indices
+soft_cross_entropy = F.soft_cross_entropy
 rms_norm = F.rms_norm
 layer_norm = F.layer_norm

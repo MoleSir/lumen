@@ -121,7 +121,7 @@ fn result_main() -> anyhow::Result<()> {
     
     println!("Init model!");
     let model = FunctionModel::<f64>::init(HIDDEN_SIZE)?;
-    let criterion = MseLoss::new(Some(LossReduction::Mean));
+    let criterion = MseLoss::new(LossReduction::Mean);
     
     let mut optimizer = AdamW::new(model.params(), AdamWConfig::default())?;
 

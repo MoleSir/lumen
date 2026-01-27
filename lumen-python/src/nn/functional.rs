@@ -85,10 +85,12 @@ fn leaky_relu(xs: &PyTensor, negative_slope: f64) -> PyResult<PyTensor> {
 // ============================================================================= //
 
 #[pyfunction]
-fn nll_loss(input: &PyTensor, target: &PyTensor) -> PyResult<PyTensor> {
+#[pyo3(signature = (input, target, reduction="none"))]
+fn nll_loss(input: &PyTensor, target: &PyTensor, reduction: &str) -> PyResult<PyTensor> {
+    let reduction = py_to_reduction(reduction)?;
     impl_floatdtype_varient_method!(
         input, input, 
-        impl_intdtype_varient_method!(target, target, F::nll_loss(input, target).map_err(to_value_error).map(Into::into), "nll_loss"),
+        impl_intdtype_varient_method!(target, target, F::nll_loss(input, target, reduction).map_err(to_value_error).map(Into::into), "nll_loss"),
         "nll_loss"
     )
 }
@@ -124,23 +126,27 @@ fn mse_loss(input: &PyTensor, target: &PyTensor, reduction: &str) -> PyResult<Py
 }
 
 #[pyfunction]
-fn cross_entropy(input: &PyTensor, target: &PyTensor) -> PyResult<PyTensor> {
+#[pyo3(signature = (input, target, reduction="none"))]
+fn soft_cross_entropy(input: &PyTensor, target: &PyTensor, reduction: &str) -> PyResult<PyTensor> {
+    let reduction = py_to_reduction(reduction)?;
     match (&input.inner, &target.inner) {
         (DynTensor::F32(input), DynTensor::F32(target)) => {
-            F::cross_entropy(input, target).map_err(to_value_error).map(Into::into)
+            F::soft_cross_entropy(input, target, reduction).map_err(to_value_error).map(Into::into)
         }
         (DynTensor::F64(input), DynTensor::F64(target)) => {
-            F::cross_entropy(input, target).map_err(to_value_error).map(Into::into)
+            F::soft_cross_entropy(input, target, reduction).map_err(to_value_error).map(Into::into)
         }
         _ => Err(PyValueError::new_err(format!("not float dtype in cross_entropy")))
     }
 }
 
 #[pyfunction]
-fn cross_entropy_indices(input: &PyTensor, target: &PyTensor) -> PyResult<PyTensor> {
+#[pyo3(signature = (input, target, reduction="none"))]
+fn cross_entropy(input: &PyTensor, target: &PyTensor, reduction: &str) -> PyResult<PyTensor> {
+    let reduction = py_to_reduction(reduction)?;
     impl_floatdtype_varient_method!(
         input, input, 
-        impl_intdtype_varient_method!(target, target, F::cross_entropy_indices(input, target).map_err(to_value_error).map(Into::into), "cross_entropy_indices"),
+        impl_intdtype_varient_method!(target, target, F::cross_entropy(input, target, reduction).map_err(to_value_error).map(Into::into), "cross_entropy_indices"),
         "cross_entropy_indices"
     )
 }
@@ -183,11 +189,11 @@ fn layer_norm(input: &PyTensor, weight: Option<&PyTensor>, bias: Option<&PyTenso
     }
 }
 
-fn py_to_reduction(reduction: &str) -> PyResult<Option<LossReduction>> {
+fn py_to_reduction(reduction: &str) -> PyResult<LossReduction> {
     match reduction {
-        "none" => Ok(None),
-        "sum" => Ok(Some(LossReduction::Sum)),
-        "mean" => Ok(Some(LossReduction::Mean)),
+        "none" => Ok(LossReduction::None),
+        "sum" => Ok(LossReduction::Sum),
+        "mean" => Ok(LossReduction::Mean),
         _ => Err(PyValueError::new_err(format!("unsupport reduction {}", reduction)))
     }
 }
@@ -223,11 +229,10 @@ pub fn functional(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(mse_loss, m)?)?;
     m.add_function(wrap_pyfunction!(l1_loss, m)?)?;
     m.add_function(wrap_pyfunction!(cross_entropy, m)?)?;
-    m.add_function(wrap_pyfunction!(cross_entropy_indices, m)?)?;
+    m.add_function(wrap_pyfunction!(soft_cross_entropy, m)?)?;
 
     m.add_function(wrap_pyfunction!(rms_norm, m)?)?;
     m.add_function(wrap_pyfunction!(layer_norm, m)?)?;
-
 
     Ok(())
 }

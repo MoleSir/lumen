@@ -12,6 +12,8 @@ pub use loss::*;
 mod test {
     use lumen_core::Tensor;
 
+    use crate::functional::LossReduction;
+
     #[test]
     fn test_nll_loss() {
         // Batch=2, Class=3
@@ -25,7 +27,7 @@ mod test {
         // Target: Sample 1 选 class 0, Sample 2 选 class 2
         let target = Tensor::new(&[0, 2]).unwrap().reshape((2, 1)).unwrap();
 
-        let loss = crate::functional::nll_loss(&input, target).unwrap();
+        let loss = crate::functional::nll_loss(&input, target, LossReduction::Mean).unwrap();
 
         // Calculation:
         // Sample 1 loss: -(-0.1) = 0.1
@@ -52,7 +54,7 @@ mod test {
             [1.0, 0.0, 0.0]
         ]).unwrap();
 
-        let loss = crate::functional::cross_entropy(&input, &target).unwrap();
+        let loss = crate::functional::soft_cross_entropy(&input, &target, LossReduction::Mean).unwrap();
         
         // Softmax([1, 2, 3]) ≈ [0.0900, 0.2447, 0.6652]
         // LogSoftmax ≈ [-2.4076, -1.4076, -0.4076]

@@ -1,21 +1,21 @@
-use lumen_core::{FloatDType, Tensor};
+use lumen_core::{FloatDType, IntTensor, Tensor};
 use lumen_macros::Module;
 use crate::{functional::LossReduction, NnResult};
 
 #[derive(Module, Default)]
 #[module(display = "display")]
-pub struct MseLoss {
+pub struct NllLoss {
     #[module(skip)]
     reduction: LossReduction,
 }
 
-impl MseLoss {
+impl NllLoss {
     pub fn new(reduction: LossReduction) -> Self {
         Self {reduction }
     }
     
-    pub fn forward<T: FloatDType>(&self, input: &Tensor<T>, target: &Tensor<T>) -> NnResult<Tensor<T>> {
-        crate::functional::mse_loss(input, target, self.reduction)
+    pub fn forward<T: FloatDType>(&self, input: &Tensor<T>, target: impl Into<IntTensor>) -> NnResult<Tensor<T>> {
+        crate::functional::nll_loss(input, target, self.reduction)
     }
 
     fn display(&self) -> String {
