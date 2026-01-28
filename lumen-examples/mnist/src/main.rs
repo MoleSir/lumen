@@ -79,8 +79,7 @@ pub fn train(
     Ok(())
 }
 
-pub fn test(model: &Net<f32>, test_loader: &MnistDataLoader,
-) -> anyhow::Result<()> {
+pub fn test(model: &Net<f32>, test_loader: &MnistDataLoader) -> anyhow::Result<()> {
     let mut test_loss = 0.0;
     let mut correct = 0;
     

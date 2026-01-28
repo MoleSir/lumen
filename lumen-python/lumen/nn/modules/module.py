@@ -1,7 +1,8 @@
 from collections import OrderedDict, namedtuple
 from typing import Union, Tuple, Any, Callable, TypeVar, Iterator, Set, Optional, overload, TypeVar, Mapping, Dict, List
-from .. import Parameter, Buffer
+from .. import Parameter, Buffer, Init, empty_init
 from ... import Tensor, no_grad, DType
+from ... import io as io 
 
 
 M = TypeVar('M', bound='Module')
@@ -246,6 +247,27 @@ class Module:
         for name, module in self._modules.items():
             submodule_prefix = prefix + ('.' if prefix else '') + name
             module._load_state_dict(state_dict, strict, submodule_prefix)
+
+    def save_safetensors(self, path: str):
+        tensors = self.state_dict()
+        io.save_safetensors_file(dict(tensors), path)
+
+    def load_safetensors(self, path: str):
+        tensors, _ = io.load_safetensors_file(path)
+        self.load_state_dict(tensors)
+
+    @classmethod
+    def init(cls, config: Any, init: Optional[Init] = None):
+        raise NotImplementedError(f"{cls.__name__} needs to implement 'init'")
+    
+    @classmethod
+    def from_safetensors(cls, config: Any, path: str): 
+        with empty_init():
+            module = cls.init(config, None) 
+            if not isinstance(module, Module):
+                raise TypeError(f"{cls.__name__}.init must return a Module instance")
+            module.load_safetensors(path)
+            return module
 
     ##################################################################
     #              Apply

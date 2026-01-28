@@ -1,4 +1,5 @@
-use lumen_core::{Dim, FloatDType, NumDType, Tensor};
+use lumen_core::{Dim, FloatDType, IntTensor, NumDType, Tensor, WithDType};
+use thiserrorctx::Context;
 use crate::{NnError, NnResult};
 
 // ============================================================================= //
@@ -133,4 +134,30 @@ pub fn dropout<T: FloatDType>(xs: &Tensor<T>, drop_p: T) -> NnResult<Tensor<T>> 
     let scale = T::one() / (T::one() - drop_p);
     let mask = rand.ge(drop_p)?.cast() * scale;
     Ok(xs * mask)
+}
+
+/// A simple lookup table that looks up embeddings in a fixed dictionary and size.
+/// 
+/// ## Arguments
+/// 
+/// * `weight` - Embedding weight / Lookup table
+/// * `indexes` - Index tensor, can be all shape, it will be flatten
+/// 
+/// ## Returns
+/// 
+/// * A Tensor of shape: indexes.dims() + embedding_sizes
+pub fn embedding<T: WithDType>(weight: &Tensor<T>, indexes: impl Into<IntTensor>) -> NnResult<Tensor<T>> {
+    let (_, embedding_size) = weight
+        .dims2()
+        .map_err(NnError::Core)
+        .context("embedding weight should be dim2")?;
+
+    let indexes = indexes.into();
+    let mut final_dims = indexes.dims().to_vec();
+    final_dims.push(embedding_size);
+
+    let indexes = indexes.flatten_all()?;
+    let values = weight.index_select(indexes, 0)?;
+    let values = values.reshape(final_dims)?;
+    Ok(values)
 }

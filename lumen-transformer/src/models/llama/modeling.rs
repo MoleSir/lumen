@@ -78,7 +78,7 @@ impl<T: FloatDType> LlamaModel<T> {
     pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut LlamaCache<T>) -> LlamaResult<Tensor<T>> {
         // embedding: (batch_size, seq_len) -> (batch_size, seq_len, hidden_size)
         let mut hidden_states = self.embed.forward(input_ids)
-            .map_err(LlamaError::Core)
+            .map_err(LlamaError::Nn)
             .context("embed forward")?;
         
         for (i, layer) in self.layers.iter().enumerate() {

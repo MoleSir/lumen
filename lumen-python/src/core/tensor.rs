@@ -623,6 +623,14 @@ impl PyTensor {
         impl_arith_unary!(self, relu)
     }
 
+    fn leaky_rele(&self, negative_slope: f64) -> PyResult<Self> {
+        match &self.inner {
+            DynTensor::F32(t) => Ok(t.leaky_relu(negative_slope as f32).into()),
+            DynTensor::F64(t) => Ok(t.leaky_relu(negative_slope).into()),
+            _ => Err(PyValueError::new_err(format!("dtype {} not support {:?}", "leaky_rele", self.dtype()))),
+        }
+    }
+
     fn silu(&self) -> PyResult<Self> {
         impl_arith_unary!(self, silu)
     }
@@ -649,6 +657,26 @@ impl PyTensor {
     #[pyo3(signature = (dim=None, keep_dim=false))]
     fn mean(&self, dim: Option<isize>, keep_dim: bool) -> PyResult<Self> {
         return impl_reduce!(mean, self, dim, keep_dim);
+    }
+
+    #[pyo3(signature = (dim, keep_dim=false))]
+    fn argmin(&self, dim: isize, keep_dim: bool) -> PyResult<Self> {
+        let dim = py_to_dim(dim);
+        if keep_dim {
+            impl_numdtype_varient_method!(self, t, t.argmin_keepdim(dim).map_err(to_value_error).map(Into::into), "argmin")
+        } else {
+            impl_numdtype_varient_method!(self, t, t.argmin(dim).map_err(to_value_error).map(Into::into), "argmin")
+        }
+    }
+
+    #[pyo3(signature = (dim, keep_dim=false))]
+    fn argmax(&self, dim: isize, keep_dim: bool) -> PyResult<Self> {
+        let dim = py_to_dim(dim);
+        if keep_dim {
+            impl_numdtype_varient_method!(self, t, t.argmax_keepdim(dim).map_err(to_value_error).map(Into::into), "argmax")
+        } else {
+            impl_numdtype_varient_method!(self, t, t.argmax(dim).map_err(to_value_error).map(Into::into), "argmax")
+        }
     }
 
     #[pyo3(signature = (dim=None, keep_dim=false, unbiased=true))]

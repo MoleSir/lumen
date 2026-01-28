@@ -50,3 +50,6 @@ class Init:
 
     def init_buffer(self, shape: ShapeLike, dtype: DType, fan_in: Optional[int]=None, fan_out: Optional[int]=None) -> Buffer: ...
 
+
+class empty_init:
+    pass

@@ -3,6 +3,7 @@ from typing import List
 from lumen import Tensor, DType
 from lumen.nn import Parameter
 from lumen.nn.modules import Module, Sigmoid, ModuleList, Linear
+import lumen.nn.functional as F
 
 
 class Mlp(Module):
@@ -102,3 +103,13 @@ def test_custom_mlp_integration():
     first_layer_weight = model.linears[0].weight
     assert first_layer_weight in gs
 
+
+def test_functional():
+    input = Tensor([[-0.1, -2.0, -3.0], [-1.5, -0.5, -0.2]])
+    target = Tensor([0, 2], dtype=DType.UInt32).unsqueeze(1)
+    loss = F.nll_loss(input, target)
+    assert loss.allclose(Tensor(0.15))
+
+
+
+import torch.nn

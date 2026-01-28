@@ -1,10 +1,28 @@
-use lumen_nn::init::Init;
+use lumen_nn::init::{EmptyInitGuard, Init};
 use pyo3::{exceptions::PyValueError, prelude::*};
 use crate::core::{py_to_shape, to_value_error, PyDType, PyTensor};
 
-// ============================================================================= //
-//                         PyO3 Wrapper
-// ============================================================================= //
+
+#[pyclass(name = "EmptyInitGuard")]
+pub struct PyEmptyInitGuard {
+    pub inner: Option<EmptyInitGuard>
+}
+
+#[pymethods]
+impl PyEmptyInitGuard {
+    #[new]
+    fn new() -> Self {
+        Self { inner: None }
+    }
+
+    fn lock(&mut self) {
+        self.inner = Some(EmptyInitGuard::new());
+    }
+
+    fn unlock(&mut self) {
+        self.inner.take();
+    }
+}
 
 #[pyclass(name = "Init")] 
 #[derive(Clone, Debug)]

@@ -19,7 +19,6 @@ class Mlp(Module):
         self.linears = ModuleList(linears)
         self.activates = ModuleList(activates)
 
-
     def layer_count(self):
         return len(self.linears)
     

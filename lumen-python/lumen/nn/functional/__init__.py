@@ -6,6 +6,7 @@ linear = F.linear
 softmax = F.softmax
 log_softmax = F.log_softmax
 dropout = F.dropout
+embedding = F.embedding
 silu = F.silu
 sigmoid = F.sigmoid
 relu = F.relu

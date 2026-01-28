@@ -1,6 +1,6 @@
 use lumen_core::DynTensor;
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyFloat};
-use crate::{core::{py_to_dim, to_value_error, PyTensor}, impl_floatdtype_varient_method, impl_intdtype_varient_method};
+use crate::{core::{py_to_dim, to_value_error, PyTensor}, impl_floatdtype_varient_method, impl_intdtype_varient_method, impl_varient_method};
 use lumen_nn::functional::{self as F, LossReduction};
 
 // ============================================================================= //
@@ -55,6 +55,18 @@ fn dropout(xs: &PyTensor, drop_p: &Bound<'_, PyFloat>) -> PyResult<PyTensor> {
     impl_floatdtype_varient_method!(xs, t, F::dropout(t, drop_p.extract()?).map_err(to_value_error).map(Into::into), "dropout")
 } 
 
+#[pyfunction]
+fn embedding(weight: &PyTensor, indexes: &PyTensor) -> PyResult<PyTensor> {
+    impl_varient_method!(
+        weight, weight, 
+        impl_intdtype_varient_method!(
+            indexes, indexes, 
+            F::embedding(weight, indexes).map_err(to_value_error).map(Into::into),
+            "embedding"
+        )
+    )
+}
+
 // ============================================================================= //
 //                         Activate 
 // ============================================================================= //
@@ -85,7 +97,7 @@ fn leaky_relu(xs: &PyTensor, negative_slope: f64) -> PyResult<PyTensor> {
 // ============================================================================= //
 
 #[pyfunction]
-#[pyo3(signature = (input, target, reduction="none"))]
+#[pyo3(signature = (input, target, reduction="mean"))]
 fn nll_loss(input: &PyTensor, target: &PyTensor, reduction: &str) -> PyResult<PyTensor> {
     let reduction = py_to_reduction(reduction)?;
     impl_floatdtype_varient_method!(
@@ -96,7 +108,7 @@ fn nll_loss(input: &PyTensor, target: &PyTensor, reduction: &str) -> PyResult<Py
 }
 
 #[pyfunction]
-#[pyo3(signature = (input, target, reduction="none"))]
+#[pyo3(signature = (input, target, reduction="mean"))]
 fn l1_loss(input: &PyTensor, target: &PyTensor, reduction: &str) -> PyResult<PyTensor> {
     let reduction = py_to_reduction(reduction)?;
     match (&input.inner, &target.inner) {
@@ -111,7 +123,7 @@ fn l1_loss(input: &PyTensor, target: &PyTensor, reduction: &str) -> PyResult<PyT
 }
 
 #[pyfunction]
-#[pyo3(signature = (input, target, reduction="none"))]
+#[pyo3(signature = (input, target, reduction="mean"))]
 fn mse_loss(input: &PyTensor, target: &PyTensor, reduction: &str) -> PyResult<PyTensor> {
     let reduction = py_to_reduction(reduction)?;
     match (&input.inner, &target.inner) {
@@ -126,7 +138,7 @@ fn mse_loss(input: &PyTensor, target: &PyTensor, reduction: &str) -> PyResult<Py
 }
 
 #[pyfunction]
-#[pyo3(signature = (input, target, reduction="none"))]
+#[pyo3(signature = (input, target, reduction="mean"))]
 fn soft_cross_entropy(input: &PyTensor, target: &PyTensor, reduction: &str) -> PyResult<PyTensor> {
     let reduction = py_to_reduction(reduction)?;
     match (&input.inner, &target.inner) {
@@ -141,7 +153,7 @@ fn soft_cross_entropy(input: &PyTensor, target: &PyTensor, reduction: &str) -> P
 }
 
 #[pyfunction]
-#[pyo3(signature = (input, target, reduction="none"))]
+#[pyo3(signature = (input, target, reduction="mean"))]
 fn cross_entropy(input: &PyTensor, target: &PyTensor, reduction: &str) -> PyResult<PyTensor> {
     let reduction = py_to_reduction(reduction)?;
     impl_floatdtype_varient_method!(
@@ -218,6 +230,7 @@ pub fn functional(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(softmax, m)?)?;
     m.add_function(wrap_pyfunction!(log_softmax, m)?)?;
     m.add_function(wrap_pyfunction!(dropout, m)?)?;
+    m.add_function(wrap_pyfunction!(embedding, m)?)?;
 
     m.add_function(wrap_pyfunction!(silu, m)?)?;
     m.add_function(wrap_pyfunction!(sigmoid, m)?)?;

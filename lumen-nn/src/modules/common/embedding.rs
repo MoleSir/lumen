@@ -1,5 +1,6 @@
 use lumen_core::{FloatDType, IntTensor, Tensor};
 use lumen_macros::Module;
+use crate::functional as F;
 use crate::{init::Init, NnCtxError, NnResult};
 use crate::{ModuleInit, Parameter};
 
@@ -37,13 +38,7 @@ impl<T: FloatDType> Embedding<T> {
         Self::init(&EmbeddingConfig::new(num_embeddings, embedding_size), init)
     }
 
-    pub fn forward(&self, indexes: impl Into<IntTensor>) -> lumen_core::Result<Tensor<T>> {
-        let indexes = indexes.into();
-        let mut final_dims = indexes.dims().to_vec();
-        final_dims.push(self.embedding_size);
-        let indexes = indexes.flatten_all()?;
-        let values = self.embeddings.index_select(indexes, 0)?;
-        let values = values.reshape(final_dims)?;
-        Ok(values)
+    pub fn forward(&self, indexes: impl Into<IntTensor>) -> NnResult<Tensor<T>> {
+        F::embedding(&self.embeddings, indexes)
     }
 }

@@ -1,9 +1,18 @@
+from dataclasses import dataclass
 from typing import Optional
 import math
 from ... import Tensor, DType
 from .. import Init
 from .. import functional as F
 from .module import Module 
+
+
+@dataclass
+class LinearConfig:
+    in_features: int
+    out_features: int
+    bias: bool
+    dtype: Optional[DType]
 
 
 class Linear(Module):
@@ -38,3 +47,6 @@ class Linear(Module):
     def extra_repr(self):
         return f'in_features={self.in_features}, out_features={self.out_features}'
     
+    @classmethod
+    def init(cls, config: LinearConfig, init: Optional[Init] = None):
+        return Linear(config.in_features, config.out_features, config.bias, dtype=config.dtype, init=init)

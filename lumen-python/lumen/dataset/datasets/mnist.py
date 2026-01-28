@@ -5,7 +5,7 @@ import shutil
 import urllib.request
 import os
 from .. import Dataset, DataLoader
-from ... import Tensor
+from ... import Tensor, DType
 
 
 URL: str = "https://storage.googleapis.com/cvdf-datasets/mnist/"
@@ -137,6 +137,6 @@ def mnist_batch(items: List[MnistItem]) -> MnistBatch:
         all_labels.append(label)
         
     images = Tensor(all_pixels).reshape((batch_size, WIDTH, HEIGHT))     
-    labels = Tensor(all_labels).unsqueeze(1) 
+    labels = Tensor(all_labels, dtype=DType.UInt32).unsqueeze(1) 
     
     return images, labels
