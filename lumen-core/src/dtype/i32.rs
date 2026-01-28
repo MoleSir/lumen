@@ -3,6 +3,8 @@ use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, SignedIntDType, 
 
 impl WithDType for i32 {
     const DTYPE: DType = DType::I32;
+    const ZERO: Self = 0;
+    const ONE: Self = 1;
     type AutogradMeta = NoAutograd;
 
     #[inline]
@@ -18,6 +20,9 @@ impl WithDType for i32 {
 
 impl NumDType for i32 {
     type Category = IntCategory;
+
+    const MAX_VALUE: Self = i32::MAX;
+    const MIN_VALUE: Self = i32::MIN;
 
     fn from_f64(v: f64) -> Self {
         v as i32

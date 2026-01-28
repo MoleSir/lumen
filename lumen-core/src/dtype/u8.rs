@@ -4,6 +4,8 @@ use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, UnsignedIntDType
 
 impl WithDType for u8 {
     const DTYPE: DType = DType::U8;
+    const ZERO: Self = 0;
+    const ONE: Self = 1;
     type AutogradMeta = NoAutograd;
 
     #[inline]
@@ -18,6 +20,10 @@ impl WithDType for u8 {
 }
 
 impl NumDType for u8 {
+
+    const MAX_VALUE: Self = u8::MAX;
+    const MIN_VALUE: Self = u8::MIN;
+
     type Category = IntCategory;
 
     fn from_f64(v: f64) -> Self {

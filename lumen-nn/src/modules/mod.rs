@@ -6,6 +6,7 @@ mod norm;
 mod geometric;
 mod param;
 mod buffer;
+mod loss;
 
 pub use common::*;
 pub use activation::*;
@@ -15,6 +16,7 @@ pub use norm::*;
 pub use param::*;
 pub use buffer::*;
 pub use geometric::*;
+pub use loss::*;
 
 use std::fmt;
 use std::marker::PhantomData;
@@ -22,6 +24,7 @@ use std::{collections::HashMap, convert::Infallible, path::Path};
 use std::any::type_name;
 use lumen_core::{DynTensor, FloatDType, NumDType, Tensor};
 use thiserrorctx::Context;
+use crate::init::EmptyInitGuard;
 use crate::{init::Init, NnCtxError, NnError, NnResult};
 use paste::paste;
 
@@ -247,7 +250,7 @@ pub trait Module<T: FloatDType> : Sized {
     //                     Override method
     // ================================================================= // 
 
-    fn extra_repr(&self) -> String {
+    fn extra_display(&self) -> String {
         String::new()
     }
 
@@ -271,7 +274,8 @@ pub trait ModuleInit<T: FloatDType> : Module<T> {
     }
 
     fn from_safetensors<P: AsRef<Path>>(config: &Self::Config, path: P) -> Result<Self, Self::Error> {
-        let mut model = Self::init_with(config, Init::Empty)?;
+        let _guard = EmptyInitGuard::new();
+        let mut model = Self::init_default(config)?;
         model.load_safetensors(path, true)?;
         Ok(model)
     }
@@ -660,8 +664,9 @@ impl<'a, T: FloatDType> TensorVisitorMut<T> for LoadTensorsVisitor<'a> {
                     Err(NnError::ShapeUnmatchWhenLoadParam(param.shape().clone(), src.shape().clone()))?;
                 }
 
+                let requires_grad = param.requires_grad();
                 *param = src_tensor.clone();
-                param.set_requires_grad(true); 
+                param.set_requires_grad(requires_grad); 
                 Ok(())
             }
             None => {
@@ -719,7 +724,7 @@ impl<'a, 'b, T: FloatDType> ModuleVisitor<T> for DisplayVisitor<'a, 'b> {
         write!(self.f, "{}", M::module_name())?;
 
         // print Module Name
-        let extra = module.extra_repr();
+        let extra = module.extra_display();
         if !extra.is_empty() {
             write!(self.f, "({}", extra)?;
         } else {

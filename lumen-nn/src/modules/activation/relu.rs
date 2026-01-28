@@ -5,7 +5,6 @@ use lumen_macros::Module;
 pub struct Relu;
 
 impl Relu {
-    /// Create the module.
     pub fn new() -> Self {
         Self {}
     }

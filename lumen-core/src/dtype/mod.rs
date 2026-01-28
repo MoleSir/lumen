@@ -4,7 +4,6 @@ mod u32;
 mod i32;
 mod bool;
 mod u8;
-
 use crate::{grad::{AutogradInfo, AutogradMetaT, NoAutograd}, DynTensor, IntTensor, Result, Tensor};
 use super::Storage;
 
@@ -14,12 +13,13 @@ pub trait WithDType:
     + std::cmp::PartialOrd
     + std::cmp::PartialEq
     + std::fmt::Display
-    + Boolean
     + 'static
     + Send
     + Sync
 {
     const DTYPE: DType;
+    const ZERO: Self;
+    const ONE: Self;
     type AutogradMeta: AutogradMetaT<Self>;
     fn from_dyn(tensor: &DynTensor) -> crate::Result<Tensor<Self>>;
     fn into_dyn(tensor: Tensor<Self>) -> DynTensor;
@@ -90,6 +90,8 @@ pub trait NumDType:
   + for<'a> std::ops::Div<&'a Tensor<Self>, Output = Tensor<Self>>  
 {
     type Category: NumCategory;
+    const MAX_VALUE: Self;
+    const MIN_VALUE: Self;
 
     fn from_f64(v: f64) -> Self;
     fn to_f64(self) -> f64;
@@ -132,6 +134,7 @@ pub trait UnsignedIntDType :
 
 pub trait FloatDType: 
     NumDType<Category = FloatCategory, AutogradMeta = AutogradInfo<Self>>
+    + std::fmt::LowerExp
     + num_traits::Float
     + rand_distr::num_traits::Float
 {
@@ -177,11 +180,11 @@ macro_rules! impl_dtype_convert_from {
     };
 }
 
-impl_dtype_convert_from!(u8,  { u8, i32, u32, f32, f64 });
-impl_dtype_convert_from!(i32, { u8, i32, u32, f32, f64 });
-impl_dtype_convert_from!(u32, { u8, i32, u32, f32, f64 });
-impl_dtype_convert_from!(f32, { u8, i32, u32, f32, f64 });
-impl_dtype_convert_from!(f64, { u8, i32, u32, f32, f64 });
+impl_dtype_convert_from!(u8,  { i32, u32, f32, f64 });
+impl_dtype_convert_from!(i32, { u8, u32, f32, f64 });
+impl_dtype_convert_from!(u32, { u8, i32, f32, f64 });
+impl_dtype_convert_from!(f32, { u8, i32, u32, f64 });
+impl_dtype_convert_from!(f64, { u8, i32, u32, f32 });
 
 impl<T: NumDType> DTypeConvert<T> for bool {
     fn convert(self) -> T {
@@ -195,52 +198,8 @@ impl<T: NumDType> DTypeConvert<bool> for T {
     }
 }
 
-pub trait Boolean {
-    fn true_value() -> Self;
-    fn false_value() -> Self;
-}
-
-macro_rules! impl_boolean_for_int {
-    ($($t:ty),*) => {
-        $(
-            impl Boolean for $t {
-                fn false_value() -> Self {
-                    0
-                }
-            
-                fn true_value() -> Self {
-                    1
-                }
-            }
-        )*
-    };
-}
-
-macro_rules! impl_boolean_for_float {
-    ($($t:ty),*) => {
-        $(
-            impl Boolean for $t {
-                fn false_value() -> Self {
-                    0.
-                }
-            
-                fn true_value() -> Self {
-                    1.
-                }
-            }
-        )*
-    };
-}
-
-impl_boolean_for_int!(u8, i32, u32);
-impl_boolean_for_float!(f32, f64);
-
-impl Boolean for bool {
-    fn false_value() -> Self {
-        false
-    }
-
-    fn true_value() -> Self {
-        true
+impl<T: WithDType> DTypeConvert<T> for T {
+    fn convert(self) -> Self {
+        self 
     }
 }

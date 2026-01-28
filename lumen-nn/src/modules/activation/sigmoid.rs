@@ -5,7 +5,6 @@ use crate::Module;
 pub struct Sigmoid;
 
 impl Sigmoid {
-    /// Create the module.
     pub fn new() -> Self {
         Self {}
     }

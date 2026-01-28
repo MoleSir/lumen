@@ -12,8 +12,9 @@ Lumen is a machine learning library written in Rust, created purely for personal
 - [lumen-io](./lumen-io/): Tensor input-output 
 - [lumen-nn](./lumen-nn/): Tools to build real models
 - [lumen-dataset](./lumen-dataset/): Datasets and data loaders.
-- [lumen-transformer](./lumen-transformer/): transformers-related utilities.
-- [lumen-examples](./lumen-examples/): Examples of using the library in realistic settings
+- [lumen-transformer](./lumen-transformer/): Transformers-related utilities.
+- [lumen-python](./lumen-python/): Python binding for lumen.
+- [lumen-examples](./lumen-examples/): Examples of using the library in realistic settings.
 
 
 

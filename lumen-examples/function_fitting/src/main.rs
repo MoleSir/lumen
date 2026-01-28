@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, IndexOp, Tensor};
 use lumen_dataset::{DataLoader, Dataset, TensorPairBatcher};
-use lumen_nn::{optim::{AdamW, AdamWConfig, Optimizer}, Linear, Module, MseLoss, Rnn, Tanh};
+use lumen_nn::{functional::LossReduction, optim::{AdamW, AdamWConfig, Optimizer}, Linear, Module, MseLoss, Rnn, Tanh};
 use plotlib::page::Page;
 use plotlib::repr::Plot;
 use plotlib::style::LineStyle;
@@ -121,7 +121,7 @@ fn result_main() -> anyhow::Result<()> {
     
     println!("Init model!");
     let model = FunctionModel::<f64>::init(HIDDEN_SIZE)?;
-    let criterion = MseLoss;
+    let criterion = MseLoss::new(LossReduction::Mean);
     
     let mut optimizer = AdamW::new(model.params(), AdamWConfig::default())?;
 

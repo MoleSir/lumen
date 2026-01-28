@@ -24,6 +24,9 @@ impl<T: WithDType> Tensor<T> {
 macro_rules! broadcast_binary_op {
     ($fn_name:ident, $inner_fn_name:ident) => {
         pub fn $fn_name(&self, rhs: &Self) -> Result<Self> {
+            if self.shape() == rhs.shape() {
+                return self.$inner_fn_name(rhs);
+            }
             let lhs = self;
             let shape = lhs
                 .shape()
@@ -45,6 +48,9 @@ macro_rules! broadcast_binary_op {
 macro_rules! broadcast_cmp_op {
     ($fn_name:ident, $inner_fn_name:ident) => {
         pub fn $fn_name(&self, rhs: &Self) -> Result<Tensor<bool>> {
+            if self.shape() == rhs.shape() {
+                return self.$inner_fn_name(rhs);
+            }
             let lhs = self;
             let shape = lhs
                 .shape()

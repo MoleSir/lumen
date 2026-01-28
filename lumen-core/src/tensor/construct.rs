@@ -88,7 +88,7 @@ impl<T: WithDType> Tensor<T> {
     }
 }
 
-impl<T: NumDType> Tensor<T> {
+impl<T: WithDType> Tensor<T> {
     /// Creates an array of zeros with the given shape.
     ///
     /// ```rust
@@ -142,7 +142,9 @@ impl<T: NumDType> Tensor<T> {
     pub fn ones_like(&self) -> Result<Self> {
         Self::ones(self.shape())
     }
+}
 
+impl<T: NumDType> Tensor<T> {
     /// Creates a 1-D array with values from `start` up to (but not including) `end`.
     ///
     /// ```rust
@@ -192,7 +194,7 @@ impl<T: WithDType> Tensor<T> {
 
     pub(crate) fn diag_impl(diag: &[T], meta: T::AutogradMeta) -> Result<Self> {
         let size = diag.len();
-        let mut vec = vec![T::false_value(); size * size];
+        let mut vec = vec![T::ZERO; size * size];
         for n in 0..size {
             vec[n * size + n] = diag[n];
         }
@@ -286,9 +288,9 @@ impl<T: WithDType> Tensor<T> {
     }
 
     pub(crate) fn eye_impl(size: usize, meta: T::AutogradMeta) -> Result<Self> {
-        let mut vec = vec![T::false_value(); size * size];
+        let mut vec = vec![T::ZERO; size * size];
         for n in 0..size {
-            vec[n * size + n] = T::true_value();
+            vec[n * size + n] = T::ONE;
         }
         let storage = Storage::new(vec);
         Ok(Self::build(storage, (size, size), meta))
@@ -303,12 +305,12 @@ impl<T: WithDType> Tensor<T> {
     }
 
     pub(crate) fn tril_impl(size: usize, diagonal: bool, meta: T::AutogradMeta) -> Result<Self> {
-        let mut vec = vec![T::false_value(); size * size];
+        let mut vec = vec![T::ZERO; size * size];
         
         for i in 0..size {
             let end = if diagonal { i + 1 } else { i };            
             for j in 0..end { 
-                vec[i * size + j] = T::true_value();
+                vec[i * size + j] = T::ONE;
             }
         }
         
@@ -317,13 +319,13 @@ impl<T: WithDType> Tensor<T> {
     }
 
     pub(crate) fn triu_impl(size: usize, diagonal: bool, meta: T::AutogradMeta) -> Result<Self> {
-        let mut vec = vec![T::false_value(); size * size];
+        let mut vec = vec![T::ZERO; size * size];
 
         for i in 0..size { 
             let start = if diagonal { i } else { i + 1 };
             
             for j in start..size {
-                vec[i * size + j] = T::true_value();
+                vec[i * size + j] = T::ONE;
             }
         }
 
@@ -536,5 +538,16 @@ impl<S: WithDType> ToTensor<S> for Vec<S> {
     fn to_storage(self) -> Result<Storage<S>> {
         Ok(Storage::new(self))
 
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::Tensor;
+
+    #[test]
+    fn test_shape() {
+        let t = Tensor::<f64>::ones(()).unwrap();
+        println!("{}", t);
     }
 }

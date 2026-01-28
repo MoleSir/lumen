@@ -1,7 +1,7 @@
 mod construct;
 mod indexer;
 mod iter;
-mod display;
+pub mod display;
 mod shape;
 mod arith;
 mod matmul;
@@ -11,7 +11,7 @@ mod convert;
 mod boolean;
 
 pub use construct::ToTensor;
-use std::{hash::Hash, sync::Arc};
+use std::{borrow::Borrow, hash::Hash, sync::Arc};
 pub use indexer::{Slice, IndexOp};
 use crate::{AutogradInfo, Error, FloatDType, Op, Result};
 use super::{DType, Dim, DimCoordinates, DimNCoordinates, Layout, NumDType, Shape, Storage, StorageArc, StorageIndices, StorageMut, StorageRef, WithDType};
@@ -36,6 +36,16 @@ impl TensorId {
         use std::sync::atomic;
         static COUNTER: atomic::AtomicUsize = atomic::AtomicUsize::new(1);
         Self(COUNTER.fetch_add(1, atomic::Ordering::Relaxed))
+    }
+
+    pub fn value(&self) -> usize {
+        self.0
+    }
+}
+
+impl Borrow<usize> for TensorId {
+    fn borrow(&self) -> &usize {
+        &self.0
     }
 }
 
@@ -71,6 +81,11 @@ impl<T: WithDType> Tensor<T> {
         let v = self.storage_ref(self.layout().start_offset()).get_unchecked(0);
         Ok(v)
     }
+
+    // pub fn item(&self) -> Result<Self> {
+    //     let scalar = self.to_scalar()?;
+    //     Tensor::new(scalar)
+    // }
 
     pub fn set_scalar(&self, val: T) -> Result<()> {
         self.check_scalar()?;

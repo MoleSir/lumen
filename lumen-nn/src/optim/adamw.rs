@@ -65,20 +65,20 @@ impl<T: FloatDType> Optimizer<T> for AdamW<T> {
         let beta2 = self.config.beta2;
         let scale_m = T::one() / (T::one() - beta1.powi(self.step_t as i32));
         let scale_v = T::one() / (T::one() - beta2.powi(self.step_t as i32));
+        
         for param in self.params.iter_mut() {
             let m = &param.first_moment;
             let v = &param.second_moment;
             if let Some(g) = grads.get(&param.param) {
-                let next_m = (m * beta1) + (g * (T::one() - beta1));
-                let next_v = (v * beta2) + (g.sqr() * (T::one() - beta2));
-                let m_hat = &next_m * scale_m;
-                let v_hat = &next_v * scale_v;
+                m.mul_(beta1)?.add_((T::one() - beta1) * g)?;
+                v.mul_(beta2)?.add_((T::one() - beta2) * g.sqr())?;
+
+                let m_hat = scale_m * m;
+                let v_hat =  scale_v * v;
+
                 let adjusted_grad = m_hat / (v_hat.sqrt() + self.config.eps);
-                
                 param.param.mul_(T::one() - lr_lambda)?;
-                param.param.sub_(adjusted_grad * lr)?;
-                param.first_moment = next_m;
-                param.second_moment = next_v;
+                param.param.sub_(lr * adjusted_grad)?;
             }
         }
 

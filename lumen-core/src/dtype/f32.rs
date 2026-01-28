@@ -9,6 +9,8 @@ use super::{AutogradInfo, DType, FloatCategory, FloatDType, NumDType, WithDType}
 
 impl WithDType for f32 {
     const DTYPE: DType = DType::F32;
+    const ZERO: Self = 0.0;
+    const ONE: Self = 1.0;
     type AutogradMeta = AutogradInfo<f32>;
 
     #[inline]
@@ -24,6 +26,9 @@ impl WithDType for f32 {
 
 impl NumDType for f32 {
     type Category = FloatCategory;
+
+    const MAX_VALUE: Self = f32::MAX;
+    const MIN_VALUE: Self = f32::MIN;
 
     fn from_f64(v: f64) -> Self {
         v as f32

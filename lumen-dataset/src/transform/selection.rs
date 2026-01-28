@@ -2,7 +2,7 @@ use std::sync::Arc;
 use rand::seq::SliceRandom;
 use crate::{Dataset, DatasetError, DatasetResult};
 
-pub struct SelectionDataset<D> 
+pub struct SubsetDataset<D> 
 where 
     D: Dataset,
 {
@@ -10,7 +10,7 @@ where
     pub indices: Vec<usize>,
 }
 
-impl<D: Dataset> SelectionDataset<D> {
+impl<D: Dataset> SubsetDataset<D> {
     /// Creates a new selection dataset with the given dataset and indices without checking bounds.
     ///
     /// ## Arguments
@@ -54,7 +54,7 @@ impl<D: Dataset> SelectionDataset<D> {
     ///
     /// ## Returns
     ///
-    /// A new `SelectionDataset` that selects all indices from the dataset.
+    /// A new `SubsetDataset` that selects all indices from the dataset.
     pub fn select_all(dataset: impl Into<Arc<D>>) -> Self {
         let dataset = dataset.into();
         let size = dataset.len();
@@ -93,7 +93,7 @@ impl<D: Dataset> SelectionDataset<D> {
     ///
     /// ## Returns
     ///
-    /// A vector of `SelectionDataset` instances, each containing a subset of the indices.
+    /// A vector of `SubsetDataset` instances, each containing a subset of the indices.
     pub fn split(&self, num: usize) -> DatasetResult<Vec<Self>> {
         if num == 0 {
             Err(DatasetError::NumSplitZeroWhenSelectDataset)?;
@@ -119,7 +119,7 @@ impl<D: Dataset> SelectionDataset<D> {
     }
 }
 
-impl<D: Dataset> Dataset for SelectionDataset<D> {
+impl<D: Dataset> Dataset for SubsetDataset<D> {
     type Item = D::Item;
 
     fn get(&self, index: usize) -> Option<Self::Item> {
@@ -132,7 +132,7 @@ impl<D: Dataset> Dataset for SelectionDataset<D> {
     }
 }
 
-pub fn random_split<D: Dataset>(dataset: D, ratio: f64) -> (SelectionDataset<D>, SelectionDataset<D>) {
+pub fn random_split<D: Dataset>(dataset: D, ratio: f64) -> (SubsetDataset<D>, SubsetDataset<D>) {
     let length = dataset.len();
     let mut indices = iota(length);
     
@@ -143,8 +143,8 @@ pub fn random_split<D: Dataset>(dataset: D, ratio: f64) -> (SelectionDataset<D>,
     let (indices1, indices2) = indices.split_at(split_idx);
 
     let dataset = Arc::new(dataset);
-    let subset1 = SelectionDataset::new(dataset.clone(), indices1.to_vec());
-    let subset2 = SelectionDataset::new(dataset.clone(), indices2.to_vec());
+    let subset1 = SubsetDataset::new(dataset.clone(), indices1.to_vec());
+    let subset2 = SubsetDataset::new(dataset.clone(), indices2.to_vec());
 
     (subset1, subset2)
 }

@@ -1,0 +1,55 @@
+from .. import Tensor, ShapeLike, DType
+from typing import Optional
+
+
+class Parameter(Tensor):
+    def __init__(self, data: Tensor, requires_grad: bool = True) -> None: ...
+
+
+class Buffer(Tensor):
+    def __init__(self, data: Tensor) -> None: ...
+
+
+class Init:
+    @staticmethod
+    def uninit() -> Init: ...
+    
+    @staticmethod
+    def empty() -> Init: ...
+    
+    @staticmethod
+    def ones() -> Init: ...
+    
+    @staticmethod
+    def zeros() -> Init: ...
+    
+    @staticmethod
+    def constant(value: float) -> Init: ...
+    
+    @staticmethod
+    def uniform(min: float = 0.0, max: float = 1.0) -> Init: ...
+    
+    @staticmethod
+    def normal(mean: float = 0.0, std: float = 1.0) -> Init: ...
+    
+    @staticmethod
+    def kaiming_uniform(gain: float = 1.0, fan_out_only: bool = False) -> Init: ...
+    
+    @staticmethod
+    def kaiming_normal(gain: float = 1.0, fan_out_only: bool = False) -> Init: ...
+    
+    @staticmethod
+    def xavier_uniform(gain: float = 1.0) -> Init: ...
+    
+    @staticmethod
+    def xavier_normal(gain: float = 1.0) -> Init: ...
+
+    def init(self, shape: ShapeLike, dtype: DType, fan_in: Optional[int]=None, fan_out: Optional[int]=None) -> Tensor: ...
+
+    def init_param(self, shape: ShapeLike, dtype: DType, fan_in: Optional[int]=None, fan_out: Optional[int]=None) -> Parameter: ...
+
+    def init_buffer(self, shape: ShapeLike, dtype: DType, fan_in: Optional[int]=None, fan_out: Optional[int]=None) -> Buffer: ...
+
+
+class empty_init:
+    pass

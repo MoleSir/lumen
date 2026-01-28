@@ -3,7 +3,7 @@ use crate::{AutogradMetaT, Dim, Error, IntTensor, NumDType, Result, WithDType};
 use super::Tensor;
 
 impl<T: WithDType> Tensor<T> {
-    fn indexes(&self, indexers: &[Indexer]) -> Result<Self> {
+    pub fn indexes(&self, indexers: &[Indexer]) -> Result<Self> {
         let mut x = self.clone();
         let mut current_dim = 0;
         for indexer in indexers.iter() {
@@ -17,6 +17,25 @@ impl<T: WithDType> Tensor<T> {
             };
         }
         Ok(x)
+    }
+
+    /// Returns the sub-tensor fixing the index at `i` on the first dimension.
+    ///
+    /// ```rust
+    /// use lumen_core::Tensor;
+    /// let tensor = Tensor::<f32>::new(&[[0f32, 1.], [2., 3.], [4., 5.]]).unwrap();
+    /// let t = tensor.get(0).unwrap();
+    /// assert_eq!(t.to_vec(), &[0., 1.]);
+    /// let t = tensor.get(1).unwrap();
+    /// assert_eq!(t.to_vec(), &[2., 3.]);
+    /// ```
+    pub fn get(&self, i: usize) -> Result<Self> {
+        let dims = self.dims();
+        if dims.is_empty() {
+            Ok(self.clone())
+        } else {
+            self.narrow(0, i, 1)?.reshape(&dims[1..])
+        }
     }
 
     pub fn index_select<D: Dim>(&self, indexes: impl Into<IntTensor>, dim: D) -> Result<Self> {   
@@ -367,6 +386,13 @@ index_op_tuple!(I1, I2);
 index_op_tuple!(I1, I2, I3);
 index_op_tuple!(I1, I2, I3, I4);
 index_op_tuple!(I1, I2, I3, I4, I5);
+
+impl<I: Into<Indexer>, D: WithDType> IndexOp<Vec<I>, D> for Tensor<D> {
+    fn index(&self, index: Vec<I>) -> Result<Tensor<D>> {
+        let indexs = index.into_iter().map(|i| i.into()).collect::<Vec<Indexer>>();
+        self.indexes(&indexs)
+    }
+}
 
 #[macro_export]
 macro_rules! s {

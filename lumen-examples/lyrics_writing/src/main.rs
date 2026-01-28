@@ -103,7 +103,7 @@ pub fn accuracy<T: FloatDType>(output: &Tensor<T>, target: &Tensor<u32>) -> anyh
     // (batch_size, seq_len, vocab_size) => (batch_size, seq_len) 
     let pred = output.argmax(2)?;
     let correct = pred.eq(target)?;
-    let acc = correct.to_dtype::<T>().mean_all()?.to_scalar()?;
+    let acc = correct.cast::<T>().mean_all()?.to_scalar()?;
     Ok(acc)
 }
 

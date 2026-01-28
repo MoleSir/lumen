@@ -58,7 +58,7 @@ pub fn train(
 
         // (batch, 28, 28) => (batch, 10)
         let output = model.forward(&data).context("model forward")?;
-        let loss = F::nll_loss(&output, &target).context("nll loss")?;
+        let loss = F::nll_loss(&output, &target, F::LossReduction::Mean).context("nll loss")?;
         
         let grads = loss.backward().context("backward")?;
         optimizer.step(&grads)?;
@@ -79,8 +79,7 @@ pub fn train(
     Ok(())
 }
 
-pub fn test(model: &Net<f32>, test_loader: &MnistDataLoader,
-) -> anyhow::Result<()> {
+pub fn test(model: &Net<f32>, test_loader: &MnistDataLoader) -> anyhow::Result<()> {
     let mut test_loss = 0.0;
     let mut correct = 0;
     
@@ -94,7 +93,7 @@ pub fn test(model: &Net<f32>, test_loader: &MnistDataLoader,
         let output = model.forward(&data).context("model forward")?;
         
         // (batch, 10) and (batch, 1)
-        test_loss += F::nll_loss(&output, &target)
+        test_loss += F::nll_loss(&output, &target, F::LossReduction::Mean)
             .context("cal loss")?
             .to_scalar()?;
         

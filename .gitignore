@@ -3,3 +3,8 @@ Cargo.lock
 temp
 cache
 lumen-examples/lyrics_writing/lyrics.txt
+
+*.so
+
+__pycache__
+.pytest_cache

@@ -1,6 +1,6 @@
 use anyhow::Context;
 use lumen_core::{FloatDType, Tensor};
-use lumen_nn::{functional::nll_loss, init::Init, optim::{Optimizer, SGD}, GCNConv, Module};
+use lumen_nn::{functional::{nll_loss, LossReduction}, init::Init, optim::{Optimizer, SGD}, GCNConv, Module};
 
 fn main() {
     if let Err(e) = result_main() {
@@ -16,7 +16,7 @@ fn result_main() -> anyhow::Result<()> {
 
     for epoch in 0..1000 {
         let out = gnn.forward(&x, &edge_index).with_context(||format!("{} forward", epoch))?;
-        let loss = nll_loss(&out, &target).with_context(||format!("{} loss", epoch))?;
+        let loss = nll_loss(&out, &target, LossReduction::Mean).with_context(||format!("{} loss", epoch))?;
         let grads = loss.backward().with_context(||format!("{} backward", epoch))?;
         optimizer.step(&grads).with_context(||format!("{} step", epoch))?;
 

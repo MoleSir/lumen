@@ -7,13 +7,13 @@ use super::{DType, FloatDType, Layout, NumDType, Shape, WithDType};
 #[derive(Clone)]
 pub struct Storage<T>(Vec<T>);
 
-impl<T: NumDType> Storage<T> {
+impl<T: WithDType> Storage<T> {
     pub fn zeros(shape: &Shape) -> Self {
-        Self(vec![T::zero(); shape.element_count()])
+        Self(vec![T::ZERO; shape.element_count()])
     }
 
     pub fn ones(shape: &Shape) -> Self {
-        Self(vec![T::one(); shape.element_count()])
+        Self(vec![T::ONE; shape.element_count()])
     }
 }
 
@@ -72,7 +72,7 @@ impl<T: WithDType> Storage<T> {
         let dst_len: usize = dst_dims.iter().product();
         let left_len: usize = dst_dims[..dim].iter().product();
         let right_len: usize = dst_dims[dim + 1..].iter().product();
-        let mut dst = vec![T::false_value(); dst_len];
+        let mut dst = vec![T::ZERO; dst_len];
         for left_i in 0..left_len {
             let start_src_idx = left_i * right_len * src_dim;
             let start_dst_idx = left_i * right_len * n_ids;
@@ -80,7 +80,7 @@ impl<T: WithDType> Storage<T> {
                 let start_dst_idx = start_dst_idx + i * right_len;
                 let index = ids[ids_l.start_offset() + stride_ids * i];
                 if index == I::max_value() {
-                    dst[start_dst_idx..start_dst_idx + right_len].fill(T::false_value());
+                    dst[start_dst_idx..start_dst_idx + right_len].fill(T::ZERO);
                 } else {
                     let index = index.to_usize();
                     if index >= src_dim {
@@ -231,7 +231,7 @@ impl<T: WithDType> Storage<T> {
         // 3. 准备结果 Buffer
         let dst_len = ids_layout.shape.element_count();
         // 类似于 index_select，预填充默认值 (如 0 或 false)，方便处理 Padding Mask
-        let mut dst = vec![T::false_value(); dst_len];
+        let mut dst = vec![T::ZERO; dst_len];
 
         // 4. 计算三段式维度的长度：[Left, Dim, Right]
         // Left: dim 左边所有维度的乘积
@@ -261,7 +261,7 @@ impl<T: WithDType> Storage<T> {
 
                     // 处理 Mask (Padding Index)
                     if index_val == I::max_value() {
-                        dst[dst_idx] = T::false_value();
+                        dst[dst_idx] = T::ZERO;
                         continue;
                     }
 

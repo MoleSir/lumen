@@ -5,7 +5,6 @@ use lumen_macros::Module;
 pub struct Tanh;
 
 impl Tanh {
-    /// Create the module.
     pub fn new() -> Self {
         Self {}
     }
