@@ -10,7 +10,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 repository = "https://github.com/MoleSir/lumen.git"
 description = "A tiny ML framework"
@@ -18,13 +18,13 @@ keywords = ["machine-learning", "auto-grad"]
 license = "MIT"
 
 [workspace.dependencies]
-lumen-core = { path = "./lumen-core", package = "lumen-core", version = "0.3.0" }
-lumen-io = { path = "./lumen-io", package = "lumen-io", version = "0.3.0" }
-lumen-nn = { path = "./lumen-nn", package = "lumen-nn", version = "0.3.0" }
-lumen-macros = { path = "./lumen-macros", package = "lumen-macros", version = "0.3.0" }
-lumen-dataset = { path = "./lumen-dataset", package = "lumen-dataset", version = "0.3.0" }
-lumen-transformer = { path = "./lumen-transformer", package = "lumen-transformer", version = "0.3.0" }
-lumen-python = { path = "./lumen-python", package = "lumen-python", version = "0.3.0" }
+lumen-core = { path = "./lumen-core", package = "lumen-core", version = "0.4.0" }
+lumen-io = { path = "./lumen-io", package = "lumen-io", version = "0.4.0" }
+lumen-nn = { path = "./lumen-nn", package = "lumen-nn", version = "0.4.0" }
+lumen-macros = { path = "./lumen-macros", package = "lumen-macros", version = "0.4.0" }
+lumen-dataset = { path = "./lumen-dataset", package = "lumen-dataset", version = "0.4.0" }
+lumen-transformer = { path = "./lumen-transformer", package = "lumen-transformer", version = "0.4.0" }
+lumen-python = { path = "./lumen-python", package = "lumen-python", version = "0.4.0" }
 
 approx = "0.5.1"
 derive_builder = "0.20.2"

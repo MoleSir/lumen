@@ -109,7 +109,3 @@ def test_functional():
     target = Tensor([0, 2], dtype=DType.UInt32).unsqueeze(1)
     loss = F.nll_loss(input, target)
     assert loss.allclose(Tensor(0.15))
-
-
-
-import torch.nn
