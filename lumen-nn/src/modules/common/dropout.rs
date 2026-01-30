@@ -59,6 +59,6 @@ mod test {
 
         dropout.eval();
         println!("{}", dropout.forward(&xs).unwrap());
-        assert!(dropout.forward(&xs).unwrap().allclose(&xs, 1e-5, 8e-8));
+        assert!(dropout.forward(&xs).unwrap().allclose(&xs, 1e-5, 8e-8).unwrap());
     }
 }

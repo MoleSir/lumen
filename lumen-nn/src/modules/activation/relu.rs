@@ -10,7 +10,7 @@ impl Relu {
     }
 
     pub fn forward<T: FloatDType>(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
-        Ok(input.relu())
+        Ok(input.relu()?)
     }
 }
 

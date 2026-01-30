@@ -43,7 +43,7 @@ pub fn l1_loss<T: FloatDType>(
     target: &Tensor<T>, 
     reduction: LossReduction
 ) -> NnResult<Tensor<T>> {
-    let loss = input.sub(target)?.abs();
+    let loss = input.sub(target)?.abs()?;
     reduction.loss(loss)
 }
 
@@ -61,7 +61,7 @@ pub fn mse_loss<T: FloatDType>(
     target: &Tensor<T>,
     reduction: LossReduction
 ) -> NnResult<Tensor<T>> {
-    let loss = input.sub(target)?.sqr();
+    let loss = input.sub(target)?.sqr()?;
     reduction.loss(loss)
 }
 
@@ -92,7 +92,7 @@ pub fn nll_loss<T: FloatDType>(
     let target = target.into();
     // Gather logic: select the value at the target index for each sample
     let gathered = input.gather(target, 1)?;
-    let neg_loss = gathered.neg();
+    let neg_loss = gathered.neg()?;
     reduction.loss(neg_loss)
 }
 
@@ -127,7 +127,7 @@ pub fn soft_cross_entropy<T: FloatDType>(
     let weighted_log_probs = target.broadcast_mul(&log_probs)?;
     // Sum across classes -> shape: (batch, 1)
     let sum_class = weighted_log_probs.sum_keepdim(dim)?;
-    let loss = sum_class.neg();
+    let loss = sum_class.neg()?;
     
     reduction.loss(loss)
 }

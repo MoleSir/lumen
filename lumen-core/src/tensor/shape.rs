@@ -158,13 +158,7 @@ impl<T: WithDType> Tensor<T> {
         } else {
             let meta = T::AutogradMeta::on_slice_op(self, dim, slice.start, end, slice.step);
             let layout = self.layout().slice(dim, slice.start, end, slice.step)?;
-            let tensor_ = TensorImpl {
-                id: TensorId::new(),
-                storage: self.0.storage.clone(),
-                layout,
-                meta,
-            };
-            Ok(Self(Arc::new(tensor_)))
+            Ok(self.share_storage(layout, meta))
         }
     }
 
@@ -196,16 +190,11 @@ impl<T: WithDType> Tensor<T> {
 
         let meta = T::AutogradMeta::on_reshape_op(self);
         if self.is_contiguous() {
-            let tensor_ = TensorImpl {
-                id: TensorId::new(),
-                storage: self.0.storage.clone(),
-                layout: Layout::contiguous_with_offset(shape, self.layout().start_offset()),
-                meta
-            };
-            Ok(Tensor(Arc::new(tensor_)))
+            let layout = Layout::contiguous_with_offset(shape, self.layout().start_offset());
+            Ok(self.share_storage(layout, meta))
         } else {
-            let storage = self.storage_read().copy(self.layout());
-            Ok(Self::build(storage, shape, meta))
+            let storage = self.storage_read()?.copy(self.layout());
+            Ok(Self::from_storage(storage, shape, meta))
         }
     }
     
@@ -218,13 +207,8 @@ impl<T: WithDType> Tensor<T> {
         }
 
         let meta = T::AutogradMeta::on_transpose_op(self, dim1, dim2);
-        let tensor_ = TensorImpl {
-            id: TensorId::new(),
-            storage: self.0.storage.clone(),
-            layout: self.layout().transpose(dim1, dim2)?,
-            meta,
-        };
-        Ok(Tensor(Arc::new(tensor_)))
+        let layout = self.layout().transpose(dim1, dim2)?;
+        Ok(self.share_storage(layout, meta))
     }
 
     pub fn transpose_last(&self) -> Result<Self> {
@@ -256,13 +240,7 @@ impl<T: WithDType> Tensor<T> {
         // let op = BackpropOp::new1(self, |t| Op::Permute(t, dims.clone()));
         let layout = self.layout().permute(&dims)?;
         let meta = T::AutogradMeta::on_permute_op(self, dims);
-        let tensor_ = TensorImpl {
-            id: TensorId::new(),
-            storage: self.0.storage.clone(),
-            layout,
-            meta,
-        };
-        Ok(Tensor(Arc::new(tensor_)))
+        Ok(self.share_storage(layout, meta))
     }
 
     /// Concatenates two or more tensors along a particular dimension.
@@ -342,7 +320,7 @@ impl<T: WithDType> Tensor<T> {
         unsafe { dst.set_len(target_shape.element_count()) };
         
         let meta = T::AutogradMeta::on_cat_op(arrs, cat_dim);
-        let res_arr = Self::build(Storage::new(dst), target_shape, meta);
+        let res_arr = Self::from_storage(Storage::new(dst), target_shape, meta);
 
         for (arr_index, arr) in arrs.iter().enumerate() {
             // Take sub Tensor 
@@ -396,23 +374,23 @@ impl<T: WithDType> Tensor<T> {
     /// // Split along axis 0 (rows)
     /// let splits = a.split(0).unwrap();
     /// assert_eq!(splits.len(), 3);
-    /// assert_eq!(splits[0].to_vec(), [1, 2]);
-    /// assert_eq!(splits[1].to_vec(), [3, 4]);
-    /// assert_eq!(splits[2].to_vec(), [5, 6]);
+    /// assert_eq!(splits[0].to_vec().unwrap(), [1, 2]);
+    /// assert_eq!(splits[1].to_vec().unwrap(), [3, 4]);
+    /// assert_eq!(splits[2].to_vec().unwrap(), [5, 6]);
     ///
     /// // Split along axis 1 (columns)
     /// let splits = a.split(1).unwrap();
     /// assert_eq!(splits.len(), 2);
-    /// assert_eq!(splits[0].to_vec(), [1, 3, 5]);
-    /// assert_eq!(splits[1].to_vec(), [2, 4, 6]);
+    /// assert_eq!(splits[0].to_vec().unwrap(), [1, 3, 5]);
+    /// assert_eq!(splits[1].to_vec().unwrap(), [2, 4, 6]);
     ///
     /// // 1D array
     /// let b = Tensor::new(&[10, 20, 30]).unwrap();
     /// let splits = b.split(0).unwrap();
     /// assert_eq!(splits.len(), 3);
-    /// assert_eq!(splits[0].to_vec(), [10]);
-    /// assert_eq!(splits[1].to_vec(), [20]);
-    /// assert_eq!(splits[2].to_vec(), [30]);
+    /// assert_eq!(splits[0].to_vec().unwrap(), [10]);
+    /// assert_eq!(splits[1].to_vec().unwrap(), [20]);
+    /// assert_eq!(splits[2].to_vec().unwrap(), [30]);
     /// ```
     pub fn split<D: Dim>(&self, dim: D) -> Result<Vec<Self>> {
         let split_index = dim.to_index(self.shape(), "split")?;
@@ -420,14 +398,14 @@ impl<T: WithDType> Tensor<T> {
         let mut splited_shape = self.dims().to_vec();
         splited_shape.remove(split_index);
         let splited_shape: Shape = splited_shape.into();
-        
 
         let mut vec = vec![];
         for i in 0..split_dim_size {
+            // TODO: backend, use orgin memory
             let mut data: Vec<T> = Vec::with_capacity(splited_shape.element_count());
             unsafe { data.set_len(splited_shape.element_count()) };
             let storage = Storage::new(data);
-            let arr = Self::from_storage(storage, splited_shape.clone());
+            let arr = Self::from_storage(storage, splited_shape.clone(), Default::default());
             
             // Copy data
             let sub_self = self.narrow(split_index, i, 1)?.squeeze(split_index)?;
@@ -491,7 +469,7 @@ impl<T: WithDType> Tensor<T> {
     /// let arr = arr.flatten_all().unwrap();
     /// let len = arr.dims1().unwrap();
     /// assert_eq!(len, 6);
-    /// assert_eq!(arr.to_vec(), [0., 1., 2., 3., 4., 5.]);
+    /// assert_eq!(arr.to_vec().unwrap(), [0., 1., 2., 3., 4., 5.]);
     /// ```
     pub fn flatten_all(&self) -> Result<Self> {
         self.flatten_(None::<usize>, None::<usize>)
@@ -594,7 +572,7 @@ mod test {
     
         let c = Tensor::cat(&[a, b], 0)?;
         assert_eq!(c.dims(), [6]);
-        assert_eq!(c.to_vec(), [1, 2, 3, 4, 5, 6]);
+        assert_eq!(c.to_vec().unwrap(), [1, 2, 3, 4, 5, 6]);
     
         Ok(())
     }
@@ -606,7 +584,7 @@ mod test {
     
         let c = Tensor::cat(&[a, b], 0)?;
         assert_eq!(c.dims(), [3, 2]);
-        assert_eq!(c.to_vec(), [1, 2, 3, 4, 5, 6]);
+        assert_eq!(c.to_vec().unwrap(), [1, 2, 3, 4, 5, 6]);
     
         Ok(())
     }
@@ -618,7 +596,7 @@ mod test {
     
         let c = Tensor::cat(&[a, b], 1)?;
         assert_eq!(c.dims(), [2, 3]);
-        assert_eq!(c.to_vec(), [1, 2, 5, 3, 4, 6]);
+        assert_eq!(c.to_vec().unwrap(), [1, 2, 5, 3, 4, 6]);
     
         Ok(())
     }
@@ -653,7 +631,7 @@ mod test {
     
         let c = Tensor::cat(&[a, b], 0)?;
         assert_eq!(c.dims(), [2, 2]);
-        assert_eq!(c.to_vec(), [true, false, false, true]);
+        assert_eq!(c.to_vec().unwrap(), [true, false, false, true]);
     
         Ok(())
     }
@@ -665,7 +643,7 @@ mod test {
     
         let c = Tensor::stack(&[a, b], 0)?;
         assert_eq!(c.dims(), [2, 3]); 
-        assert_eq!(c.to_vec(), [1, 2, 3, 4, 5, 6]);
+        assert_eq!(c.to_vec().unwrap(), [1, 2, 3, 4, 5, 6]);
     
         Ok(())
     }
@@ -677,7 +655,7 @@ mod test {
     
         let c = Tensor::stack(&[a, b], 1)?;
         assert_eq!(c.dims(), [3, 2]);
-        assert_eq!(c.to_vec(), [1, 4, 2, 5, 3, 6]);
+        assert_eq!(c.to_vec().unwrap(), [1, 4, 2, 5, 3, 6]);
     
         Ok(())
     }
@@ -689,7 +667,7 @@ mod test {
     
         let c = Tensor::stack(&[a, b], 0)?;
         assert_eq!(c.dims(), [2, 2, 2]);
-        assert_eq!(c.to_vec(), [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(c.to_vec().unwrap(), [1, 2, 3, 4, 5, 6, 7, 8]);
     
         Ok(())
     }
@@ -701,7 +679,7 @@ mod test {
     
         let c = Tensor::stack(&[a, b], 1)?;
         assert_eq!(c.dims(), [2, 2, 2]);
-        assert_eq!(c.to_vec(), [1, 2, 5, 6, 3, 4, 7, 8]);
+        assert_eq!(c.to_vec().unwrap(), [1, 2, 5, 6, 3, 4, 7, 8]);
     
         Ok(())
     }
@@ -713,7 +691,7 @@ mod test {
     
         let c = Tensor::stack(&[a, b], 2)?;
         assert_eq!(c.dims(), [2, 2, 2]);
-        assert_eq!(c.to_vec(), [1, 5, 2, 6, 3, 7, 4, 8]);
+        assert_eq!(c.to_vec().unwrap(), [1, 5, 2, 6, 3, 7, 4, 8]);
     
         Ok(())
     }
@@ -733,10 +711,10 @@ mod test {
         let splits = a.split(0)?; // axis 0
     
         assert_eq!(splits.len(), 4);
-        assert_eq!(splits[0].to_vec(), [10]);
-        assert_eq!(splits[1].to_vec(), [20]);
-        assert_eq!(splits[2].to_vec(), [30]);
-        assert_eq!(splits[3].to_vec(), [40]);
+        assert_eq!(splits[0].to_vec().unwrap(), [10]);
+        assert_eq!(splits[1].to_vec().unwrap(), [20]);
+        assert_eq!(splits[2].to_vec().unwrap(), [30]);
+        assert_eq!(splits[3].to_vec().unwrap(), [40]);
     
         Ok(())
     }
@@ -747,10 +725,10 @@ mod test {
         let splits = a.split(0)?;
         
         assert_eq!(splits.len(), 4);
-        assert_eq!(splits[0].to_vec(), [1, 2]);
-        assert_eq!(splits[1].to_vec(), [3, 4]);
-        assert_eq!(splits[2].to_vec(), [5, 6]);
-        assert_eq!(splits[3].to_vec(), [7, 8]);
+        assert_eq!(splits[0].to_vec().unwrap(), [1, 2]);
+        assert_eq!(splits[1].to_vec().unwrap(), [3, 4]);
+        assert_eq!(splits[2].to_vec().unwrap(), [5, 6]);
+        assert_eq!(splits[3].to_vec().unwrap(), [7, 8]);
         
         Ok(())
     }
@@ -761,9 +739,9 @@ mod test {
         let splits = a.split(1)?;
         
         assert_eq!(splits.len(), 3);
-        assert_eq!(splits[0].to_vec(), [1, 4]); 
-        assert_eq!(splits[1].to_vec(), [2, 5]); 
-        assert_eq!(splits[2].to_vec(), [3, 6]); 
+        assert_eq!(splits[0].to_vec().unwrap(), [1, 4]); 
+        assert_eq!(splits[1].to_vec().unwrap(), [2, 5]); 
+        assert_eq!(splits[2].to_vec().unwrap(), [3, 6]); 
         
         Ok(())
     }
@@ -777,8 +755,8 @@ mod test {
         let splits = a.split(2)?;
         
         assert_eq!(splits.len(), 2);
-        assert_eq!(splits[0].to_vec(), [1, 3, 5, 7]); 
-        assert_eq!(splits[1].to_vec(), [2, 4, 6, 8]); 
+        assert_eq!(splits[0].to_vec().unwrap(), [1, 3, 5, 7]); 
+        assert_eq!(splits[1].to_vec().unwrap(), [2, 4, 6, 8]); 
         
         Ok(())
     }
@@ -789,7 +767,7 @@ mod test {
         let splits = a.split(0)?;
         
         assert_eq!(splits.len(), 1);
-        assert_eq!(splits[0].to_vec(), [42]);
+        assert_eq!(splits[0].to_vec().unwrap(), [42]);
         
         Ok(())
     }
@@ -808,7 +786,7 @@ mod test {
         let a = Tensor::new(&[1, 2, 3])?;
         let b = a.repeat(3)?; // repeat each dimension 3 times
         assert_eq!(b.dims(), [3 * 3]); // shape: [9]
-        assert_eq!(b.to_vec(), [1, 2, 3, 1, 2, 3, 1, 2, 3]);
+        assert_eq!(b.to_vec().unwrap(), [1, 2, 3, 1, 2, 3, 1, 2, 3]);
         Ok(())
     }
 
@@ -818,7 +796,7 @@ mod test {
         let b = a.repeat((2, 3))?; // repeat 2 times along axis 0, 3 times along axis 1
         assert_eq!(b.dims(), [4, 6]);
         assert_eq!(
-            b.to_vec(),
+            b.to_vec().unwrap(),
             [
                 1, 2, 1, 2, 1, 2,
                 3, 4, 3, 4, 3, 4,
@@ -834,11 +812,11 @@ mod test {
         let a = Tensor::new(&[1, 2, 3])?;
         let b = a.repeat_dim(0, 2)?; // repeat along axis 0 two times
         assert_eq!(b.dims(), [6]);
-        assert_eq!(b.to_vec(), [1, 2, 3, 1, 2, 3]);
+        assert_eq!(b.to_vec().unwrap(), [1, 2, 3, 1, 2, 3]);
 
         let c = a.repeat_dim(0, 1)?; // repeat once -> same as clone
         assert_eq!(c.dims(), [3]);
-        assert_eq!(c.to_vec(), [1, 2, 3]);
+        assert_eq!(c.to_vec().unwrap(), [1, 2, 3]);
 
         Ok(())
     }
@@ -858,7 +836,7 @@ mod test {
         let b = a.narrow(0, 2, 3)?;
         
         assert_eq!(b.dims(), &[3]);
-        assert_eq!(b.to_vec(), &[2, 3, 4]);
+        assert_eq!(b.to_vec().unwrap(), &[2, 3, 4]);
 
         let b = Tensor::randn(0.0, 1.0, (5, 5))?;
         println!("{:?}", b);
@@ -880,7 +858,7 @@ mod test {
         let b = a.narrow(0, 1, 1)?;
 
         assert_eq!(b.dims(), &[1, 3]);
-        assert_eq!(b.to_vec(), &[3, 4, 5]);
+        assert_eq!(b.to_vec().unwrap(), &[3, 4, 5]);
         Ok(())
     }
 }

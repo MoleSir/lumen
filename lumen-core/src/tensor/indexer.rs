@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::Deref};
 use crate::{AutogradMetaT, Dim, Error, IntTensor, NumDType, Result, WithDType};
 use super::Tensor;
 
@@ -25,9 +25,9 @@ impl<T: WithDType> Tensor<T> {
     /// use lumen_core::Tensor;
     /// let tensor = Tensor::<f32>::new(&[[0f32, 1.], [2., 3.], [4., 5.]]).unwrap();
     /// let t = tensor.get(0).unwrap();
-    /// assert_eq!(t.to_vec(), &[0., 1.]);
+    /// assert_eq!(t.to_vec().unwrap(), &[0., 1.]);
     /// let t = tensor.get(1).unwrap();
-    /// assert_eq!(t.to_vec(), &[2., 3.]);
+    /// assert_eq!(t.to_vec().unwrap(), &[2., 3.]);
     /// ```
     pub fn get(&self, i: usize) -> Result<Self> {
         let dims = self.dims();
@@ -46,27 +46,27 @@ impl<T: WithDType> Tensor<T> {
         dims[dim] = indexes_len;
         let meta = T::AutogradMeta::on_index_select_op(self, &indexes, dim);
         let storage = match indexes {
-            IntTensor::I32(indexes) => self.storage_read().index_select(
+            IntTensor::I32(indexes) => self.storage_read()?.index_select(
                 self.layout(),
-                &indexes.storage_read(),
+                indexes.storage_read()?.deref(),
                 indexes.layout(),
                 dim,
             )?,
-            IntTensor::U32(indexes) => self.storage_read().index_select(
+            IntTensor::U32(indexes) => self.storage_read()?.index_select(
                 self.layout(),
-                &indexes.storage_read(),
+                indexes.storage_read()?.deref(),
                 indexes.layout(),
                 dim,
             )?,
-            IntTensor::U8(indexes) => self.storage_read().index_select(
+            IntTensor::U8(indexes) => self.storage_read()?.index_select(
                 self.layout(),
-                &indexes.storage_read(),
+                indexes.storage_read()?.deref(),
                 indexes.layout(),
                 dim,
             )?,
         };
 
-        Ok(Self::build(storage, dims, meta))
+        Ok(Self::from_storage(storage, dims, meta))
     }
 
     /// Gather values across the target dimension.
@@ -106,13 +106,13 @@ impl<T: WithDType> Tensor<T> {
         }
 
         let storage = match &indexes {
-            IntTensor::I32(idx) => self.storage_read().gather(self.layout(), &idx.storage_read(), idx.layout(), dim)?,
-            IntTensor::U32(idx) => self.storage_read().gather(self.layout(), &idx.storage_read(), idx.layout(), dim)?,
-            IntTensor::U8(idx) => self.storage_read().gather(self.layout(), &idx.storage_read(), idx.layout(), dim)?,
+            IntTensor::I32(idx) => self.storage_read()?.gather(self.layout(), idx.storage_read()?.deref(), idx.layout(), dim)?,
+            IntTensor::U32(idx) => self.storage_read()?.gather(self.layout(), idx.storage_read()?.deref(), idx.layout(), dim)?,
+            IntTensor::U8(idx) => self.storage_read()?.gather(self.layout(), idx.storage_read()?.deref(), idx.layout(), dim)?,
         };
 
         let meta = T::AutogradMeta::on_gather_op(self, &indexes, dim);
-        Ok(Self::build(storage, indexes.shape(), meta))
+        Ok(Self::from_storage(storage, indexes.shape(), meta))
     }
 }
 
@@ -143,34 +143,34 @@ impl<T: NumDType> Tensor<T> {
         }
 
         let storage = match &indexes {
-            IntTensor::I32(idx) => self.storage_read().index_add(
+            IntTensor::I32(idx) => self.storage_read()?.index_add(
                 self.layout(),
-                &idx.storage_read(),
+                idx.storage_read()?.deref(),
                 idx.layout(),
-                &source.storage_read(),
+                source.storage_read()?.deref(),
                 source.layout(),
                 dim,
             )?,
-            IntTensor::U32(idx) => self.storage_read().index_add(
+            IntTensor::U32(idx) => self.storage_read()?.index_add(
                 self.layout(),
-                &idx.storage_read(),
+                idx.storage_read()?.deref(),
                 idx.layout(),
-                &source.storage_read(),
+                source.storage_read()?.deref(),
                 source.layout(),
                 dim,
             )?,
-            IntTensor::U8(idx) => self.storage_read().index_add(
+            IntTensor::U8(idx) => self.storage_read()?.index_add(
                 self.layout(),
-                &idx.storage_read(),
+                idx.storage_read()?.deref(),
                 idx.layout(),
-                &source.storage_read(),
+                source.storage_read()?.deref(),
                 source.layout(),
                 dim,
             )?,
         };
 
         let meta = T::AutogradMeta::on_index_add_op(self, &indexes, source, dim);
-        Ok(Self::build(storage, self_dims.to_vec(), meta))
+        Ok(Self::from_storage(storage, self_dims.to_vec(), meta))
     } 
 
     pub fn scatter_add<D: Dim>(&self, indexes: impl Into<IntTensor>, source: &Self, dim: D) -> Result<Self> {
@@ -179,34 +179,34 @@ impl<T: NumDType> Tensor<T> {
         self.scatter_checks(&indexes, source, dim)?;
 
         let storage = match &indexes {
-            IntTensor::I32(idx) => self.storage_read().scatter_add(
+            IntTensor::I32(idx) => self.storage_read()?.scatter_add(
                 self.layout(),
-                &idx.storage_read(),
+                idx.storage_read()?.deref(),
                 idx.layout(),
-                &source.storage_read(),
+                source.storage_read()?.deref(),
                 source.layout(),
                 dim,
             )?,
-            IntTensor::U32(idx) => self.storage_read().scatter_add(
+            IntTensor::U32(idx) => self.storage_read()?.scatter_add(
                 self.layout(),
-                &idx.storage_read(),
+                idx.storage_read()?.deref(),
                 idx.layout(),
-                &source.storage_read(),
+                source.storage_read()?.deref(),
                 source.layout(),
                 dim,
             )?,
-            IntTensor::U8(idx) => self.storage_read().scatter_add(
+            IntTensor::U8(idx) => self.storage_read()?.scatter_add(
                 self.layout(),
-                &idx.storage_read(),
+                idx.storage_read()?.deref(),
                 idx.layout(),
-                &source.storage_read(),
+                source.storage_read()?.deref(),
                 source.layout(),
                 dim,
             )?,
         };
 
         let meta = T::AutogradMeta::on_scatter_add_op(self, &indexes, source, dim);
-        Ok(Self::build(storage, self.shape(), meta))
+        Ok(Self::from_storage(storage, self.shape(), meta))
     }
 
     fn scatter_checks(&self, indexes: &IntTensor, source: &Self, dim: usize) -> Result<()> {
@@ -447,14 +447,14 @@ mod test {
         let selected = arr.index_select(indices, 0).unwrap();
         
         assert_eq!(selected.shape().dims(), &[2, 4]);
-        let data = selected.to_vec();
+        let data = selected.to_vec().unwrap();
         assert_eq!(data, vec![0, 1, 2, 3, 8, 9, 10, 11]);
 
         let indices_col = Tensor::new(&[1]).unwrap();
         let selected_col = arr.index_select(indices_col, 1).unwrap();
 
         assert_eq!(selected_col.shape().dims(), &[3, 1]);
-        let data_col = selected_col.to_vec();
+        let data_col = selected_col.to_vec().unwrap();
         assert_eq!(data_col, vec![1, 5, 9]);
     }
 
@@ -475,7 +475,7 @@ mod test {
         let selected = arr.index_select(indices, 0).unwrap();
 
         assert_eq!(selected.shape().dims(), &[4]);
-        let data = selected.to_vec();
+        let data = selected.to_vec().unwrap();
         assert_eq!(data, vec![4, 0, 0, 1]);
     }
 
@@ -499,7 +499,7 @@ mod test {
         // [[1, 1, 1],
         //  [0, 0, 0],
         //  [1, 1, 1]]
-        let data = result.to_vec();
+        let data = result.to_vec().unwrap();
         assert_eq!(data, vec![
             1, 1, 1, 
             0, 0, 0, 
@@ -520,7 +520,7 @@ mod test {
         // dst[2] = 0
         // dst[3] = 0 + 30 = 30
         // dst[4] = 0
-        let data = result.to_vec();
+        let data = result.to_vec().unwrap();
         assert_eq!(data, vec![0, 30, 0, 30, 0]);
     }
 
@@ -551,7 +551,7 @@ mod test {
         // 预期:
         // [[0, 5, 0],
         //  [0, 5, 0]]
-        let data = result.to_vec();
+        let data = result.to_vec().unwrap();
         assert_eq!(data, vec![0, 5, 0, 0, 5, 0]);
     }
 
@@ -580,7 +580,7 @@ mod test {
         // 预期结果:
         // [[1, 1],
         //  [4, 3]]
-        let data = result.to_vec();
+        let data = result.to_vec().unwrap();
         assert_eq!(data, vec![1, 1, 4, 3]);
     }
 
@@ -609,7 +609,7 @@ mod test {
         // 预期结果:
         // [[30, 60],
         //  [10, 40]]
-        let data = result.to_vec();
+        let data = result.to_vec().unwrap();
         assert_eq!(data, vec![30, 60, 10, 40]);
     }
 
@@ -634,7 +634,7 @@ mod test {
         let result = src.gather(&indices, 1).unwrap();
         
         assert_eq!(result.dims(), &[2, 1, 2]);
-        let data = result.to_vec();
+        let data = result.to_vec().unwrap();
         assert_eq!(data, vec![0, 1, 4, 5]);
     }
 
@@ -656,7 +656,7 @@ mod test {
         let result = dst.scatter_add(indices, &src, 0).unwrap();
 
         // 预期: [2, 0, 1, 0, 1]
-        let data = result.to_vec();
+        let data = result.to_vec().unwrap();
         assert_eq!(data, vec![2, 0, 1, 0, 1]);
     }
 
@@ -686,7 +686,7 @@ mod test {
         // 预期:
         // Row 0: [10, 0, 20]
         // Row 1: [0, 70, 0] (30+40=70)
-        let data = result.to_vec();
+        let data = result.to_vec().unwrap();
         assert_eq!(data, vec![10, 0, 20, 0, 70, 0]);
     }
 
@@ -711,7 +711,7 @@ mod test {
         // dst[1, 0, 0] should be 1
         // dst[1, 0, 1] should be 1
         // Others 0
-        let res_vec = result.to_vec();
+        let res_vec = result.to_vec().unwrap();
         // Flattened index check:
         // 2x2x2 -> stride [4, 2, 1]
         // [0,1,0] -> 2 -> val 1
@@ -785,7 +785,7 @@ mod test {
 
         let sub = arr.index(1).unwrap();
         let expected = Tensor::arange(25, 50).unwrap().reshape((5, 5)).unwrap();
-        assert!(sub.allclose(&expected, 0.0, 0.0));
+        assert!(sub.allclose(&expected, 0.0, 0.0).unwrap());
     }
 
     #[test]
@@ -794,7 +794,7 @@ mod test {
 
         let sub = arr.index(s!(1:3)).unwrap();
         let expected = Tensor::arange(25, 75).unwrap().reshape((2, 5, 5)).unwrap();
-        assert!(sub.allclose(&expected, 0.0, 0.0));
+        assert!(sub.allclose(&expected, 0.0, 0.0).unwrap());
     }
 
     #[test]
@@ -802,7 +802,7 @@ mod test {
         let arr = Tensor::arange(0, 125).unwrap().reshape((5, 5, 5)).unwrap();
         let sub = arr.index((2, 3)).unwrap();
         let expected = Tensor::arange(65, 70).unwrap();
-        assert!(sub.allclose(&expected, 0.0, 0.0));
+        assert!(sub.allclose(&expected, 0.0, 0.0).unwrap());
 
         let sub = arr.index((s!(1:3), s!(3:5), 2)).unwrap();
         let mut vals = Vec::new();
@@ -812,7 +812,7 @@ mod test {
             }
         }
         let expected = Tensor::from_vec(vals, (2, 2)).unwrap();
-        assert!(sub.allclose(&expected, 0.0, 0.0));
+        assert!(sub.allclose(&expected, 0.0, 0.0).unwrap());
     }
 
     #[test]
@@ -821,7 +821,7 @@ mod test {
         let sub = arr.index((s!(1:3), .., 1..2)).unwrap();
 
         let expected = arr.index((s!(1:3), s!(0:5), s!(1:2))).unwrap();
-        assert!(sub.allclose(&expected, 0.0, 0.0));
+        assert!(sub.allclose(&expected, 0.0, 0.0).unwrap());
     }
 
     #[test]

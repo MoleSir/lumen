@@ -18,7 +18,7 @@ impl<T: WithDType> Tensor<T> {
     pub(crate) fn new_impl<A: ToTensor<T>>(array: A, meta: T::AutogradMeta) -> Result<Self> {
         let shape = array.shape()?;
         let storage = array.to_storage()?;
-        Ok(Self::build(storage, shape, meta))
+        Ok(Self::from_storage(storage, shape, meta))
     }
 
     /// Creates an array full with a constant `value`.
@@ -36,56 +36,63 @@ impl<T: WithDType> Tensor<T> {
     pub(crate) fn full_impl<S: Into<Shape>>(shape: S, value: T, meta: T::AutogradMeta) -> Result<Self> {
         let shape: Shape = shape.into();
         let storage = Storage::new(vec![value; shape.element_count()]);
-        Ok(Self::build(storage, shape, meta))
+        Ok(Self::from_storage(storage, shape, meta))
     }
 
     /// Creates a new `Tensor` with un initialze value!
-    pub fn uninit<S: Into<Shape>>(shape: S) -> Result<Self> {
-        Self::uninit_impl(shape, T::AutogradMeta::default())
-    }
-
-    pub(crate) fn uninit_impl<S: Into<Shape>>(shape: S, meta: T::AutogradMeta) -> Result<Self> {
-        let shape: Shape = shape.into();
-        let element_count = shape.element_count();
-        let mut v: Vec<T> = Vec::with_capacity(element_count);
-        unsafe { v.set_len(element_count); }
-        let storage = Storage::new(v);
-        Ok(Self::build(storage, shape, meta))
-    }
-
     pub fn empty<S: Into<Shape>>(shape: S) -> Result<Self> {
         Self::empty_impl(shape, T::AutogradMeta::default())
     }
 
     pub(crate) fn empty_impl<S: Into<Shape>>(shape: S, meta: T::AutogradMeta) -> Result<Self> {
         let shape: Shape = shape.into();
-        let storage = Storage::empty();
-        Ok(Self::build(storage, shape, meta))
+        let element_count = shape.element_count();
+        let mut v: Vec<T> = Vec::with_capacity(element_count);
+        unsafe { v.set_len(element_count); }
+        let storage = Storage::new(v);
+        Ok(Self::from_storage(storage, shape, meta))
     }
 
-    /// Creates a new `Tensor` directly from a storage buffer and shape.
+    /// Creates a new `Tensor` no storage
+    pub fn meta<S: Into<Shape>>(shape: S) -> Result<Self> {
+        Self::meta_impl(shape, T::AutogradMeta::default())
+    }
+
+    pub(crate) fn meta_impl<S: Into<Shape>>(shape: S, meta: T::AutogradMeta) -> Result<Self> {
+        let shape: Shape = shape.into();
+        let tensor_ = TensorImpl {
+            id: TensorId::new(),
+            storage: None,
+            layout: Layout::contiguous(shape),
+            meta,
+        };
+        Ok(Tensor(Arc::new(tensor_)))
+    }
+
+    /// Creates a new `Tensor` directly from a storage buffer, shape and meta data.
     ///
     /// Typically used internally, but can also be used when you already
     /// have a `Storage<T>` prepared.
-    pub(crate) fn from_storage<S: Into<Shape>>(storage: Storage<T>, shape: S) -> Self {
+    pub(crate) fn from_storage<L: Into<Layout>>(storage: Storage<T>, layout: L, meta: T::AutogradMeta) -> Self {
         let tensor_ = TensorImpl {
             id: TensorId::new(),
-            storage: StorageArc::new(storage),
-            layout: Layout::contiguous(shape),
-            meta: Default::default(),
-        };
-        Tensor(Arc::new(tensor_))
-    }
-
-    pub(crate) fn build<S: Into<Shape>>(storage: Storage<T>, shape: S, meta: T::AutogradMeta) -> Self {
-        let tensor_ = TensorImpl {
-            id: TensorId::new(),
-            storage: StorageArc::new(storage),
-            layout: Layout::contiguous(shape),
+            storage: Some(StorageArc::new(storage)),
+            layout: layout.into(),
             meta,
         };
         Tensor(Arc::new(tensor_))
     }
+
+    pub(crate) fn share_storage<L: Into<Layout>>(&self, layout: L, meta: T::AutogradMeta) -> Self {
+        let tensor_ = TensorImpl {
+            id: TensorId::new(),
+            storage: self.0.storage.clone(),
+            layout: layout.into(),
+            meta,
+        };
+        Tensor(Arc::new(tensor_))
+    }
+
 }
 
 impl<T: WithDType> Tensor<T> {
@@ -104,7 +111,7 @@ impl<T: WithDType> Tensor<T> {
     pub(crate) fn zeros_impl<S: Into<Shape>>(shape: S, meta: T::AutogradMeta) -> Result<Self> {
         let shape = shape.into();
         let storage = Storage::zeros(&shape);
-        Ok(Self::build(storage, shape, meta))
+        Ok(Self::from_storage(storage, shape, meta))
     }
 
     /// Creates a zero-filled array with the same shape as `self`.
@@ -135,7 +142,7 @@ impl<T: WithDType> Tensor<T> {
     pub(crate) fn ones_impl<S: Into<Shape>>(shape: S, meta: T::AutogradMeta) -> Result<Self> {
         let shape = shape.into();
         let storage = Storage::ones(&shape);
-        Ok(Self::build(storage, shape, meta))
+        Ok(Self::from_storage(storage, shape, meta))
     }
 
     /// Creates a one-filled array with the same shape as `self`.
@@ -160,7 +167,7 @@ impl<T: NumDType> Tensor<T> {
     pub(crate) fn arange_impl(start: T, end: T, meta: T::AutogradMeta) -> Result<Self> {
         let storage = T::to_range_storage(start, end)?;
         let shape = storage.len();
-        Ok(Self::build(storage, shape, meta))
+        Ok(Self::from_storage(storage, shape, meta))
     }
 }
 
@@ -185,7 +192,7 @@ impl<T: WithDType> Tensor<T> {
             Err(Error::ElementSizeMismatch { expected: vec.len(), got: shape.element_count(), op: "from_vec" })?
         }
         let storage = Storage::new(vec);
-        Ok(Self::build(storage, shape, meta))
+        Ok(Self::from_storage(storage, shape, meta))
     }
 
     pub fn diag(diag: &[T]) -> Result<Self> {
@@ -199,7 +206,7 @@ impl<T: WithDType> Tensor<T> {
             vec[n * size + n] = diag[n];
         }
         let storage = Storage::new(vec);
-        Ok(Self::build(storage, (size, size), meta))
+        Ok(Self::from_storage(storage, (size, size), meta))
     }
 }
 
@@ -219,7 +226,7 @@ impl<T: NumDType> Tensor<T> {
     pub(crate) fn rand_impl<S: Into<Shape>>(min: T, max: T, shape: S, meta: T::AutogradMeta) -> Result<Self> {
         let shape = shape.into();
         let storage = Storage::rand_uniform(&shape, min, max)?;
-        Ok(Self::build(storage, shape, meta))
+        Ok(Self::from_storage(storage, shape, meta))
     }
 
     /// Creates a random array with the same shape as `self`.
@@ -236,7 +243,7 @@ impl<F: FloatDType> Tensor<F> {
     /// ```
     /// # use lumen_core::Tensor;
     /// let arr = Tensor::linspace(0.0, 1.0, 5).unwrap();
-    /// assert_eq!(arr.to_vec(), [0.0, 0.2, 0.4, 0.6000000000000001, 0.8]);
+    /// assert_eq!(arr.to_vec().unwrap(), [0.0, 0.2, 0.4, 0.6000000000000001, 0.8]);
     /// ```
     pub fn linspace(start: F, stop: F, num: usize) -> Result<Self> {
         Self::linspace_impl(start, stop, num, F::AutogradMeta::default())
@@ -252,7 +259,7 @@ impl<F: FloatDType> Tensor<F> {
 
         let len = vec.len();
         let storage = Storage::new(vec);
-        Ok(Self::build(storage, len, meta))
+        Ok(Self::from_storage(storage, len, meta))
     }
 }
 
@@ -273,7 +280,7 @@ impl<F: FloatDType> Tensor<F> {
     pub(crate) fn randn_impl<S: Into<Shape>>(mean: F, std: F, shape: S, meta: F::AutogradMeta) -> Result<Self> {
         let shape = shape.into();
         let storage = Storage::rand_normal(&shape, mean, std)?;
-        Ok(Self::build(storage, shape, meta))
+        Ok(Self::from_storage(storage, shape, meta))
     }
 
     /// Creates a normal-distributed random array with the same shape as `self`.
@@ -293,7 +300,7 @@ impl<T: WithDType> Tensor<T> {
             vec[n * size + n] = T::ONE;
         }
         let storage = Storage::new(vec);
-        Ok(Self::build(storage, (size, size), meta))
+        Ok(Self::from_storage(storage, (size, size), meta))
     }
 
     pub fn tril(size: usize, diagonal: bool) -> Result<Self> {
@@ -315,7 +322,7 @@ impl<T: WithDType> Tensor<T> {
         }
         
         let storage = Storage::new(vec);
-        Ok(Self::build(storage, (size, size), meta))
+        Ok(Self::from_storage(storage, (size, size), meta))
     }
 
     pub(crate) fn triu_impl(size: usize, diagonal: bool, meta: T::AutogradMeta) -> Result<Self> {
@@ -330,7 +337,7 @@ impl<T: WithDType> Tensor<T> {
         }
 
         let storage = Storage::new(vec);
-        Ok(Self::build(storage, (size, size), meta))        
+        Ok(Self::from_storage(storage, (size, size), meta))        
     }
 }
 
@@ -341,13 +348,13 @@ impl<T: FloatDType> Tensor<T> {
     }
 
     #[inline]
-    pub fn uninit_var<S: Into<Shape>>(shape: S) -> Result<Self> {
-        Self::uninit_impl(shape, AutogradInfo::var())
+    pub fn empty_var<S: Into<Shape>>(shape: S) -> Result<Self> {
+        Self::empty_impl(shape, AutogradInfo::var())
     }
 
     #[inline]
-    pub fn empty_var<S: Into<Shape>>(shape: S) -> Result<Self> {
-        Self::empty_impl(shape, AutogradInfo::var())
+    pub fn meta_var<S: Into<Shape>>(shape: S) -> Result<Self> {
+        Self::meta_impl(shape, AutogradInfo::var())
     }
 
     #[inline]
@@ -433,14 +440,14 @@ impl Tensor<bool> {
     pub fn trues<S: Into<Shape>>(shape: S) -> Result<Self> {
         let shape: Shape = shape.into();
         let storage = Storage::new(vec![true; shape.element_count()]);
-        Ok(Self::from_storage(storage, shape))
+        Ok(Self::from_storage(storage, shape, Default::default()))
     }
 
     /// Creates a boolean array filled with `false`.
     pub fn falses<S: Into<Shape>>(shape: S) -> Result<Self> {
         let shape: Shape = shape.into();
         let storage = Storage::new(vec![false; shape.element_count()]);
-        Ok(Self::from_storage(storage, shape))
+        Ok(Self::from_storage(storage, shape, Default::default()))
     }
 }
 
@@ -549,5 +556,20 @@ mod test {
     fn test_shape() {
         let t = Tensor::<f64>::ones(()).unwrap();
         println!("{}", t);
+    }
+
+    #[test]
+    fn test_meta() {
+        let t = Tensor::<f64>::meta((1, 2, 3)).unwrap();
+        assert!(t.is_meta());
+        println!("{}", t);
+    }
+
+    #[should_panic]
+    #[test]
+    fn test_meta_op() {
+        let t = Tensor::<f64>::meta((1, 2, 3)).unwrap();
+        assert!(t.is_meta());
+        let _ = t + 1.0;
     }
 }

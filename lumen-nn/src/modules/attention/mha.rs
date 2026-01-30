@@ -88,7 +88,7 @@ impl<T: FloatDType> MultiHeadAttention<T> {
         // (batch_size, seq_len, hidden_size)
         let attn_result = attn_result
             .transpose(1, 2)?
-            .contiguous()
+            .contiguous()?
             .reshape((batch_size, seq_len, hidden_size))?;
 
         // output: (batch_size, seq_len, hidden_size) => (batch_size, seq_len, hidden_size)

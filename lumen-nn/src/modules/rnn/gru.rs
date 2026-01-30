@@ -156,13 +156,13 @@ impl<T: FloatDType> Gru<T> {
         let h_t_n = h_t_all.narrow(1, 2 * h_size, h_size)?;
 
         // r_t = sigmoid(W_ir*x + b_ir + W_hr*h + b_hr)
-        let r_t = (x_t_r + h_t_r).sigmoid();
+        let r_t = (x_t_r + h_t_r).sigmoid()?;
         
         // z_t = sigmoid(W_iz*x + b_iz + W_hz*h + b_hz)
-        let z_t = (x_t_z + h_t_z).sigmoid();
+        let z_t = (x_t_z + h_t_z).sigmoid()?;
         
         // n_t = tanh(W_in*x + b_in + r_t * (W_hn*h + b_hn))
-        let n_t = (x_t_n + (r_t * h_t_n)).tanh();
+        let n_t = (x_t_n + (r_t * h_t_n)).tanh()?;
 
         // h_t = (1 - z_t) * n_t + z_t * h_{t-1}
         let h_next = ((T::one() - &z_t) * n_t) + (z_t * h_prev);

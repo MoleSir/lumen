@@ -10,6 +10,6 @@ impl Tanh {
     }
 
     pub fn forward<T: FloatDType>(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
-        Ok(input.tanh())
+        Ok(input.tanh()?)
     }
 }

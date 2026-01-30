@@ -96,7 +96,7 @@ impl<T: FloatDType> BatchNorm1d<T> {
             // x_normalized = (x - batch_mean) / np.sqrt(batch_var + self.eps)
             let x_normalized = x
                 .broadcast_sub(&batch_mean)?
-                .broadcast_div(&(&batch_var + self.eps).sqrt())?; // (N, D)
+                .broadcast_div(&(&batch_var + self.eps).sqrt()?)?; // (N, D)
             
             // self.running_mean = self.momentum * self.running_mean + (1 - self.momentum) * batch_mean
             self.running_mean.mul_(self.momentum)?;
@@ -111,7 +111,7 @@ impl<T: FloatDType> BatchNorm1d<T> {
             // x_normalized = (x - batch_mean) / np.sqrt(batch_var + self.eps)
             let x_normalized = x
                 .broadcast_sub(&self.running_mean)?
-                .broadcast_div(&self.running_var.add(self.eps)?.sqrt())?; // (N, D)
+                .broadcast_div(&self.running_var.add(self.eps)?.sqrt()?)?; // (N, D)
 
             x_normalized
         };

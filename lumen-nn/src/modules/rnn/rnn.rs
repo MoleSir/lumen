@@ -70,7 +70,7 @@ impl<T: FloatDType> Rnn<T> {
             let x_t_projed = x_projed.index((.., t, ..))?;
             let h_t_projed = self.hidden_proj.forward(&h_t)?;
 
-            h_t = (x_t_projed + h_t_projed).tanh();
+            h_t = (x_t_projed + h_t_projed).tanh()?;
             
             outputs.push(h_t.clone());
         }     
@@ -93,7 +93,7 @@ impl<T: FloatDType> Rnn<T> {
         
         let combined = (x_part + h_part).broadcast_add(&self.bias)?;
         
-        Ok(combined.tanh())
+        Ok(combined.tanh()?)
     }
 }
 

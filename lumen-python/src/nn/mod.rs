@@ -10,7 +10,7 @@ use pyo3::pymodule;
 pub fn nn(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pymodule!(functional::functional))?;
     m.add_class::<init::PyInit>()?;
-    m.add_class::<init::PyEmptyInitGuard>()?;
+    m.add_class::<init::PyMetaInitGuard>()?;
     m.add_class::<param::PyParameter>()?;
     m.add_class::<param::PyBuffer>()?;
     Ok(())

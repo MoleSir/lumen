@@ -164,8 +164,8 @@ fn result_main() -> anyhow::Result<()> {
         test_count += 1;
 
         if i == 0 {
-            let norm_x_vec = xs.index(0)?.to_vec();
-            let pred_y_vec = pred.index(0)?.to_vec();
+            let norm_x_vec = xs.index(0)?.to_vec()?;
+            let pred_y_vec = pred.index(0)?.to_vec()?;
             
             let range = 2. * std::f64::consts::PI - 0.;
             let min_x = 0.;

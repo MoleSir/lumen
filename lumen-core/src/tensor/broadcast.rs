@@ -95,7 +95,7 @@ mod tests {
         let res = a.broadcast_add(&b).unwrap();
 
         let expected = Tensor::new(&[11., 12., 13.]).unwrap();
-        assert!(res.allclose(&expected, 1e-6, 1e-6));
+        assert!(res.allclose(&expected, 1e-6, 1e-6).unwrap());
     }
 
     #[test]
@@ -105,7 +105,7 @@ mod tests {
         let res = a.broadcast_add(&b).unwrap();
 
         let expected = Tensor::new(&[[11., 22., 33.], [14., 25., 36.]]).unwrap();
-        assert!(res.allclose(&expected, 1e-6, 1e-6));
+        assert!(res.allclose(&expected, 1e-6, 1e-6).unwrap());
     }
 
     #[test]
@@ -115,7 +115,7 @@ mod tests {
         let res = a.broadcast_mul(&b).unwrap();
 
         let expected = Tensor::new(&[[10., 20.], [30., 40.]]).unwrap();
-        assert!(res.allclose(&expected, 1e-6, 1e-6));
+        assert!(res.allclose(&expected, 1e-6, 1e-6).unwrap());
     }
 
     #[test]
@@ -129,8 +129,8 @@ mod tests {
         let expected_max = Tensor::new(&[2., 5., 3.]).unwrap();
         let expected_min = Tensor::new(&[1., 2., 2.]).unwrap();
 
-        assert!(max_res.allclose(&expected_max, 1e-6, 1e-6));
-        assert!(min_res.allclose(&expected_min, 1e-6, 1e-6));
+        assert!(max_res.allclose(&expected_max, 1e-6, 1e-6).unwrap());
+        assert!(min_res.allclose(&expected_min, 1e-6, 1e-6).unwrap());
     }
 
     #[test]
@@ -145,12 +145,12 @@ mod tests {
         let ge = a.broadcast_ge(&b).unwrap();
         let ne = a.broadcast_ne(&b).unwrap();
 
-        assert_eq!(eq.to_vec(), [false, true, false]);
-        assert_eq!(lt.to_vec(), [true, false, false]);
-        assert_eq!(le.to_vec(), [true, true, false]);
-        assert_eq!(gt.to_vec(), [false, false, true]);
-        assert_eq!(ge.to_vec(), [false, true, true]);
-        assert_eq!(ne.to_vec(), [true, false, true]);
+        assert_eq!(eq.to_vec().unwrap(), [false, true, false]);
+        assert_eq!(lt.to_vec().unwrap(), [true, false, false]);
+        assert_eq!(le.to_vec().unwrap(), [true, true, false]);
+        assert_eq!(gt.to_vec().unwrap(), [false, false, true]);
+        assert_eq!(ge.to_vec().unwrap(), [false, true, true]);
+        assert_eq!(ne.to_vec().unwrap(), [true, false, true]);
     }
 
     #[test]
@@ -160,6 +160,6 @@ mod tests {
         let res = a.broadcast_div(&b).unwrap();
 
         let expected = Tensor::new(&[1., 2., 3.]).unwrap();
-        assert!(res.allclose(&expected, 1e-6, 1e-6));
+        assert!(res.allclose(&expected, 1e-6, 1e-6).unwrap());
     }
 }

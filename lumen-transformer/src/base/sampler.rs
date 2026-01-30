@@ -20,7 +20,7 @@ impl Sampler {
     }
 
     pub fn sample<T: FloatDType>(&mut self, logits: &Tensor<T>) -> usize {
-        let mut logits: Vec<_> = logits.iter().map(|v| <T as NumDType>::to_f64(v)).collect();
+        let mut logits: Vec<_> = logits.iter().expect("Meta Tensor").map(|v| <T as NumDType>::to_f64(v)).collect();
         
         // temperature = 0, greedy sample
         if self.temperature <= 0.0 {

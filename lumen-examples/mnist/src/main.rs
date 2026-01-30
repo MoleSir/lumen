@@ -15,7 +15,7 @@ fn result_main() -> anyhow::Result<()> {
     // hpyer params
     const BATCH_SIZE: usize = 64;
     const LEARNING_RATE: f32 = 0.01;
-    const EPOCHS: usize = 3;
+    const EPOCHS: usize = 1;
 
     // load dataset 
     let train_dataset = MnistDataset::train(Some("../cache")).context("download train dataset")?;
@@ -100,7 +100,7 @@ pub fn test(model: &Net<f32>, test_loader: &MnistDataLoader) -> anyhow::Result<(
         correct += output
             .argmax_keepdim(1).context("argmax")?
             .eq(&target).context("compare pred and target")?
-            .true_count();
+            .true_count()?;
     }
 
     let test_loss = test_loss / test_loader.batch_count() as f32;

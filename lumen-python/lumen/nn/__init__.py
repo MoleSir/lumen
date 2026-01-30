@@ -4,7 +4,7 @@ from .._lumen import nn as rust_nn
 Init = rust_nn.Init
 Parameter = rust_nn.Parameter
 Buffer = rust_nn.Buffer
-EmptyInitGuard = rust_nn.EmptyInitGuard
+MetaInitGuard = rust_nn.MetaInitGuard
 
 def init_param(self, shape, dtype, fan_in=None, fan_out=None):
     t = self.init(shape, dtype, fan_in, fan_out)
@@ -20,9 +20,9 @@ Init.init_buffer = init_buffer
 del init_param, init_buffer
 
 
-class empty_init:
+class meta_init:
     def __init__(self):
-        self._guard = EmptyInitGuard()
+        self._guard = MetaInitGuard()
 
     def __enter__(self):
         self._guard.lock()

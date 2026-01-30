@@ -1,35 +1,35 @@
 use std::io::Write;
 use lumen_core::{DType, DynTensor, Shape, Tensor};
 
-pub fn write_tensor<W: Write>(writer: &mut W, tensor: &DynTensor) -> std::io::Result<()> {
+pub fn write_tensor<W: Write>(writer: &mut W, tensor: &DynTensor) -> lumen_core::Result<()> {
     match tensor {
         DynTensor::Bool(t) => {
-            for b in t.iter() {
+            for b in t.iter()? {
                 writer.write_all(&[if b {1} else {0}])?;
             }
         }
         DynTensor::U8(t) => {
-            for b in t.iter() {
+            for b in t.iter()? {
                 writer.write_all(&[b])?;
             }
         }
         DynTensor::F32(t) => {
-            for v in t.iter() {
+            for v in t.iter()? {
                 writer.write_all(&f32::to_le_bytes(v))?;
             }
         }
         DynTensor::F64(t) => {
-            for v in t.iter() {
+            for v in t.iter()? {
                 writer.write_all(&f64::to_le_bytes(v))?;
             }
         }
         DynTensor::U32(t) => {
-            for v in t.iter() {
+            for v in t.iter()? {
                 writer.write_all(&u32::to_le_bytes(v))?;
             }
         }
         DynTensor::I32(t) => {
-            for v in t.iter() {
+            for v in t.iter()? {
                 writer.write_all(&i32::to_le_bytes(v))?;
             }
         }

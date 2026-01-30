@@ -24,7 +24,7 @@ use std::{collections::HashMap, convert::Infallible, path::Path};
 use std::any::type_name;
 use lumen_core::{DynTensor, FloatDType, NumDType, Tensor};
 use thiserrorctx::Context;
-use crate::init::EmptyInitGuard;
+use crate::init::MetaInitGuard;
 use crate::{init::Init, NnCtxError, NnError, NnResult};
 use paste::paste;
 
@@ -216,14 +216,14 @@ pub trait Module<T: FloatDType> : Sized {
 
     impl_reinit_tensors!(param, buffer, state);
 
-    fn copy(&self) -> Self  
+    fn copy(&self) -> NnResult<Self> 
     where 
         Self: Clone
     {
         let mut new_module = self.clone();
         let mut visitor = CopyVisitor;
-        new_module.visit_state_mut(&mut visitor).unwrap();
-        new_module
+        new_module.visit_state_mut(&mut visitor)?;
+        Ok(new_module)
     }
 
     fn load_named_states(&mut self, params: &HashMap<String, DynTensor>, strict: bool) -> NnResult<()> {   
@@ -274,7 +274,7 @@ pub trait ModuleInit<T: FloatDType> : Module<T> {
     }
 
     fn from_safetensors<P: AsRef<Path>>(config: &Self::Config, path: P) -> Result<Self, Self::Error> {
-        let _guard = EmptyInitGuard::new();
+        let _guard = MetaInitGuard::new();
         let mut model = Self::init_default(config)?;
         model.load_safetensors(path, true)?;
         Ok(model)
@@ -616,10 +616,10 @@ impl<T: FloatDType> TensorVisitorMut<T> for InitTensorVisitor<T> {
 struct CopyVisitor;
 
 impl<T: FloatDType> TensorVisitorMut<T> for CopyVisitor {
-    type Error = Infallible;
+    type Error = lumen_core::Error;
 
     fn visit_param_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
-        *param = param.copy();
+        *param = param.copy()?;
         Ok(())    
     }
 }

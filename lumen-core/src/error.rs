@@ -202,6 +202,10 @@ pub enum Error {
     #[error(transparent)]
     Utf8(#[from] Utf8Error),
 
+    /// Storage error 
+    #[error("visit a meta tensor!")]
+    MetaTensor,
+
     /// User generated error message
     #[error("{0}")]
     Msg(String),

@@ -110,7 +110,7 @@ mod test {
         }
 
         let l = Linear::<f32>::new(100, 20, true, None).unwrap();
-        let ll = l.copy();
+        let ll = l.copy().unwrap();
 
         assert_eq!(ll.param_element_count(), 2020);
         let params = l.named_params();
@@ -119,8 +119,6 @@ mod test {
         }
 
         println!("{}", ll);
-
-        // ll.apply_param(|p| print!("{}", p));
     }
 
     #[test]

@@ -284,6 +284,12 @@ impl Iterator for ContiguousStorageIndices {
     }
 }
 
+impl<S: Into<Shape>> From<S> for Layout { 
+    fn from(value: S) -> Self {
+        Layout::contiguous(value.into())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct UncontiguousStorageIndices<'a> {
     init_storage_index: Option<usize>, /// For reset

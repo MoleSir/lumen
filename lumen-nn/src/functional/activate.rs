@@ -5,7 +5,7 @@ use crate::NnResult;
 ///
 /// The SiLU activation function is also known as the swish function: $SiLU(x) = x * \sigma(x)$.
 pub fn silu<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
-    Ok(xs.silu())
+    Ok(xs.silu()?)
 }
 
 /// Applies the SwiGLU activation.
@@ -23,21 +23,21 @@ pub fn silu<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
 /// * Output tensor. Shape `(..., d)`.
 pub fn swiglu<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
     let xs = xs.chunk(2, D::Minus1)?;
-    Ok(xs[0].silu() * &xs[1])
+    Ok(xs[0].silu()? * &xs[1])
 }
 
 /// Applies the Sigmoid function, element-wise.
 ///
 /// $\text{Sigmoid}(x) = \frac{1}{1 + \exp(-x)}$
 pub fn sigmoid<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
-    Ok(xs.sigmoid())
+    Ok(xs.sigmoid()?)
 }
 
 /// Applies the Rectified Linear Unit (ReLU) function, element-wise.
 ///
 /// $\text{ReLU}(x) = \max(0, x)$
 pub fn relu<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
-    Ok(xs.relu())
+    Ok(xs.relu()?)
 }
 
 /// Applies the Hard Sigmoid function, element-wise.
@@ -58,5 +58,5 @@ pub fn hard_sigmoid<T: FloatDType>(xs: &Tensor<T>) -> NnResult<Tensor<T>> {
 /// * `xs` - Input tensor.
 /// * `negative_slope` - Controls the angle of the negative slope.
 pub fn leaky_relu<T: FloatDType>(xs: &Tensor<T>, negative_slope: T) -> NnResult<Tensor<T>> {
-    Ok(xs.leaky_relu(negative_slope))
+    Ok(xs.leaky_relu(negative_slope)?)
 }
