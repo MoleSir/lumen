@@ -397,23 +397,12 @@ impl<T: WithDType> Tensor<T> {
         let split_dim_size = self.dims()[split_index];
         let mut splited_shape = self.dims().to_vec();
         splited_shape.remove(split_index);
-        let splited_shape: Shape = splited_shape.into();
 
-        let mut vec = vec![];
+        let mut vec = vec![];  
         for i in 0..split_dim_size {
-            // TODO: backend, use orgin memory
-            let mut data: Vec<T> = Vec::with_capacity(splited_shape.element_count());
-            unsafe { data.set_len(splited_shape.element_count()) };
-            let storage = Storage::new(data);
-            let arr = Self::from_storage(storage, splited_shape.clone(), Default::default());
-            
-            // Copy data
-            let sub_self = self.narrow(split_index, i, 1)?.squeeze(split_index)?;
-            assert_eq!(sub_self.dims(), splited_shape.dims());
-            arr.assign(sub_self)?;
-
-            vec.push(arr);
-        }   
+            let sub_tensor = self.narrow(split_index, i, 1)?.squeeze(split_index)?;
+            vec.push(sub_tensor);
+        }
 
         Ok(vec)
     }
@@ -552,6 +541,59 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_unsqueeze_basic() -> Result<()> {
+        let t = Tensor::<i32>::zeros((2, 3))?;
+        
+        // Unsqueeze axis 0
+        let unsq0 = t.unsqueeze(0)?;
+        assert_eq!(unsq0.dims(), &[1, 2, 3]);
+        assert_eq!(unsq0.to_vec()?, t.to_vec()?);
+
+        // Unsqueeze axis 1
+        let unsq1 = t.unsqueeze(1)?;
+        assert_eq!(unsq1.dims(), &[2, 1, 3]);
+        assert_eq!(unsq1.to_vec()?, t.to_vec()?);
+
+        // Unsqueeze last axis
+        let unsq2 = t.unsqueeze(2)?;
+        assert_eq!(unsq2.dims(), &[2, 3, 1]);
+        assert_eq!(unsq2.to_vec()?, t.to_vec()?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_squeeze_basic() -> Result<()> {
+        let t = Tensor::<i32>::zeros((2, 1, 3))?;
+        
+        let sq = t.squeeze(1)?;
+        assert_eq!(sq.dims(), &[2, 3]);
+        assert_eq!(sq.to_vec()?, t.to_vec()?);
+        
+        // Squeezing a non-1 dimension usually remains unchanged or returns error
+        // depending on implementation. Assuming strict behavior (error) or 
+        // identity if your API allows "squeeze if 1". 
+        // Here we test the successful case of squeezing a singleton.
+        let t2 = Tensor::<i32>::zeros((1, 5))?;
+        let sq2 = t2.squeeze(0)?;
+        assert_eq!(sq2.dims(), &[5]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_squeeze_unsqueeze_consistency() -> Result<()> {
+        let t = Tensor::new(&[[1, 2, 3], [4, 5, 6]])?; // shape [2, 3]
+        
+        let unsq = t.unsqueeze(0)?; // [1, 2, 3]
+        let sq = unsq.squeeze(0)?;  // [2, 3]
+        
+        assert_eq!(t.dims(), sq.dims());
+        assert_eq!(t.to_vec()?, sq.to_vec()?);
+        Ok(())
+    }
+
+    #[test]
     fn test_unsqueeze() -> Result<()> {
         let t = Tensor::<i32>::zeros((2, 1, 3))?;
         let sq = t.squeeze(1)?;
@@ -562,42 +604,6 @@ mod test {
         println!("{}", unsq);
         assert_eq!(unsq.dims(), vec![1, 2, 3]);
 
-        Ok(())
-    }
-
-    #[test]
-    fn test_cat_1d() -> Result<()> {
-        let a = Tensor::new(&[1, 2, 3])?;
-        let b = Tensor::new(&[4, 5, 6])?;
-    
-        let c = Tensor::cat(&[a, b], 0)?;
-        assert_eq!(c.dims(), [6]);
-        assert_eq!(c.to_vec().unwrap(), [1, 2, 3, 4, 5, 6]);
-    
-        Ok(())
-    }
-    
-    #[test]
-    fn test_cat_2d_axis0() -> Result<()> {
-        let a = Tensor::new(&[[1, 2], [3, 4]])?;
-        let b = Tensor::new(&[[5, 6]])?;
-    
-        let c = Tensor::cat(&[a, b], 0)?;
-        assert_eq!(c.dims(), [3, 2]);
-        assert_eq!(c.to_vec().unwrap(), [1, 2, 3, 4, 5, 6]);
-    
-        Ok(())
-    }
-    
-    #[test]
-    fn test_cat_2d_axis1() -> Result<()> {
-        let a = Tensor::new(&[[1, 2], [3, 4]])?;
-        let b = Tensor::new(&[[5], [6]])?;
-    
-        let c = Tensor::cat(&[a, b], 1)?;
-        assert_eq!(c.dims(), [2, 3]);
-        assert_eq!(c.to_vec().unwrap(), [1, 2, 5, 3, 4, 6]);
-    
         Ok(())
     }
     
@@ -614,14 +620,60 @@ mod test {
     
         Ok(())
     }
+
+    #[test]
+    fn test_cat_1d() -> Result<()> {
+        let a = Tensor::new(&[1, 2, 3])?;
+        let b = Tensor::new(&[4, 5, 6])?;
+        let c = Tensor::new(&[7])?;
+    
+        let res = Tensor::cat(&[a, b, c], 0)?;
+        assert_eq!(res.dims(), &[7]);
+        assert_eq!(res.to_vec()?, &[1, 2, 3, 4, 5, 6, 7]);
+    
+        Ok(())
+    }
     
     #[test]
-    fn test_cat_shape_mismatch() {
-        let a = Tensor::new(&[1, 2, 3]).unwrap();
-        let b = Tensor::new(&[[1, 2], [3, 4]]).unwrap();
+    fn test_cat_2d_axis0() -> Result<()> {
+        let a = Tensor::new(&[[1, 2], [3, 4]])?; // [2, 2]
+        let b = Tensor::new(&[[5, 6]])?;         // [1, 2]
     
+        let c = Tensor::cat(&[a, b], 0)?;
+        assert_eq!(c.dims(), &[3, 2]);
+        assert_eq!(c.to_vec()?, &[1, 2, 3, 4, 5, 6]);
+    
+        Ok(())
+    }
+    
+    #[test]
+    fn test_cat_2d_axis1() -> Result<()> {
+        let a = Tensor::new(&[[1, 2], [3, 4]])?; // [2, 2]
+        let b = Tensor::new(&[[5], [6]])?;       // [2, 1]
+    
+        let c = Tensor::cat(&[a, b], 1)?;
+        assert_eq!(c.dims(), &[2, 3]);
+        // Row 1: 1, 2, 5. Row 2: 3, 4, 6.
+        assert_eq!(c.to_vec()?, &[1, 2, 5, 3, 4, 6]);
+    
+        Ok(())
+    }
+
+    #[test]
+    fn test_cat_shape_mismatch() {
+        // Mismatch on non-cat axis
+        let a = Tensor::new(&[[1, 2], [3, 4]]).unwrap(); // [2, 2]
+        let b = Tensor::new(&[[1, 2, 3]]).unwrap();      // [1, 3]
+    
+        // Try to cat on axis 0, axis 1 mismatch (2 vs 3)
         let res = Tensor::cat(&[a, b], 0);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_cat_empty_list_error() {
+        let res = Tensor::<i32>::cat::<Tensor<i32>, usize>(&[], 0);
+        assert!(res.is_err(), "Concatenating an empty list should return an error");
     }
     
     #[test]

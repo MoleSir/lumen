@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Read, Write};
 use lumen_core::{DType, DynTensor, Shape, Tensor};
 
 pub fn write_tensor<W: Write>(writer: &mut W, tensor: &DynTensor) -> lumen_core::Result<()> {
@@ -36,6 +36,15 @@ pub fn write_tensor<W: Write>(writer: &mut W, tensor: &DynTensor) -> lumen_core:
     }
 
     Ok(())
+}
+
+pub fn load_tensor_reader<R: Read>(dtype: DType, shape: impl Into<Shape>, reader: &mut R) -> lumen_core::Result<DynTensor> {
+    let shape: Shape = shape.into();
+    let element_count = shape.element_count();
+    let type_size = dtype.size_of();
+    let mut bytes = vec![0u8; element_count * type_size];
+    reader.read_exact(&mut bytes)?;
+    load_tensor(dtype, shape, &bytes)
 }
 
 pub fn load_tensor(dtype: DType, shape: impl Into<Shape>, bytes: &[u8]) -> lumen_core::Result<DynTensor> {
