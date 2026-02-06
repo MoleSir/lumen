@@ -8,3 +8,4 @@ lumen-examples/lyrics_writing/lyrics.txt
 
 __pycache__
 .pytest_cache
+.pytest_cache
