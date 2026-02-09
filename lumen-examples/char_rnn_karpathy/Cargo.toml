@@ -1,13 +1,11 @@
 [package]
-name = "iris"
+name = "char_rnn_karpathy"
 version = "0.1.0"
 edition = "2024"
 
-
 [[bin]]
-name = "iris" 
+name = "char_rnn_karpathy" 
 path = "main.rs"
-
 
 [dependencies]
 lumen-core = { path = "../../lumen-core" }

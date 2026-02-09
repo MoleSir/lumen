@@ -3,6 +3,12 @@ name = "function_fitting"
 version = "0.1.0"
 edition = "2024"
 
+
+[[bin]]
+name = "function_fitting" 
+path = "main.rs"
+
+
 [dependencies]
 lumen-core = { path = "../../lumen-core" }
 lumen-nn = { path = "../../lumen-nn" }
