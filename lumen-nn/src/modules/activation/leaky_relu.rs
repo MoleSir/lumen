@@ -1,5 +1,6 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
+use crate::{NnResult, NnCtxError, ModuleForward};
 
 #[derive(Module)]
 #[module(display = "display")]
@@ -13,7 +14,7 @@ impl<T: FloatDType> LeakyRelu<T> {
         Self { negative_slope }
     }
 
-    pub fn forward(&self, input: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    pub fn forward(&self, input: &Tensor<T>) -> NnResult<Tensor<T>> {
         Ok(input.leaky_relu(self.negative_slope)?)
     }
 
@@ -22,3 +23,12 @@ impl<T: FloatDType> LeakyRelu<T> {
     }
 }
 
+impl<T: FloatDType> ModuleForward<T> for LeakyRelu<T> {
+    type Error = NnCtxError;
+    type Input = Tensor<T>;
+    type Output = Tensor<T>;
+
+    fn forward(&self, input: Self::Input) -> Result<Self::Output, Self::Error> {
+        LeakyRelu::forward(self, &input)
+    }
+}

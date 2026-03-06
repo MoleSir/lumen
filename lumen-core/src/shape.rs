@@ -1,4 +1,4 @@
-use std::vec;
+use std::{fmt::Display, vec};
 
 use crate::{Error, Result};
 
@@ -328,6 +328,17 @@ pub enum D {
     Minus2,
     Minus(usize),
     Index(usize),
+}
+
+impl Display for D {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Minus(n) => writeln!(f, "-{}", n),
+            Self::Minus1 => writeln!(f, "-1"),
+            Self::Minus2 => writeln!(f, "-2"),
+            Self::Index(n) => writeln!(f, "{}", n),
+        }
+    }
 }
 
 impl D {

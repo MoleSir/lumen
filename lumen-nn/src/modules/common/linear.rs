@@ -1,7 +1,7 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
 use crate::{init::Init, NnCtxError, NnResult};
-use crate::{ModuleInit, Parameter};
+use crate::{ModuleForward, ModuleInit, Parameter};
 
 /// Applies a linear transformation to the incoming data: :math:`y = xA^T + b`
 #[derive(Module, Clone)]
@@ -62,6 +62,16 @@ impl<T: FloatDType> ModuleInit<T> for Linear<T> {
         };
 
         Ok(Self { weight, bias, in_features: config.in_features, out_features: config.out_features })
+    }
+}
+
+impl<T: FloatDType> ModuleForward<T> for Linear<T> {
+    type Error = NnCtxError;
+    type Input = Tensor<T>;
+    type Output = Tensor<T>;
+
+    fn forward(&self, input: Self::Input) -> Result<Self::Output, Self::Error> {
+        Linear::forward(self, &input)
     }
 }
 

@@ -9,4 +9,6 @@ members = [
     "mnist",
     "char_rnn_karpathy",
     "rev_number",
+    "sort_number",
+    "ssl",
 ]

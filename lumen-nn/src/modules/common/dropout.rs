@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
-use crate::{functional as F, NnResult};
+use crate::{functional as F, ModuleForward, NnCtxError, NnResult};
 
 #[derive(Module)]
 #[module(display = "display")]
@@ -39,6 +39,16 @@ impl<T: FloatDType> Dropout<T> {
 
     fn set_train(&mut self, mode: bool) {
         self.train = mode;
+    }
+}
+
+impl<T: FloatDType> ModuleForward<T> for Dropout<T> {
+    type Error = NnCtxError;
+    type Input = Tensor<T>;
+    type Output = Tensor<T>;
+
+    fn forward(&self, input: Self::Input) -> Result<Self::Output, Self::Error> {
+        Dropout::forward(self, &input)
     }
 }
 
