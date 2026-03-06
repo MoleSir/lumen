@@ -259,8 +259,8 @@ macro_rules! impl_arith_inplace_binary {
 macro_rules! impl_arith_unary {
     ($t:ident, $method:ident) => {
         match &$t.inner {
-            DynTensor::F32(t) => Ok(t.$method().into()),
-            DynTensor::F64(t) => Ok(t.$method().into()),
+            DynTensor::F32(t) => t.$method().map_err(to_value_error).map(Into::into),
+            DynTensor::F64(t) => t.$method().map_err(to_value_error).map(Into::into),
             _ => Err(PyValueError::new_err(format!("dtype {} not support {:?}", stringify!($method), $t.dtype()))),
         }
     };
@@ -279,7 +279,7 @@ impl PyTensor {
     fn new(to_tensor: &Bound<'_, PyAny>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
         let mut tensor = Self::new_impl(to_tensor)?;
         if let Some(dtype) = dtype {
-            tensor = tensor.to_dtype(dtype);
+            tensor = tensor.to_dtype(dtype)?;
         }
         if requires_grad {
             tensor.set_requires_grad(true)?;
@@ -290,9 +290,9 @@ impl PyTensor {
 
     #[staticmethod]
     #[pyo3(signature = (shape, dtype=None, requires_grad=false))]
-    fn uninit(shape: &Bound<'_, PyAny>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
+    fn meta(shape: &Bound<'_, PyAny>, dtype: Option<PyDType>, requires_grad: bool) -> PyResult<Self> {
         let shape = py_to_shape(shape)?;
-        impl_contruct!(uninit, dtype, shape, requires_grad);
+        impl_contruct!(meta, dtype, shape, requires_grad);
     }
 
     #[staticmethod]
@@ -456,10 +456,10 @@ impl PyTensor {
     }
 
     fn copy(&self) -> PyResult<Self> {
-        impl_varient_method!(self, t, Ok(PyTensor::from(t.copy())))
+        impl_varient_method!(self, t, Ok(PyTensor::from(t.copy().map_err(to_value_error)?)))
     }
 
-    fn to_dtype(&self, dtype: PyDType) -> Self {
+    fn to_dtype(&self, dtype: PyDType) -> PyResult<Self> {
         impl_varient_method!(self, t, to_dtype(t, dtype))
     }
 
@@ -625,8 +625,8 @@ impl PyTensor {
 
     fn leaky_rele(&self, negative_slope: f64) -> PyResult<Self> {
         match &self.inner {
-            DynTensor::F32(t) => Ok(t.leaky_relu(negative_slope as f32).into()),
-            DynTensor::F64(t) => Ok(t.leaky_relu(negative_slope).into()),
+            DynTensor::F32(t) => t.leaky_relu(negative_slope as f32).map_err(to_value_error).map(Into::into),
+            DynTensor::F64(t) => t.leaky_relu(negative_slope).map_err(to_value_error).map(Into::into),
             _ => Err(PyValueError::new_err(format!("dtype {} not support {:?}", "leaky_rele", self.dtype()))),
         }
     }
@@ -714,9 +714,9 @@ impl PyTensor {
 
     fn neg(&self) -> PyResult<Self> {
         match &self.inner {
-            DynTensor::F32(t) => Ok(t.neg().into()),
-            DynTensor::F64(t) => Ok(t.neg().into()),
-            DynTensor::I32(t) => Ok(t.neg().into()),
+            DynTensor::F32(t) => t.neg().map_err(to_value_error).map(Into::into),
+            DynTensor::F64(t) => t.neg().map_err(to_value_error).map(Into::into),
+            DynTensor::I32(t) => t.neg().map_err(to_value_error).map(Into::into),
             DynTensor::U32(_) => Err(PyValueError::new_err("u32 tensor not support neg")),
             DynTensor::U8(_) => Err(PyValueError::new_err("u8 tensor not support neg")),
             DynTensor::Bool(_) => Err(PyValueError::new_err("bool tensor not support neg")),
@@ -748,11 +748,11 @@ impl PyTensor {
         let atol = atol.unwrap_or(1e-8);
         
         match (&self.inner, &other.inner) {
-            (DynTensor::F32(this), DynTensor::F32(other)) => Ok(this.allclose(other, rtol, atol)),
-            (DynTensor::F64(this), DynTensor::F64(other)) => Ok(this.allclose(other, rtol, atol)),
-            (DynTensor::U32(this), DynTensor::U32(other)) => Ok(this.allclose(other, rtol, atol)),
-            (DynTensor::I32(this), DynTensor::I32(other)) => Ok(this.allclose(other, rtol, atol)),
-            (DynTensor::U8(this), DynTensor::U8(other)) => Ok(this.allclose(other, rtol, atol)),
+            (DynTensor::F32(this), DynTensor::F32(other)) => this.allclose(other, rtol, atol).map_err(to_value_error).map(Into::into),
+            (DynTensor::F64(this), DynTensor::F64(other)) => this.allclose(other, rtol, atol).map_err(to_value_error).map(Into::into),
+            (DynTensor::U32(this), DynTensor::U32(other)) => this.allclose(other, rtol, atol).map_err(to_value_error).map(Into::into),
+            (DynTensor::I32(this), DynTensor::I32(other)) => this.allclose(other, rtol, atol).map_err(to_value_error).map(Into::into),
+            (DynTensor::U8(this), DynTensor::U8(other)) => this.allclose(other, rtol, atol).map_err(to_value_error).map(Into::into),
             (DynTensor::Bool(this), DynTensor::Bool(other)) => Ok(this.eq(other)),
             _ => Ok(false)
         }
@@ -855,7 +855,7 @@ impl PyTensor {
     }
 
     fn if_else(&self, true_val: &Bound<'_, PyAny>, false_val: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let confition_val = self.to_bool();
+        let confition_val = self.to_bool()?;
         match (true_val.extract::<PyTensor>(), false_val.extract::<PyTensor>()) {
             (Ok(true_val), Ok(false_val)) => {
                 match (&true_val.inner, &false_val.inner) {
@@ -911,13 +911,13 @@ impl PyTensor {
     }
 
     fn true_count(&self) -> PyResult<usize> {
-        let bool_tensor = self.to_bool();
-        Ok(bool_tensor.true_count())
+        let bool_tensor = self.to_bool()?;
+        bool_tensor.true_count().map_err(to_value_error)
     }
 
     fn false_count(&self) -> PyResult<usize> {
-        let bool_tensor = self.to_bool();
-        Ok(bool_tensor.false_count())
+        let bool_tensor = self.to_bool()?;
+        bool_tensor.false_count().map_err(to_value_error)
     }
 
     fn masked_fill(self_: Bound<'_, Self>, mask: &Self, value: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -1023,14 +1023,14 @@ macro_rules! impl_new_3d {
 }
 
 impl PyTensor {
-    fn to_bool(&self) -> Tensor<bool> {
+    fn to_bool(&self) -> PyResult<Tensor<bool>> {
         match &self.inner {
-            DynTensor::Bool(t) => t.clone(),
-            DynTensor::F32(t) => t.cast::<bool>(),
-            DynTensor::F64(t) => t.cast::<bool>(),
-            DynTensor::U32(t) => t.cast::<bool>(),
-            DynTensor::U8(t) => t.cast::<bool>(),
-            DynTensor::I32(t) => t.cast::<bool>(),
+            DynTensor::Bool(t) => Ok(t.clone()),
+            DynTensor::F32(t) => t.cast::<bool>().map_err(to_value_error).map(Into::into),
+            DynTensor::F64(t) => t.cast::<bool>().map_err(to_value_error).map(Into::into),
+            DynTensor::U32(t) => t.cast::<bool>().map_err(to_value_error).map(Into::into),
+            DynTensor::U8(t) => t.cast::<bool>().map_err(to_value_error).map(Into::into),
+            DynTensor::I32(t) => t.cast::<bool>().map_err(to_value_error).map(Into::into),
         }
     } 
 
@@ -1059,7 +1059,7 @@ impl PyTensor {
     }
 }
 
-fn to_dtype<T>(tensor: &Tensor<T>, dtype: PyDType) -> PyTensor 
+fn to_dtype<T>(tensor: &Tensor<T>, dtype: PyDType) -> PyResult<PyTensor> 
 where 
     T:  WithDType
       + DTypeConvert<bool>
@@ -1071,15 +1071,15 @@ where
 
 {
     if T::DTYPE == dtype.to_dtype() {
-        return PyTensor::from(tensor.clone())
+        return Ok(PyTensor::from(tensor.clone()))
     }
     match dtype {
-        PyDType::Bool => tensor.cast::<bool>().into(),
-        PyDType::Float32 => tensor.cast::<f32>().into(),
-        PyDType::Float64 => tensor.cast::<f64>().into(),
-        PyDType::UInt32 => tensor.cast::<u32>().into(),
-        PyDType::Int32 => tensor.cast::<i32>().into(),
-        PyDType::UInt8 => tensor.cast::<u8>().into(),
+        PyDType::Bool => tensor.cast::<bool>().map_err(to_value_error).map(Into::into),
+        PyDType::Float32 => tensor.cast::<f32>().map_err(to_value_error).map(Into::into),
+        PyDType::Float64 => tensor.cast::<f64>().map_err(to_value_error).map(Into::into),
+        PyDType::UInt32 => tensor.cast::<u32>().map_err(to_value_error).map(Into::into),
+        PyDType::Int32 => tensor.cast::<i32>().map_err(to_value_error).map(Into::into),
+        PyDType::UInt8 => tensor.cast::<u8>().map_err(to_value_error).map(Into::into),
     }
 }
 

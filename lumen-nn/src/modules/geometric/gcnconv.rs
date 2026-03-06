@@ -73,20 +73,20 @@ impl<T: FloatDType> GCNConv<T> {
         
         // 3. Degree
         let mut degs = vec![T::zero(); n];
-        for end in ends.to_vec() {
+        for end in ends.to_vec()? {
             degs[end.to_usize()] += T::one();
         }
-        let deg_inv_sqrt = Tensor::new(degs)?.pow(T::from_f64(-0.5)); // (n,)
+        let deg_inv_sqrt = Tensor::new(degs)?.pow(T::from_f64(-0.5))?; // (n,)
 
         // 4. Edge weight
         let edge_weights = 
             deg_inv_sqrt.index_select(I::to_inttensor(starts.clone()), 0)? 
           * deg_inv_sqrt.index_select(I::to_inttensor(ends.clone()), 0)?;
-        let edge_weights = edge_weights.to_vec();
+        let edge_weights = edge_weights.to_vec()?;
 
         // 5. Adj Matrix
         let mut adj = vec![T::zero(); n * n];
-        for (i, (start, end)) in starts.to_vec().into_iter().zip(ends.to_vec().into_iter()).enumerate() {
+        for (i, (start, end)) in starts.to_vec()?.into_iter().zip(ends.to_vec()?.into_iter()).enumerate() {
             adj[start.to_usize() * n + end.to_usize()] = edge_weights[i];
         }
         let adj = Tensor::from_vec(adj, (n, n))?;
@@ -128,7 +128,7 @@ mod tests {
         println!("Computed: {:?}", output.to_vec());
         println!("Expected: {:?}", expected.to_vec());
         
-        output.allclose(&expected, 1e-5, 1e-8);
+        output.allclose(&expected, 1e-5, 1e-8).unwrap();
 
         Ok(())
     }

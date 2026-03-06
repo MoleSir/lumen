@@ -13,6 +13,7 @@ pub trait WithDType:
     + std::cmp::PartialOrd
     + std::cmp::PartialEq
     + std::fmt::Display
+    + bytemuck::NoUninit
     + 'static
     + Send
     + Sync

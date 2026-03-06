@@ -3,6 +3,12 @@ name = "lyrics_writing"
 version = "0.1.0"
 edition = "2024"
 
+
+[[bin]]
+name = "lyrics_writing" 
+path = "main.rs"
+
+
 [dependencies]
 lumen-core = { path = "../../lumen-core" }
 lumen-nn = { path = "../../lumen-nn" }

@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::Path};
 use anyhow::Context;
 use lumen_core::{FloatDType, IndexOp, Tensor};
 use lumen_dataset::{DataLoader, Dataset, TensorPairBatcher};
-use lumen_nn::{optim::{AdamW, AdamWConfig, Optimizer}, Embedding, Linear, Lstm, Module, Sigmoid};
+use lumen_nn::{functional::LossReduction, optim::{AdamW, AdamWConfig, Optimizer}, Embedding, Linear, Lstm, Module, Sigmoid};
 
 fn main() {
     if let Err(e) = result_main() {
@@ -29,7 +29,7 @@ fn result_main() -> anyhow::Result<()> {
     let model = LyricsNet::<f64>::init(vocab_size, EMBED_SIZE, HIDDEN_SIZE)?;
     let mut optimizer = AdamW::new(model.params(), AdamWConfig::default())?;
     optimizer.config.lr = LEARN_RATE;
-    let cirterion = lumen_nn::CrossEntropyLoss;
+    let cirterion = lumen_nn::CrossEntropyLoss::new(LossReduction::Mean);
 
     println!("begin training!");
     for epoch in 0..EPOCHS {
@@ -103,7 +103,7 @@ pub fn accuracy<T: FloatDType>(output: &Tensor<T>, target: &Tensor<u32>) -> anyh
     // (batch_size, seq_len, vocab_size) => (batch_size, seq_len) 
     let pred = output.argmax(2)?;
     let correct = pred.eq(target)?;
-    let acc = correct.cast::<T>().mean_all()?.to_scalar()?;
+    let acc = correct.cast::<T>()?.mean_all()?.to_scalar()?;
     Ok(acc)
 }
 

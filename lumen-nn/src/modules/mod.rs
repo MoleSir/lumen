@@ -24,7 +24,7 @@ use std::{collections::HashMap, convert::Infallible, path::Path};
 use std::any::type_name;
 use lumen_core::{DynTensor, FloatDType, NumDType, Tensor};
 use thiserrorctx::Context;
-use crate::init::EmptyInitGuard;
+use crate::init::MetaInitGuard;
 use crate::{init::Init, NnCtxError, NnError, NnResult};
 use paste::paste;
 
@@ -216,14 +216,14 @@ pub trait Module<T: FloatDType> : Sized {
 
     impl_reinit_tensors!(param, buffer, state);
 
-    fn copy(&self) -> Self  
+    fn copy(&self) -> NnResult<Self> 
     where 
         Self: Clone
     {
         let mut new_module = self.clone();
         let mut visitor = CopyVisitor;
-        new_module.visit_state_mut(&mut visitor).unwrap();
-        new_module
+        new_module.visit_state_mut(&mut visitor)?;
+        Ok(new_module)
     }
 
     fn load_named_states(&mut self, params: &HashMap<String, DynTensor>, strict: bool) -> NnResult<()> {   
@@ -274,11 +274,18 @@ pub trait ModuleInit<T: FloatDType> : Module<T> {
     }
 
     fn from_safetensors<P: AsRef<Path>>(config: &Self::Config, path: P) -> Result<Self, Self::Error> {
-        let _guard = EmptyInitGuard::new();
+        let _guard = MetaInitGuard::new();
         let mut model = Self::init_default(config)?;
         model.load_safetensors(path, true)?;
         Ok(model)
     }
+}
+
+pub trait ModuleForward<T: FloatDType> : Module<T> {
+    type Input;
+    type Output;
+    type Error;
+    fn forward(&self, input: Self::Input) -> Result<Self::Output, Self::Error>;
 }
 
 // ============================================================================================ // 
@@ -451,6 +458,122 @@ impl<T: FloatDType, M: Module<T>> Module<T> for Vec<M> {
     }
 }
 
+macro_rules! impl_tuple_module {
+    (@generate_method $kind:ident, [ $($idx:tt),+ ]) => {
+        paste! {
+            fn [<visit_ $kind>]<Visitor: TensorVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+                $(
+                    visitor.enter_submodule(stringify!($idx), &self.$idx);
+                    self.$idx.[<visit_ $kind>](visitor)?;
+                    visitor.exit_submodule(stringify!($idx), &self.$idx);
+                )+
+                Ok(())
+            }
+
+            fn [<visit_ $kind _mut>]<Visitor: TensorVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+                $(
+                    visitor.enter_submodule(stringify!($idx), &mut self.$idx);
+                    self.$idx.[<visit_ $kind _mut>](visitor)?;
+                    visitor.exit_submodule(stringify!($idx), &mut self.$idx);
+                )+
+                Ok(())
+            }
+        }
+    };
+
+    ( $($name:ident : $idx:tt),+ ) => {
+        impl<T: FloatDType, $($name: Module<T>),+> Module<T> for ($($name,)+) {            
+            impl_tuple_module!(@generate_method param,  [ $($idx),+ ]);
+            impl_tuple_module!(@generate_method buffer, [ $($idx),+ ]);
+            impl_tuple_module!(@generate_method state,  [ $($idx),+ ]);
+
+            fn visit_module<Visitor: ModuleVisitor<T>>(&self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+                $(
+                    visitor.enter_submodule(stringify!($idx), &self.$idx)?;
+                    self.$idx.visit_module(visitor)?;
+                    visitor.exit_submodule(stringify!($idx), &self.$idx)?;
+                )+
+                Ok(())
+            }
+
+            fn visit_module_mut<Visitor: ModuleVisitorMut<T>>(&mut self, visitor: &mut Visitor) -> Result<(), Visitor::Error> {
+                $(
+                    visitor.enter_submodule(stringify!($idx), &mut self.$idx)?;
+                    self.$idx.visit_module_mut(visitor)?;
+                    visitor.exit_submodule(stringify!($idx), &mut self.$idx)?;
+                )+
+                Ok(())
+            }
+        }
+    };
+}
+
+macro_rules! impl_all_tuples {
+    ($first:ident : $first_idx:tt $(, $rest:ident : $rest_idx:tt)*) => {
+        impl_tuple_module!($first : $first_idx $(, $rest : $rest_idx)*);
+        impl_all_tuples!($($rest : $rest_idx),*);
+    };
+    () => {};
+}
+impl_all_tuples!(M8:7, M7:6, M6:5, M5:4, M4:3, M3:2, M2:1, M1:0);
+
+impl<T: FloatDType, M1, M2> ModuleForward<T> for (M1, M2) 
+where 
+    M1: ModuleForward<T>,
+    M2: ModuleForward<T, Input = M1::Output, Error = M1::Error>,
+{
+    type Input = M1::Input;
+    type Output = M2::Output;
+    type Error = M1::Error;
+
+    fn forward(&self, input: Self::Input) -> Result<Self::Output, Self::Error> {
+        let v = input;
+        let v = self.0.forward(v)?;
+        let v = self.1.forward(v)?;
+        Ok(v)
+    }
+}
+
+impl<T: FloatDType, M1, M2, M3> ModuleForward<T> for (M1, M2, M3) 
+where 
+    M1: ModuleForward<T>,
+    M2: ModuleForward<T, Input = M1::Output, Error = M1::Error>,
+    M3: ModuleForward<T, Input = M2::Output, Error = M1::Error>,
+{
+    type Input = M1::Input;
+    type Output = M3::Output;
+    type Error = M1::Error;
+
+    fn forward(&self, input: Self::Input) -> Result<Self::Output, Self::Error> {
+        let v = input;
+        let v = self.0.forward(v)?;
+        let v = self.1.forward(v)?;
+        let v = self.2.forward(v)?;
+        Ok(v)
+    }
+}
+
+impl<T: FloatDType, M1, M2, M3, M4> ModuleForward<T> for (M1, M2, M3, M4) 
+where 
+    M1: ModuleForward<T>,
+    M2: ModuleForward<T, Input = M1::Output, Error = M1::Error>,
+    M3: ModuleForward<T, Input = M2::Output, Error = M1::Error>,
+    M4: ModuleForward<T, Input = M3::Output, Error = M1::Error>,
+{
+    type Input = M1::Input;
+    type Output = M4::Output;
+    type Error = M1::Error;
+
+    fn forward(&self, input: Self::Input) -> Result<Self::Output, Self::Error> {
+        let v = input;
+        let v = self.0.forward(v)?;
+        let v = self.1.forward(v)?;
+        let v = self.2.forward(v)?;
+        let v = self.3.forward(v)?;
+        Ok(v)
+    }
+}
+
 //===========================================================================//
 //         Util Visitor
 //===========================================================================//
@@ -616,10 +739,10 @@ impl<T: FloatDType> TensorVisitorMut<T> for InitTensorVisitor<T> {
 struct CopyVisitor;
 
 impl<T: FloatDType> TensorVisitorMut<T> for CopyVisitor {
-    type Error = Infallible;
+    type Error = lumen_core::Error;
 
     fn visit_param_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
-        *param = param.copy();
+        *param = param.copy()?;
         Ok(())    
     }
 }

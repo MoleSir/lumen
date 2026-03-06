@@ -1,7 +1,13 @@
 [package]
-name = "xor_gate"
+name = "logic_gate"
 version = "0.1.0"
 edition = "2024"
+
+
+[[bin]]
+name = "logic_gate" 
+path = "main.rs"
+
 
 [dependencies]
 lumen-core = { path = "../../lumen-core" }

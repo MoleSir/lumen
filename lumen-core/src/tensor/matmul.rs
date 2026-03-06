@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use num_traits::Zero;
 use crate::{AutogradMetaT, Error, Layout, NumDType, Result, Shape, Storage};
 use super::Tensor;
@@ -46,15 +48,15 @@ impl<T: NumDType> Tensor<T> {
 
         // (..., m, k) @ (..., k, n)
         let c_storage = Self::do_matmul(
-            &self.storage_read(),
+            self.storage_read()?.deref(),
             self.layout(),
-            &rhs.storage_read(),
+            rhs.storage_read()?.deref(),
             rhs.layout(),
             (batching, m, n, k),
         );
 
         let meta = T::AutogradMeta::on_matmul_op(self, rhs);
-        Ok(Self::build(c_storage, c_shape, meta))
+        Ok(Self::from_storage(c_storage, c_shape, meta))
     }
 
     fn do_matmul(
@@ -139,7 +141,7 @@ mod tests {
             [3*0 + 4*2 + 5*4, 3*1 + 4*3 + 5*5], // [28, 40]
         ]).unwrap();
 
-        assert!(c.allclose(&expected, 1e-5, 1e-8));
+        assert!(c.allclose(&expected, 1e-5, 1e-8).unwrap());
     }
 
 
@@ -162,8 +164,8 @@ mod tests {
         let b1 = Tensor::new(&[[6.,7.],[8.,9.],[10.,11.]]).unwrap();
         let c1 = a1.matmul(&b1).unwrap();
 
-        assert!(c0.allclose(&c.index(0).unwrap(), 1e-5, 1e-8));
-        assert!(c1.allclose(&c.index(1).unwrap(), 1e-5, 1e-8));
+        assert!(c0.allclose(&c.index(0).unwrap(), 1e-5, 1e-8).unwrap());
+        assert!(c1.allclose(&c.index(1).unwrap(), 1e-5, 1e-8).unwrap());
     }
 
     #[test]
@@ -178,12 +180,12 @@ mod tests {
             }
         }
         let expected = Tensor::from_vec(vals, (2, 2)).unwrap();
-        assert!(sub_a.allclose(&expected, 0.0, 0.0));
+        assert!(sub_a.allclose(&expected, 0.0, 0.0).unwrap());
 
         let b = Tensor::randn(0.0, 1.0, (2, 5)).unwrap();
 
         let res = sub_a.matmul(&b).unwrap();
         let res_expected = expected.matmul(&b).unwrap();
-        assert!(res.allclose(&res_expected, 1e-5, 1e-8));
+        assert!(res.allclose(&res_expected, 1e-5, 1e-8).unwrap());
     }
 }

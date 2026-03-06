@@ -14,3 +14,6 @@ thiserror = { workspace = true }
 serde_json = { workspace = true, features = ["std"] }
 memmap2 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+bytemuck = { workspace = true }
+zip = { workspace = true }
+tempfile = { workspace = true }

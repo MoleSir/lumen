@@ -24,7 +24,7 @@ pub fn layer_norm<T: FloatDType>(
     let var = input.var_keepdim(D::Minus1)?;
 
     // 2. Normalize: (x - mean) / sqrt(var + eps)
-    let std = (var + eps).sqrt();
+    let std = (var + eps).sqrt()?;
     let input_normalized = input
         .broadcast_sub(&mean)?
         .broadcast_div(&std)?;
@@ -58,10 +58,10 @@ pub fn rms_norm<T: FloatDType>(
     eps: T,
 ) -> NnResult<Tensor<T>> {
     // 1. Calculate Mean of Squares: Mean(x^2)
-    let variance = input.sqr().mean_keepdim(D::Minus1)?;
+    let variance = input.sqr()?.mean_keepdim(D::Minus1)?;
 
     // 2. Calculate RMS: sqrt(variance + eps)
-    let rms = (variance + eps).sqrt();
+    let rms = (variance + eps).sqrt()?;
 
     // 3. Normalize: x / rms
     let input_normalized = input.broadcast_div(&rms)?;

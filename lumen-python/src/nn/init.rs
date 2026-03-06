@@ -1,22 +1,22 @@
-use lumen_nn::init::{EmptyInitGuard, Init};
+use lumen_nn::init::{MetaInitGuard, Init};
 use pyo3::{exceptions::PyValueError, prelude::*};
 use crate::core::{py_to_shape, to_value_error, PyDType, PyTensor};
 
 
-#[pyclass(name = "EmptyInitGuard")]
-pub struct PyEmptyInitGuard {
-    pub inner: Option<EmptyInitGuard>
+#[pyclass(name = "MetaInitGuard")]
+pub struct PyMetaInitGuard {
+    pub inner: Option<MetaInitGuard>
 }
 
 #[pymethods]
-impl PyEmptyInitGuard {
+impl PyMetaInitGuard {
     #[new]
     fn new() -> Self {
         Self { inner: None }
     }
 
     fn lock(&mut self) {
-        self.inner = Some(EmptyInitGuard::new());
+        self.inner = Some(MetaInitGuard::new());
     }
 
     fn unlock(&mut self) {
@@ -33,8 +33,8 @@ pub struct PyInit {
 #[pymethods]
 impl PyInit {
     #[staticmethod]
-    pub fn uninit() -> Self {
-        Self { inner: Init::Uninit }
+    pub fn empty() -> Self {
+        Self { inner: Init::Empty }
     }
 
     #[staticmethod]
@@ -107,7 +107,7 @@ impl PyInit {
 impl PyInit {
     pub fn to_f32(&self) -> Init<f32> {
         match self.inner {
-            Init::Uninit => Init::Uninit,
+            Init::Empty => Init::Empty,
             Init::Constant { value } => Init::Constant { value: value as f32 },
             Init::Ones => Init::Ones,
             Init::Zeros => Init::Zeros,

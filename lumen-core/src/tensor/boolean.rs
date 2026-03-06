@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
-use crate::{AutogradMetaT, Error, Layout, Result, Storage, StorageArc, TensorOrScalar, WithDType};
-use super::{Tensor, TensorId, TensorImpl};
+use crate::{AutogradMetaT, Error, Layout, Result, Storage, TensorOrScalar, WithDType};
+use super::Tensor;
 
 impl Tensor<bool> {
     pub fn if_else<T: WithDType>(&self, true_val: impl Into<TensorOrScalar<T>>, false_val: impl Into<TensorOrScalar<T>>) -> Result<Tensor<T>> {
@@ -16,14 +14,14 @@ impl Tensor<bool> {
         }
 
         let (mut new_storage, tv) = match &true_val {
-            TensorOrScalar::Tensor(tensor) => (tensor.storage_read().copy(self.layout()), Some(tensor)),
+            TensorOrScalar::Tensor(tensor) => (tensor.storage_read()?.copy(self.layout()), Some(tensor)),
             TensorOrScalar::Scalar(v) => (Storage::full(*v, self.shape()), None),
         };
         let layout = Layout::contiguous(self.shape());
 
         let fv = match &false_val {
             TensorOrScalar::Tensor(false_val) => {
-                for ((result_index, condition), fv) in layout.storage_indices().zip(self.iter()).zip(false_val.iter()) {
+                for ((result_index, condition), fv) in layout.storage_indices().zip(self.iter()?).zip(false_val.iter()?) {
                     if !condition {
                         new_storage.set_unchecked(result_index, fv);
                     }
@@ -31,7 +29,7 @@ impl Tensor<bool> {
                 Some(false_val)
             }
             TensorOrScalar::Scalar(fv) => {
-                for (result_index, condition) in layout.storage_indices().zip(self.iter()) {
+                for (result_index, condition) in layout.storage_indices().zip(self.iter()?) {
                     if !condition {
                         new_storage.set_unchecked(result_index, *fv);
                     }
@@ -41,23 +39,15 @@ impl Tensor<bool> {
         };
 
         let meta = T::AutogradMeta::on_ifelse_op(self, tv, fv);
-        
-        let result = TensorImpl {
-            id: TensorId::new(),
-            storage: StorageArc::new(new_storage),
-            layout,
-            meta
-        };
-
-        Ok(Tensor(Arc::new(result)))
+        Ok(Tensor::from_storage(new_storage, layout, meta))
     }
 
-    pub fn true_count(&self) -> usize {
-        self.iter().filter(|v| *v).count()
+    pub fn true_count(&self) -> crate::Result<usize> {
+        self.iter().map(|i| i.filter(|v| *v).count())
     }
 
-    pub fn false_count(&self) -> usize {
-        self.iter().filter(|v| !*v).count()
+    pub fn false_count(&self) -> crate::Result<usize> {
+        self.iter().map(|i| i.filter(|v| !*v).count())
     }
 }
 
@@ -75,7 +65,7 @@ mod test {
     fn test_if_else_scalar_values() {
         let mask = Tensor::new(&[true, false, true, false]).unwrap();
         let result = Tensor::if_else(&mask, 1, 0).unwrap();
-        assert_eq!(result.to_vec(), [1, 0, 1, 0]);
+        assert_eq!(result.to_vec().unwrap(), [1, 0, 1, 0]);
     }
     
     #[test]
@@ -86,7 +76,7 @@ mod test {
         let false_vals = Tensor::new(&[100, 200, 300, 400]).unwrap();
         
         let result = mask.if_else(&true_vals, &false_vals).unwrap();
-        assert_eq!(result.to_vec(), [10, 200, 30, 400]);
+        assert_eq!(result.to_vec().unwrap(), [10, 200, 30, 400]);
     }
     
     #[test]
@@ -97,7 +87,7 @@ mod test {
         let false_vals = Tensor::new(&[100, 200, 300, 400]).unwrap();
         
         let result = Tensor::if_else(&mask, true_vals, &false_vals).unwrap();
-        assert_eq!(result.to_vec(), [5, 200, 5, 400]);
+        assert_eq!(result.to_vec().unwrap(), [5, 200, 5, 400]);
     }
     
     #[test]
@@ -114,11 +104,11 @@ mod test {
     fn test_if_else_all_true_or_all_false() {
         let mask = Tensor::new(&[true, true, true]).unwrap();
         let result = Tensor::if_else(&mask, 1, 0).unwrap();
-        assert_eq!(result.to_vec(), [1, 1, 1]);
+        assert_eq!(result.to_vec().unwrap(), [1, 1, 1]);
     
         let mask = Tensor::new(&[false, false, false]).unwrap();
         let result = Tensor::if_else(&mask, 1, 0).unwrap();
-        assert_eq!(result.to_vec(), [0, 0, 0]);
+        assert_eq!(result.to_vec().unwrap(), [0, 0, 0]);
     }
 
     #[test]
@@ -128,7 +118,7 @@ mod test {
         let false_vals = Tensor::new(&[[100, 200, 300], [400, 500, 600]]).unwrap();
     
         let result = Tensor::if_else(&mask, &true_vals, &false_vals).unwrap();
-        assert_eq!(result.to_vec(), [10, 200, 30, 400, 50, 600]);
+        assert_eq!(result.to_vec().unwrap(), [10, 200, 30, 400, 50, 600]);
     }
     
     #[test]
@@ -144,7 +134,7 @@ mod test {
         ]).unwrap();
     
         let result = Tensor::if_else(&mask, true_val, &false_vals).unwrap();
-        assert_eq!(result.to_vec(), [1, 20, 30, 1, 1, 1, 70, 80]);
+        assert_eq!(result.to_vec().unwrap(), [1, 20, 30, 1, 1, 1, 70, 80]);
     }
     
     #[test]

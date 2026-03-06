@@ -15,11 +15,80 @@ impl<T: WithDType> Storage<T> {
     pub fn ones(shape: &Shape) -> Self {
         Self(vec![T::ONE; shape.element_count()])
     }
-}
 
-impl<T: WithDType> Storage<T> {
     pub fn full(value: T, shape: &Shape) -> Self {
         Self(vec![value; shape.element_count()])
+    }
+
+    pub fn new<D: Into<Vec<T>>>(data: D) -> Self {
+        Self(data.into())
+    }
+
+    #[inline]
+    pub fn data(&self) -> &[T] {
+        &self.0
+    }
+
+    #[inline]
+    pub fn data_mut(&mut self) -> &mut [T] {
+        &mut self.0
+    }
+
+    #[inline]
+    pub fn dtype(&self) -> DType {
+        T::DTYPE
+    }
+
+    #[inline]
+    pub fn copy_data(&self) -> Vec<T> {
+        self.0.clone()
+    }
+
+    #[inline]
+    pub fn get(&self, index: usize) -> Option<T> {
+        self.0.get(index).copied()
+    }
+
+    #[inline]
+    pub fn get_unchecked(&self, index: usize) -> T {
+        self.0[index]
+    }
+
+    #[inline]
+    pub fn set(&mut self, index: usize, value: T) -> Option<()> {
+        if index >= self.len() {
+            None
+        } else {
+            self.0[index] = value;
+            Some(())
+        }
+    }
+
+    #[inline]
+    pub fn set_unchecked(&mut self, index: usize, value: T) {
+        self.0[index] = value;
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn copy(&self, layout: &Layout) -> Self {
+        let output: Vec<_> = layout.storage_indices()
+            .map(|i| self.0[i])
+            .collect();
+        Self(output)
+    }
+
+    pub fn copy_map<F, U>(&self, layout: &Layout, f: F) -> Storage<U> 
+    where 
+        U: WithDType,
+        F: Fn(T) -> U
+    {
+        let output: Vec<_> = layout.storage_indices()
+            .map(|i| f(self.0[i]))
+            .collect();
+        Storage(output)
     }
 }
 
@@ -385,83 +454,6 @@ impl<T: NumDType> Storage<T> {
         }
 
         Ok(result)
-    }
-}
-
-impl<T: WithDType> Storage<T> {
-    pub fn new<D: Into<Vec<T>>>(data: D) -> Self {
-        Self(data.into())
-    }
-
-    pub fn empty() -> Self {
-        Self(vec![])
-    }
-
-    #[inline]
-    pub fn data(&self) -> &[T] {
-        &self.0
-    }
-
-    #[inline]
-    pub fn data_mut(&mut self) -> &mut [T] {
-        &mut self.0
-    }
-
-    #[inline]
-    pub fn dtype(&self) -> DType {
-        T::DTYPE
-    }
-
-    #[inline]
-    pub fn copy_data(&self) -> Vec<T> {
-        self.0.clone()
-    }
-
-    #[inline]
-    pub fn get(&self, index: usize) -> Option<T> {
-        self.0.get(index).copied()
-    }
-
-    #[inline]
-    pub fn get_unchecked(&self, index: usize) -> T {
-        self.0[index]
-    }
-
-    #[inline]
-    pub fn set(&mut self, index: usize, value: T) -> Option<()> {
-        if index >= self.len() {
-            None
-        } else {
-            self.0[index] = value;
-            Some(())
-        }
-    }
-
-    #[inline]
-    pub fn set_unchecked(&mut self, index: usize, value: T) {
-        self.0[index] = value;
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn copy(&self, layout: &Layout) -> Self {
-        let output: Vec<_> = layout.storage_indices()
-            .map(|i| self.0[i])
-            .collect();
-        Self(output)
-    }
-
-    pub fn copy_map<F, U>(&self, layout: &Layout, f: F) -> Storage<U> 
-    where 
-        U: WithDType,
-        F: Fn(T) -> U
-    {
-        let output: Vec<_> = layout.storage_indices()
-            .map(|i| f(self.0[i]))
-            .collect();
-        Storage(output)
     }
 }
 

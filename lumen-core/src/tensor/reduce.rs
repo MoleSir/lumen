@@ -9,14 +9,14 @@ macro_rules! reduce_impl {
             pub fn $fn_name<D: Dim>(&self, axis: D) -> Result<Self> {
                 let (storage, dims) = self.compute_reduec_axis_op(axis, $reduce::op, stringify!($fn_name))?;
                 let meta = T::AutogradMeta::on_reduce_op(self, &dims, crate::ReduceOp::$op);
-                let res = Self::build(storage, dims, meta);
+                let res = Self::from_storage(storage, dims, meta);
                 res.squeeze(axis)
             }
         
             pub fn [< $fn_name _keepdim >]<D: Dim>(&self, axis: D) -> Result<Self> {
                 let (storage, dims) = self.compute_reduec_axis_op(axis, $reduce::op, stringify!([< $fn_name _keepdim >]))?;
                 let meta = T::AutogradMeta::on_reduce_op(self, &dims, crate::ReduceOp::$op);
-                Ok(Self::build(storage, dims, meta))
+                Ok(Self::from_storage(storage, dims, meta))
             }
 
             pub fn [< $fn_name _all >](&self) -> Result<Self> {
@@ -71,52 +71,52 @@ impl<T: NumDType> Tensor<T> {
 
     pub fn argmin_keepdim<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
         let (storage, dims) = self.compute_reduec_axis_op(axis, ReduceArgMin::op, "argmin")?;
-        Ok(Tensor::from_storage(storage, dims))
+        Ok(Tensor::from_storage(storage, dims, Default::default()))
     }
 
     pub fn argmin<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
         let (storage, dims) = self.compute_reduec_axis_op(axis, ReduceArgMin::op, "argmin_keepdim")?;
-        let res = Tensor::from_storage(storage, dims);
+        let res = Tensor::from_storage(storage, dims, Default::default());
         res.squeeze(axis)
     }
 
     pub fn argmax_keepdim<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
         let (storage, dims) = self.compute_reduec_axis_op(axis, ReduceArgMax::op, "argmax")?;
-        Ok(Tensor::from_storage(storage, dims))
+        Ok(Tensor::from_storage(storage, dims, Default::default()))
     }
 
     pub fn argmax<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
         let (storage, dims) = self.compute_reduec_axis_op(axis, ReduceArgMax::op, "argmax_keepdim")?;
-        let res = Tensor::from_storage(storage, dims);
+        let res = Tensor::from_storage(storage, dims, Default::default());
         res.squeeze(axis)
     }
 }
 
 impl Tensor<bool> {
-    pub fn all(&self) -> bool {
-        self.iter().all(|a| a)
+    pub fn all(&self) -> crate::Result<bool> {
+        self.iter().map(|mut i| i.all(|a| a))
     }
 
-    pub fn any(&self) -> bool {
-        self.iter().any(|a| a)
+    pub fn any(&self) -> crate::Result<bool> {
+        self.iter().map(|mut i| i.any(|a| a))
     } 
 
     pub fn all_axis<D: Dim>(&self, axis: D) -> Result<Tensor<bool>> {
-        self.reduec_axis_op(axis, ReduceAll::op, "all")
+        self.reduec_axis_op(axis, ReduceAll::op, Default::default(), "all")
     }
 
     pub fn any_axis<D: Dim>(&self, axis: D) -> Result<Tensor<bool>> {
-        self.reduec_axis_op(axis, ReduceAny::op, "any")
+        self.reduec_axis_op(axis, ReduceAny::op, Default::default(), "any")
     }
 }
 
 impl<T: WithDType> Tensor<T> {
-    fn reduec_axis_op<'a, F, R: WithDType, D: Dim>(&'a self, reduce_dim: D, f: F, op_name: &'static str) -> Result<Tensor<R>> 
+    fn reduec_axis_op<'a, F, R: WithDType, D: Dim>(&'a self, reduce_dim: D, f: F, meta: R::AutogradMeta, op_name: &'static str) -> Result<Tensor<R>> 
     where 
         F: Fn(&mut DimArrayIter<'a, T>) -> R
     {
         let (storage, shape) = self.compute_reduec_axis_op(reduce_dim, f, op_name)?;
-        Ok(Tensor::<R>::from_storage(storage, shape))
+        Ok(Tensor::<R>::from_storage(storage, shape, meta))
     }
 
     fn compute_reduec_axis_op<'a, F, R: WithDType, D: Dim>(&'a self, reduce_dim: D, f: F, op_name: &'static str) -> Result<(Storage<R>, Vec<usize>)> 
@@ -135,7 +135,7 @@ impl<T: WithDType> Tensor<T> {
         let layout = self.layout().narrow(reduce_dim, 0, 1)?;
         for (dst_index, src_index) in layout.storage_indices().enumerate() {
             let arr: DimArray<'_, T> = DimArray {
-                src: self.storage_ref(src_index),
+                src: self.storage_ref(src_index)?,
                 size: reduce_dim_size,
                 stride: reduce_dim_stride
             };
@@ -343,7 +343,7 @@ mod tests {
         let arr = Tensor::new(&[[1, 2, 3], [3, 4, 5]]).unwrap();
         let s = arr.sum(0).unwrap();
         let expected = Tensor::new(&[4, 6, 8]).unwrap();
-        assert!(s.allclose(&expected, 1e-5, 1e-8));
+        assert!(s.allclose(&expected, 1e-5, 1e-8).unwrap());
     }
 
     #[test]
@@ -354,7 +354,7 @@ mod tests {
         let arr = Tensor::new(&[[1, 2, 3], [3, 4, 5]]).unwrap();
         let s = arr.sum(1).unwrap();
         let expected = Tensor::new(&[6, 12]).unwrap();
-        assert!(s.allclose(&expected, 1e-5, 1e-8));
+        assert!(s.allclose(&expected, 1e-5, 1e-8).unwrap());
     }
 
     #[test]
@@ -369,8 +369,8 @@ mod tests {
         let expected0 = Tensor::new(&[2, 2, 2]).unwrap();
         let expected1 = Tensor::new(&[3, 3]).unwrap();
 
-        assert!(s0.allclose(&expected0, 1e-5, 1e-8));
-        assert!(s1.allclose(&expected1, 1e-5, 1e-8));
+        assert!(s0.allclose(&expected0, 1e-5, 1e-8).unwrap());
+        assert!(s1.allclose(&expected1, 1e-5, 1e-8).unwrap());
     }
 
     #[test]
@@ -381,7 +381,7 @@ mod tests {
         let arr = Tensor::new(&[[1, 2, 3], [3, 1, 0]]).unwrap();
         let m = arr.min(0).unwrap();
         let expected = Tensor::new(&[1, 1, 0]).unwrap();
-        assert!(m.allclose(&expected, 1e-5, 1e-8));
+        assert!(m.allclose(&expected, 1e-5, 1e-8).unwrap());
     }
 
     #[test]
@@ -392,7 +392,7 @@ mod tests {
         let arr = Tensor::new(&[[1, 2, 3], [3, 1, 0]]).unwrap();
         let m = arr.max(1).unwrap();
         let expected = Tensor::new(&[3, 3]).unwrap();
-        assert!(m.allclose(&expected, 1e-5, 1e-8));
+        assert!(m.allclose(&expected, 1e-5, 1e-8).unwrap());
     }
 
     #[test]
@@ -403,7 +403,7 @@ mod tests {
         let arr = Tensor::new(&[[1, 2, 3], [3, 1, 0]]).unwrap();
         let m = arr.argmin(0).unwrap();
         let expected = Tensor::new(&[0, 1, 1]).unwrap();
-        assert!(m.allclose(&expected, 1e-5, 1e-8));
+        assert!(m.allclose(&expected, 1e-5, 1e-8).unwrap());
     }
 
     #[test]
@@ -412,7 +412,7 @@ mod tests {
         let arr = Tensor::new(&[[1, 2], [3, 4]]).unwrap();
         let s = arr.sum_all().unwrap();        
         let expected = Tensor::new(10).unwrap(); 
-        assert!(s.allclose(&expected, 1e-5, 1e-8));
+        assert!(s.allclose(&expected, 1e-5, 1e-8).unwrap());
     }
 
     #[test]
@@ -421,7 +421,7 @@ mod tests {
         let arr = Tensor::new(&[[1.0, 2.0], [3.0, 4.0]]).unwrap();
         let m = arr.mean_all().unwrap();
         let expected = Tensor::new(2.5).unwrap();
-        assert!(m.allclose(&expected, 1e-5, 1e-8));
+        assert!(m.allclose(&expected, 1e-5, 1e-8).unwrap());
     }
 
     #[test]
@@ -437,8 +437,8 @@ mod tests {
         let expected_min = Tensor::new(1).unwrap();
         let expected_max = Tensor::new(10).unwrap();
         
-        assert!(min_val.allclose(&expected_min, 1e-5, 1e-8));
-        assert!(max_val.allclose(&expected_max, 1e-5, 1e-8));
+        assert!(min_val.allclose(&expected_min, 1e-5, 1e-8).unwrap());
+        assert!(max_val.allclose(&expected_max, 1e-5, 1e-8).unwrap());
     }
     
     #[test]
@@ -449,7 +449,7 @@ mod tests {
         let arr = Tensor::new(&[[1, 2, 3], [3, 1, 0]]).unwrap();
         let m = arr.argmax(1).unwrap();
         let expected = Tensor::new(&[2, 0]).unwrap();
-        assert!(m.allclose(&expected, 1e-5, 1e-8));
+        assert!(m.allclose(&expected, 1e-5, 1e-8).unwrap());
     }
 
     #[test]
@@ -461,10 +461,10 @@ mod tests {
         
         let arr = Tensor::new(&[[-2.0, 0.0, 2.0]]).unwrap();
         
-        assert!(arr.sum_all().unwrap().allclose(&Tensor::new(0.0).unwrap(), 1e-5, 1e-8));
-        assert!(arr.mean_all().unwrap().allclose(&Tensor::new(0.0).unwrap(), 1e-5, 1e-8));
+        assert!(arr.sum_all().unwrap().allclose(&Tensor::new(0.0).unwrap(), 1e-5, 1e-8).unwrap());
+        assert!(arr.mean_all().unwrap().allclose(&Tensor::new(0.0).unwrap(), 1e-5, 1e-8).unwrap());
         
         let expected_var = Tensor::new(2.66666666666666666).unwrap();
-        assert!(arr.var_all().unwrap().allclose(&expected_var, 1e-5, 1e-8));
+        assert!(arr.var_all().unwrap().allclose(&expected_var, 1e-5, 1e-8).unwrap());
     }
 }

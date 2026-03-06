@@ -171,7 +171,7 @@ impl<T: FloatDType> ModuleInit<T> for Gpt2MLP<T> {
 impl<T: FloatDType> Gpt2MLP<T> {
     pub fn forward(&self, x: &Tensor<T>) -> Gpt2Result<Tensor<T>> {
         let x = self.c_fc.forward(x)?;
-        let x = x.gelu(); 
+        let x = x.gelu()?; 
         let x = self.c_proj.forward(&x)?;
         Ok(x)
     }
@@ -273,7 +273,7 @@ impl<T: FloatDType> Gpt2Attention<T> {
 
         let attn_output = attn_output
             .transpose(1, 2)?
-            .contiguous()
+            .contiguous()?
             .reshape((batch_size, seq_len, self.n_head * self.head_dim))?;
 
         let attn_output = self.c_proj.forward(&attn_output)?;
@@ -285,7 +285,7 @@ impl<T: FloatDType> Gpt2Attention<T> {
         let x = x
             .reshape((batch, seq, self.n_head, self.head_dim))?
             .transpose(1, 2)?
-            .contiguous();
+            .contiguous()?;
         Ok(x)
     }
 }
@@ -334,11 +334,11 @@ impl<T: FloatDType> Gpt2LayerNorm<T> {
         // (batch_size, seq_len, n_dim) - (batch_size, seq_len, 1) => (batch_size, seq_len, n_dim)
         let centered = x.broadcast_sub(&mean)?;
         // (batch_size, seq_len, n_dim) => (batch_size, seq_len, 1)
-        let variance = centered.pow(T::two()).mean_keepdim(D::Minus1)?;
+        let variance = centered.pow(T::two())?.mean_keepdim(D::Minus1)?;
         
         // norm = (x - mean) / sqrt(var + eps)
         // (batch_size, seq_len, 1)
-        let std = (variance + self.eps).sqrt();
+        let std = (variance + self.eps).sqrt()?;
         // (batch_size, seq_len, n_dim) / (batch_size, seq_len, 1) => (batch_size, seq_len, n_dim)
         let norm = centered.broadcast_div(&std)?;
 

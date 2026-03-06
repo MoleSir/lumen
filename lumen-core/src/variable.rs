@@ -13,13 +13,13 @@ impl<T: FloatDType> Var<T> {
     }
 
     #[inline]
-    pub fn uninit<S: Into<Shape>>(shape: S) -> Result<Tensor<T>> {
-        Tensor::uninit_var(shape)
+    pub fn empty<S: Into<Shape>>(shape: S) -> Result<Tensor<T>> {
+        Tensor::empty_var(shape)
     }
 
     #[inline]
-    pub fn empty<S: Into<Shape>>(shape: S) -> Result<Tensor<T>> {
-        Tensor::empty_var(shape)
+    pub fn meta<S: Into<Shape>>(shape: S) -> Result<Tensor<T>> {
+        Tensor::meta_var(shape)
     }
 
     #[inline]

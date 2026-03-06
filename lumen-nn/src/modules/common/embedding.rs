@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, IntTensor, Tensor};
 use lumen_macros::Module;
-use crate::functional as F;
+use crate::{functional as F, ModuleForward};
 use crate::{init::Init, NnCtxError, NnResult};
 use crate::{ModuleInit, Parameter};
 
@@ -29,6 +29,16 @@ impl<T: FloatDType> ModuleInit<T> for Embedding<T> {
         let init = init.unwrap_or(Init::standard_normal());
         let embeddings = init.init_param((config.num_embeddings, config.embedding_size))?;
         Ok(Self { embeddings, num_embeddings: config.num_embeddings, embedding_size: config.embedding_size })
+    }
+}
+
+impl<T: FloatDType> ModuleForward<T> for Embedding<T> {
+    type Error = NnCtxError;
+    type Input = IntTensor;
+    type Output = Tensor<T>;
+    
+    fn forward(&self, input: Self::Input) -> Result<Self::Output, Self::Error> {
+        Embedding::forward(&self, input)
     }
 }
 

@@ -17,11 +17,11 @@ impl<'a, T: WithDType> Iterator for TensorIter<'a, T> {
 }
 
 impl<T: WithDType> Tensor<T> {
-    pub fn iter(&self) -> TensorIter<T> {
-        TensorIter {
+    pub fn iter(&self) -> crate::Result<TensorIter<T>> {
+        Ok(TensorIter {
             indexes: self.0.layout.storage_indices(),
-            storage: self.storage_ref(0)
-        }
+            storage: self.storage_ref(0)?,
+        })
     }
 }
 

@@ -84,7 +84,7 @@ pub fn softmax<T: FloatDType, D: Dim>(xs: &Tensor<T>, dim: D) -> NnResult<Tensor
     let dim = dim.to_index(xs.shape(), "softmax")?;
     let max = xs.max_keepdim(dim)?; // (..., 1, ...)
     let diff = xs.broadcast_sub(&max)?;   // (..., D, ...)
-    let num = diff.exp();                 // (..., D, ...)
+    let num = diff.exp()?;  // (..., D, ...)
     let den = num.sum_keepdim(dim)?;
     let out = num.broadcast_div(&den)?;
     Ok(out)
@@ -107,7 +107,7 @@ pub fn log_softmax<T: FloatDType, D: Dim>(xs: &Tensor<T>, dim: D) -> NnResult<Te
     let max = xs.max_keepdim(dim)?; // (..., 1, ...)
     let diff = xs.broadcast_sub(&max)?;   // (..., D, ...)
     //  log(sum(exp(x - max)))
-    let log_sum_exp = diff.exp().sum_keepdim(dim)?.ln();
+    let log_sum_exp = diff.exp()?.sum_keepdim(dim)?.ln()?;
     // (x - max) - log_sum_exp
     let out = diff.broadcast_sub(&log_sum_exp)?;
     Ok(out)
@@ -132,7 +132,7 @@ pub fn dropout<T: FloatDType>(xs: &Tensor<T>, drop_p: T) -> NnResult<Tensor<T>> 
 
     let rand = Tensor::<T>::rand(T::zero(), T::one(), xs.shape())?;
     let scale = T::one() / (T::one() - drop_p);
-    let mask = rand.ge(drop_p)?.cast() * scale;
+    let mask = rand.ge(drop_p)?.cast()? * scale;
     Ok(xs * mask)
 }
 

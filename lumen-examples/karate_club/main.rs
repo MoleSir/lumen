@@ -57,7 +57,7 @@ impl<T: FloatDType> KarateGNN<T> {
     pub fn forward(&self, x: &Tensor<T>, edge_index: &Tensor<u32>) -> anyhow::Result<Tensor<T>> {
         // (N, input_dim) => (N, hidden_dim)
         let x = self.conv1.forward(x, edge_index).context("conv1 forward")?;
-        let x = x.relu(); 
+        let x = x.relu()?; 
         // (N, hidden_dim) => (N, output_dim)
         let x = self.conv2.forward(&x, edge_index).context("conv2 forward")?;
         // (N, output_dim)

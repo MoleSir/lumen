@@ -12,11 +12,8 @@ class Buffer(Tensor):
 
 class Init:
     @staticmethod
-    def uninit() -> Init: ...
-    
-    @staticmethod
     def empty() -> Init: ...
-    
+        
     @staticmethod
     def ones() -> Init: ...
     
@@ -51,5 +48,11 @@ class Init:
     def init_buffer(self, shape: ShapeLike, dtype: DType, fan_in: Optional[int]=None, fan_out: Optional[int]=None) -> Buffer: ...
 
 
-class empty_init:
-    pass
+class meta_init:
+    def __init__(self): ...
+    
+    def __enter__(self): ...
+
+    def __exit__(self, _exc_type, _exc_val, _exc_tb): ...
+
+    def __call__(self, func): ...

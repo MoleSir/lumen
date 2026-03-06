@@ -13,22 +13,22 @@ mod boolean;
 pub use construct::ToTensor;
 use std::{borrow::Borrow, hash::Hash, sync::Arc};
 pub use indexer::{Slice, IndexOp};
-use crate::{AutogradInfo, Error, FloatDType, Op, Result};
-use super::{DType, Dim, DimCoordinates, DimNCoordinates, Layout, NumDType, Shape, Storage, StorageArc, StorageIndices, StorageMut, StorageRef, WithDType};
+use crate::{AutogradInfo, Error, FloatDType, Op, Storage};
+use super::{DType, Dim, DimCoordinates, DimNCoordinates, Layout, NumDType, Shape, StorageArc, StorageIndices, StorageMut, StorageRef, WithDType};
 pub use iter::*;
 pub use indexer::*;
 
 #[derive(Clone)]
-pub struct Tensor<T: WithDType>(pub(crate) Arc<TensorImpl<T>>);
+pub struct Tensor<T: WithDType>(Arc<TensorImpl<T>>);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TensorId(usize);
 
-pub struct TensorImpl<T: WithDType> {
-    pub(crate) id: TensorId,
-    pub(crate) storage: StorageArc<T>,
-    pub(crate) layout: Layout,
-    pub(crate) meta: T::AutogradMeta,
+struct TensorImpl<T: WithDType> {
+    id: TensorId,
+    storage: Option<StorageArc<T>>,
+    layout: Layout,
+    meta: T::AutogradMeta,
 }
 
 impl TensorId {
@@ -68,7 +68,7 @@ impl<T: WithDType> Tensor<T> {
         self.shape().is_scalar()
     }
 
-    pub fn check_scalar(&self) -> Result<()> {
+    pub fn check_scalar(&self) -> crate::Result<()> {
         if !self.is_scalar() {
             Err(Error::NotScalar)?
         } else {
@@ -76,36 +76,38 @@ impl<T: WithDType> Tensor<T> {
         }
     }
 
-    pub fn to_scalar(&self) -> Result<T> {
+    pub fn to_scalar(&self) -> crate::Result<T> {
         self.check_scalar()?;
-        let v = self.storage_ref(self.layout().start_offset()).get_unchecked(0);
+        let v = self.storage_read()?.get_unchecked(self.layout().start_offset());
         Ok(v)
     }
 
-    // pub fn item(&self) -> Result<Self> {
-    //     let scalar = self.to_scalar()?;
-    //     Tensor::new(scalar)
-    // }
-
-    pub fn set_scalar(&self, val: T) -> Result<()> {
+    pub fn set_scalar(&self, val: T) -> crate::Result<()> {
         self.check_scalar()?;
-        self.storage_mut(self.layout().start_offset()).set_unchecked(0, val);
+        self.storage_write()?.set_unchecked(self.layout().start_offset(), val);
         Ok(())
     }
 
-    #[inline]
-    pub fn storage_ref<'a>(&'a self, start_offset: usize) -> StorageRef<'a, T> {
-        self.0.storage.get_ref(start_offset)
+    pub fn storage_ref<'a>(&'a self, start_offset: usize) -> crate::Result<StorageRef<'a, T>> {
+        self.0.storage.as_ref()
+            .ok_or(crate::Error::MetaTensor)
+            .map(|s| s.get_ref(start_offset))
     }
 
-    #[inline]
-    pub fn storage_mut<'a>(&'a self, start_offset: usize) -> StorageMut<'a, T> {
-        self.0.storage.get_mut(start_offset)
+    pub fn storage_mut<'a>(&'a self, start_offset: usize) -> crate::Result<StorageMut<'a, T>> {
+        self.0.storage.as_ref()
+            .ok_or(crate::Error::MetaTensor)
+            .map(|s| s.get_mut(start_offset))
     }
 
-    #[inline]
-    pub fn storage_ptr(&self, start_offset: usize) -> *mut T {
-        self.0.storage.get_ptr(start_offset)
+    pub fn storage_ptr(&self, start_offset: usize) -> crate::Result<*mut T> {
+        self.0.storage.as_ref()
+            .ok_or(crate::Error::MetaTensor)
+            .map(|s| s.get_ptr(start_offset))
+    }
+
+    pub fn is_meta(&self) -> bool {
+        self.0.storage.is_none()
     }
 }
 
@@ -130,17 +132,21 @@ impl<T: WithDType> Tensor<T> {
         self.shape().dims()
     }
 
-    pub fn dim<D: Dim>(&self, dim: D) -> Result<usize> {
+    pub fn dim<D: Dim>(&self, dim: D) -> crate::Result<usize> {
         let dim = dim.to_index(self.shape(), "dim")?;
         Ok(self.dims()[dim])
     }
 
-    pub fn storage_read(&self) -> std::sync::RwLockReadGuard<'_, Storage<T>> {
-        self.0.storage.0.read().unwrap()
+    pub fn storage_read(&self) -> crate::Result<std::sync::RwLockReadGuard<'_, Storage<T>>> {
+        self.0.storage.as_ref()
+            .ok_or(crate::Error::MetaTensor)
+            .map(|s| s.read())
     }
 
-    pub fn storage_write(&self) -> std::sync::RwLockWriteGuard<'_, Storage<T>> {
-        self.0.storage.0.write().unwrap()
+    pub fn storage_write(&self) -> crate::Result<std::sync::RwLockWriteGuard<'_, Storage<T>>> {
+        self.0.storage.as_ref()
+            .ok_or(crate::Error::MetaTensor)
+            .map(|s| s.write())
     }
     
     pub fn element_count(&self) -> usize {
@@ -155,8 +161,8 @@ impl<T: WithDType> Tensor<T> {
         self.shape().rank()
     }
 
-    pub fn to_vec(&self) -> Vec<T> {
-        self.iter().collect()
+    pub fn to_vec(&self) -> crate::Result<Vec<T>> {
+        self.iter().map(|i| i.collect())
     }
 
     /// Returns an iterator over **storage indices**.
@@ -183,33 +189,35 @@ impl<T: WithDType> Tensor<T> {
         self.shape().dim_coordinates()
     }
 
-    pub fn dims_coordinates<const N: usize>(&self) -> Result<DimNCoordinates<N>> {
+    pub fn dims_coordinates<const N: usize>(&self) -> crate::Result<DimNCoordinates<N>> {
         self.shape().dims_coordinates::<N>()
     }
 
-    pub fn dim2_coordinates(&self) -> Result<DimNCoordinates<2>> {
+    pub fn dim2_coordinates(&self) -> crate::Result<DimNCoordinates<2>> {
         self.shape().dim2_coordinates()
     }
 
-    pub fn dim3_coordinates(&self) -> Result<DimNCoordinates<3>> {
+    pub fn dim3_coordinates(&self) -> crate::Result<DimNCoordinates<3>> {
         self.shape().dim3_coordinates()
     }
 
-    pub fn dim4_coordinates(&self) -> Result<DimNCoordinates<4>> {
+    pub fn dim4_coordinates(&self) -> crate::Result<DimNCoordinates<4>> {
         self.shape().dim4_coordinates()
     }
 
-    pub fn dim5_coordinates(&self) -> Result<DimNCoordinates<5>> {
+    pub fn dim5_coordinates(&self) -> crate::Result<DimNCoordinates<5>> {
         self.shape().dim5_coordinates()
     }
 }
 
 impl<T: NumDType> Tensor<T> {
-    pub fn allclose(&self, other: &Self, rtol: f64, atol: f64) -> bool {
+    pub fn allclose(&self, other: &Self, rtol: f64, atol: f64) -> crate::Result<bool> {
         if self.shape() != other.shape() {
-            return false;
+            return Ok(false);
         }
-        self.iter().zip(other.iter()).all(|(a, b)| a.close(b, rtol, atol))
+        Ok(
+            self.iter()?.zip(other.iter()?).all(|(a, b)| a.close(b, rtol, atol))
+        )
     }
 }
 

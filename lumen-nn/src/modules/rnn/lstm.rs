@@ -158,10 +158,10 @@ impl<T: FloatDType> Lstm<T> {
         let h_o = h_all.narrow(1, 3 * h_size, h_size)?;
 
         // Compute Gates
-        let i_t = (x_i + h_i).sigmoid(); // Input gate
-        let f_t = (x_f + h_f).sigmoid(); // Forget gate
-        let g_t = (x_g + h_g).tanh();    // Cell candidate
-        let o_t = (x_o + h_o).sigmoid(); // Output gate
+        let i_t = (x_i + h_i).sigmoid()?; // Input gate
+        let f_t = (x_f + h_f).sigmoid()?; // Forget gate
+        let g_t = (x_g + h_g).tanh()?;    // Cell candidate
+        let o_t = (x_o + h_o).sigmoid()?; // Output gate
 
         // Update Cell State
         // c_t = f_t * c_{t-1} + i_t * g_t
@@ -169,7 +169,7 @@ impl<T: FloatDType> Lstm<T> {
 
         // Update Hidden State
         // h_t = o_t * tanh(c_t)
-        let h_next = o_t * c_next.tanh();
+        let h_next = o_t * c_next.tanh()?;
 
         Ok((h_next, c_next))
     }

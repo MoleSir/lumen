@@ -1,7 +1,7 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
 use crate::{init::Init, NnCtxError, NnResult};
-use crate::{ModuleInit, Parameter};
+use crate::{ModuleForward, ModuleInit, Parameter};
 
 /// Applies a linear transformation to the incoming data: :math:`y = xA^T + b`
 #[derive(Module, Clone)]
@@ -65,6 +65,16 @@ impl<T: FloatDType> ModuleInit<T> for Linear<T> {
     }
 }
 
+impl<T: FloatDType> ModuleForward<T> for Linear<T> {
+    type Error = NnCtxError;
+    type Input = Tensor<T>;
+    type Output = Tensor<T>;
+
+    fn forward(&self, input: Self::Input) -> Result<Self::Output, Self::Error> {
+        Linear::forward(self, &input)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use lumen_core::{FloatDType, Tensor};
@@ -110,7 +120,7 @@ mod test {
         }
 
         let l = Linear::<f32>::new(100, 20, true, None).unwrap();
-        let ll = l.copy();
+        let ll = l.copy().unwrap();
 
         assert_eq!(ll.param_element_count(), 2020);
         let params = l.named_params();
@@ -119,8 +129,6 @@ mod test {
         }
 
         println!("{}", ll);
-
-        // ll.apply_param(|p| print!("{}", p));
     }
 
     #[test]

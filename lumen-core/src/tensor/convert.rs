@@ -2,18 +2,18 @@ use crate::{AutogradMetaT, DTypeConvert, Error, Result, TensorOrScalar, WithDTyp
 use super::Tensor;
 
 impl<T: WithDType> Tensor<T> {
-    pub fn contiguous(&self) -> Tensor<T> {
+    pub fn contiguous(&self) -> crate::Result<Tensor<T>> {
         if self.is_contiguous() {
-            self.clone()
+            Ok(self.clone())
         } else {
             self.copy()
         }
     }
 
-    pub fn copy(&self) -> Self {
-        let storage = self.storage_read().copy(self.layout());
+    pub fn copy(&self) -> crate::Result<Self> {
+        let storage = self.storage_read()?.copy(self.layout());
         let meta = T::AutogradMeta::on_copy_op(self);
-        Self::build(storage, self.shape(), meta)
+        Ok(Self::from_storage(storage, self.shape(), meta))
     }
 
     pub fn copy_from(&self, source: &Self) -> Result<()> {
@@ -21,8 +21,8 @@ impl<T: WithDType> Tensor<T> {
             Err(Error::ShapeMismatchCopyFrom { dst: self.shape().clone(), src: source.shape().clone() })?
         }
 
-        let mut storage = self.storage_mut(0);
-        for (self_storage_index, src_value) in self.layout().storage_indices().zip(source.iter()) {
+        let mut storage = self.storage_write()?;
+        for (self_storage_index, src_value) in self.layout().storage_indices().zip(source.iter()?) {
             storage.set_unchecked(self_storage_index, src_value);
         }
 
@@ -33,7 +33,7 @@ impl<T: WithDType> Tensor<T> {
     pub fn assign(&self, source: impl Into<TensorOrScalar<T>>) -> Result<()> {
         match source.into() {
             TensorOrScalar::Scalar(src) => {
-                let mut storage = self.storage_mut(0);
+                let mut storage = self.storage_write()?;
                 for storage_index in self.layout().storage_indices() {
                     storage.set_unchecked(storage_index, src);
                 }
@@ -44,9 +44,8 @@ impl<T: WithDType> Tensor<T> {
                     Err(Error::ShapeMismatchCopyFrom { dst: self.shape().clone(), src: src.shape().clone() })?
                 }
         
-                let mut storage = self.storage_mut(0);
-        
-                for (self_storage_index, src_value) in self.layout().storage_indices().zip(src.iter()) {
+                let mut storage = self.storage_write()?;
+                for (self_storage_index, src_value) in self.layout().storage_indices().zip(src.iter()?) {
                     storage.set_unchecked(self_storage_index, src_value);
                 }
         
@@ -58,7 +57,7 @@ impl<T: WithDType> Tensor<T> {
 
 
 impl<From: WithDType> Tensor<From> {
-    pub fn cast<To: WithDType>(&self) -> Tensor<To> 
+    pub fn cast<To: WithDType>(&self) -> crate::Result<Tensor<To>> 
     where
         From: DTypeConvert<To>,
     {
@@ -68,8 +67,8 @@ impl<From: WithDType> Tensor<From> {
         //         return same_tensor.clone();
         //     }
         // }
-        let storage = self.storage_read().copy_map(self.layout(), From::convert);
-        Tensor::<To>::from_storage(storage, self.shape())
+        let storage = self.storage_read()?.copy_map(self.layout(), From::convert);
+        Ok(Tensor::<To>::from_storage(storage, self.shape(), Default::default()))
     }
 }
 
@@ -93,55 +92,55 @@ mod tests {
     #[test]
     fn test_copy_1d() {
         let a = Tensor::new(&[1, 2, 3]).unwrap();
-        let b = a.copy();
+        let b = a.copy().unwrap();
         assert_eq!(a.shape(), b.shape());
-        assert_eq!(a.to_vec(), b.to_vec());
+        assert_eq!(a.to_vec().unwrap(), b.to_vec().unwrap());
     }
 
     #[test]
     fn test_copy_2d() {
         let a = Tensor::new(&[[1, 2], [3, 4]]).unwrap();
-        let b = a.copy();
+        let b = a.copy().unwrap();
         assert_eq!(a.shape(), b.shape());
-        assert_eq!(a.to_vec(), b.to_vec());
+        assert_eq!(a.to_vec().unwrap(), b.to_vec().unwrap());
     }
 
     #[test]
     fn test_cast_i32_to_f32() {
         let a = Tensor::new(&[1i32, 2, 3]).unwrap();
-        let b: Tensor<f32> = a.cast();
+        let b: Tensor<f32> = a.cast().unwrap();
         assert_eq!(b.shape(), a.shape());
         let expected = Tensor::new(&[1.0f32, 2.0, 3.0]).unwrap();
-        assert!(b.allclose(&expected, 1e-6, 1e-6));
+        assert!(b.allclose(&expected, 1e-6, 1e-6).unwrap());
     }
 
     #[test]
     fn test_cast_f64_to_i32() {
         let a = Tensor::new(&[1.5f64, 2.7, 3.0]).unwrap();
-        let b: Tensor<i32> = a.cast();
+        let b: Tensor<i32> = a.cast().unwrap();
         assert_eq!(b.shape(), a.shape());
         let expected = Tensor::new(&[1i32, 2, 3]).unwrap(); // cast truncates
-        assert_eq!(b.to_vec(), expected.to_vec());
+        assert_eq!(b.to_vec().unwrap(), expected.to_vec().unwrap());
     }
 
     #[test]
     fn test_cast_2d() {
         let a = Tensor::new(&[[1i32, 2], [3, 4]]).unwrap();
-        let b: Tensor<f64> = a.cast();
+        let b: Tensor<f64> = a.cast().unwrap();
         assert_eq!(b.shape(), a.shape());
         let expected = Tensor::new(&[[1.0, 2.0], [3.0, 4.0]]).unwrap();
-        assert!(b.allclose(&expected, 1e-12, 1e-12));
+        assert!(b.allclose(&expected, 1e-12, 1e-12).unwrap());
     }
 
     #[test]
     fn test_copy_vs_cast() {
         let a = Tensor::new(&[1i32, 2, 3]).unwrap();
-        let b = a.copy();
-        let c: Tensor<f32> = a.cast();
+        let b = a.copy().unwrap();
+        let c: Tensor<f32> = a.cast().unwrap();
 
-        assert_eq!(b.to_vec(), a.to_vec());
+        assert_eq!(b.to_vec().unwrap(), a.to_vec().unwrap());
 
         let expected = Tensor::new(&[1.0f32, 2.0, 3.0]).unwrap();
-        assert!(c.allclose(&expected, 1e-6, 1e-6));
+        assert!(c.allclose(&expected, 1e-6, 1e-6).unwrap());
     }
 }

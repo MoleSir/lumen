@@ -1,6 +1,6 @@
 from collections import OrderedDict, namedtuple
 from typing import Union, Tuple, Any, Callable, TypeVar, Iterator, Set, Optional, overload, TypeVar, Mapping, Dict, List
-from .. import Parameter, Buffer, Init, empty_init
+from .. import Parameter, Buffer, Init, meta_init
 from ... import Tensor, no_grad, DType
 from ... import io as io 
 
@@ -262,7 +262,7 @@ class Module:
     
     @classmethod
     def from_safetensors(cls, config: Any, path: str): 
-        with empty_init():
+        with meta_init():
             module = cls.init(config, None) 
             if not isinstance(module, Module):
                 raise TypeError(f"{cls.__name__}.init must return a Module instance")

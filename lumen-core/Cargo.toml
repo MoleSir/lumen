@@ -16,3 +16,4 @@ rand = { workspace = true }
 rand_distr = { workspace = true }
 thiserrorctx = { workspace = true }
 thiserror = { workspace = true }
+bytemuck = { workspace = true }

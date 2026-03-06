@@ -95,9 +95,9 @@ pub struct SafeTensorsContent {
 }
 
 pub fn load_file<P: AsRef<Path>>(path: P) -> SafeTensorsResult<SafeTensorsContent> {
-    let file = File::open(path).context("read file")?;    
+    let file = File::open(path).map_err(SafeTensorsError::Io).context("read file")?;    
     
-    let mmap = unsafe { MmapOptions::new().map(&file).context("mmap")? };
+    let mmap = unsafe { MmapOptions::new().map(&file).map_err(SafeTensorsError::Io).context("mmap")? };
 
     // len of header
     let header_size_bytes = &mmap[0..8];
@@ -125,7 +125,7 @@ pub fn load_file<P: AsRef<Path>>(path: P) -> SafeTensorsResult<SafeTensorsConten
         let raw_bytes = &mmap[absolute_start..absolute_end];
         let dtype = info.dtype.try_into()?;
     
-        let tensor = utils::load_tensor(dtype, info.shape, raw_bytes).context("load tensor data")?;
+        let tensor = utils::load_tensor(dtype, info.shape, raw_bytes).map_err(SafeTensorsError::Core).context("load tensor data")?;
         tensors.insert(name, tensor);
     }
 
@@ -135,17 +135,17 @@ pub fn load_file<P: AsRef<Path>>(path: P) -> SafeTensorsResult<SafeTensorsConten
 pub fn load<R: std::io::Read>(reader: &mut R) -> SafeTensorsResult<SafeTensorsContent> {
     // Header Size
     let mut header_size_bytes = [0u8; 8];
-    reader.read_exact(&mut header_size_bytes).context("read header size bytes")?;
+    reader.read_exact(&mut header_size_bytes).map_err(SafeTensorsError::Io).context("read header size bytes")?;
     let header_size = usize::from_le_bytes(header_size_bytes);
 
     // Header
     let mut json_bytes = vec![0u8; header_size];
-    reader.read_exact(&mut json_bytes).context("read header")?;
+    reader.read_exact(&mut json_bytes).map_err(SafeTensorsError::Io).context("read header")?;
     let header: HashMap<String, serde_json::Value> = serde_json::from_slice(&json_bytes).context("parse header")?;
 
     // data
     let mut data_buffer = Vec::new();
-    reader.read_to_end(&mut data_buffer).context("read data")?;
+    reader.read_to_end(&mut data_buffer).map_err(SafeTensorsError::Io).context("read data")?;
 
     let mut metadata = None;
     let mut tensors = HashMap::new();
@@ -164,7 +164,7 @@ pub fn load<R: std::io::Read>(reader: &mut R) -> SafeTensorsResult<SafeTensorsCo
         let raw_bytes = &data_buffer[start..end];
         let dtype = info.dtype.try_into()?;
     
-        let tensor = utils::load_tensor(dtype, info.shape, raw_bytes).context("load tensor data")?;
+        let tensor = utils::load_tensor(dtype, info.shape, raw_bytes).map_err(SafeTensorsError::Core).context("load tensor data")?;
         tensors.insert(name, tensor);
     }
 
@@ -172,7 +172,7 @@ pub fn load<R: std::io::Read>(reader: &mut R) -> SafeTensorsResult<SafeTensorsCo
 }
 
 pub fn save_file<P: AsRef<Path>>(tensors: &HashMap<String, DynTensor>, metadata: Option<&HashMap<String, String>>, path: P) -> SafeTensorsResult<()> {    
-    let file = File::create(path).context("create file")?;
+    let file = File::create(path).map_err(SafeTensorsError::Io).context("create file")?;
     let mut writer = BufWriter::new(file);
     save(tensors, metadata, &mut writer)
 }
@@ -213,12 +213,12 @@ pub fn save<W: Write>(tensors: &HashMap<String, DynTensor>, metadata: Option<&Ha
     let header_size_bytes = header_size_u64.to_le_bytes();
 
     // write header
-    writer.write_all(&header_size_bytes).context("write header_size_bytes")?;
-    writer.write_all(&header_bytes).context("write header")?;
+    writer.write_all(&header_size_bytes).map_err(SafeTensorsError::Io).context("write header_size_bytes")?;
+    writer.write_all(&header_bytes).map_err(SafeTensorsError::Io).context("write header")?;
 
     // write data iter
     for (_, tensor) in tensors_ordered {
-        utils::write_tensor(writer, tensor).context("write tensor data")?;
+        utils::write_tensor(writer, tensor).map_err(SafeTensorsError::Core).context("write tensor data")?;
     }
     writer.flush()?;
 

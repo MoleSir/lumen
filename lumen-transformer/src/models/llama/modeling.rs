@@ -210,7 +210,7 @@ impl<T: FloatDType> LlamaMlp<T> {
     pub fn forward(&self, x: &Tensor<T>) -> LlamaResult<Tensor<T>> {
         let up = self.up_proj.forward(x)?;
         let gate = self.gate_proj.forward(x)?;
-        let up_gate = (up * gate).silu();
+        let up_gate = (up * gate).silu()?;
         let out = self.down_proj.forward(&up_gate)?;
         Ok(out)
     }
@@ -273,7 +273,7 @@ impl<T: FloatDType> LlamaAttention<T> {
         // (batch_size, num_attn_heads, seq_len, head_size)
         let q = q.reshape((batch_size, seq_len, self.num_attention_heads, self.head_size))?
             .transpose(1, 2)?
-            .contiguous();
+            .contiguous()?;
 
         // (batch_size, seq_len, head_size * num_kv_heads) => 
         // (batch_size, seq_len, num_kv_heads, head_size) => 
@@ -281,7 +281,7 @@ impl<T: FloatDType> LlamaAttention<T> {
         let k = k
             .reshape((batch_size, seq_len, self.num_kv_heads, self.head_size))?
             .transpose(1, 2)?
-            .contiguous();
+            .contiguous()?;
 
         // (batch_size, seq_len, head_size * num_kv_heads) => 
         // (batch_size, seq_len, num_kv_heads, head_size) => 
@@ -289,7 +289,7 @@ impl<T: FloatDType> LlamaAttention<T> {
         let mut v = v
             .reshape((batch_size, seq_len, self.num_kv_heads, self.head_size))?
             .transpose(1, 2)?
-            .contiguous();
+            .contiguous()?;
 
         let q = self.apply_rotary_emb(&q, index_pos, cache)?; // (batch_size, num_attn_heads, seq_len, head_size)
         let mut k = self.apply_rotary_emb(&k, index_pos, cache)?; // (batch_size, num_kv_heads, seq_len, head_size)
@@ -298,22 +298,22 @@ impl<T: FloatDType> LlamaAttention<T> {
             if let Some((cache_k, cache_v)) = &cache.kvs[layer_idx] {
                 // cat [(batch_size, num_kv_heads, cache_seq_len, head_size), (batch_size, num_kv_heads, seq_len, head_size)]
                 // => (batch_size, num_kv_heads, total_seq_len, head_size)
-                k = Tensor::cat(&[cache_k, &k], 2)?.contiguous();
-                v = Tensor::cat(&[cache_v, &v], 2)?.contiguous();
+                k = Tensor::cat(&[cache_k, &k], 2)?.contiguous()?;
+                v = Tensor::cat(&[cache_v, &v], 2)?.contiguous()?;
                 
                 // if too long
                 let k_seq_len = k.dims()[2];
                 if k_seq_len > self.max_position_embeddings {
                     k = k
                         .narrow(2, k_seq_len - self.max_position_embeddings, self.max_position_embeddings)?
-                        .contiguous();
+                        .contiguous()?;
                 }
 
                 let v_seq_len = k.dims()[2];
                 if v_seq_len > self.max_position_embeddings {
                     v = v
                         .narrow(2, v_seq_len - self.max_position_embeddings, self.max_position_embeddings)?
-                        .contiguous();
+                        .contiguous()?;
                 }
             }
             cache.kvs[layer_idx] = Some((k.clone(), v.clone()))
@@ -429,7 +429,7 @@ impl<T: FloatDType> LlamaAttention<T> {
         let x1 = x.narrow(last_dim, 0, half_dim)?;
         let x2 = x.narrow(last_dim, half_dim, half_dim)?;
 
-        let neg_x2 = x2.neg();
+        let neg_x2 = x2.neg()?;
 
         let x_rotated = Tensor::cat(&[&neg_x2, &x1], last_dim)?;
         Ok(x_rotated)
@@ -475,9 +475,9 @@ impl<T: FloatDType> LlamaRMSNorm<T> {
 
     pub fn forward(&self, hidden_states: &Tensor<T>) -> LlamaResult<Tensor<T>> {
         // (xxx, hidden_size) => (xxx, hidden_size)
-        let variance = hidden_states.pow(T::two()).mean_keepdim(D::Minus1)?;
+        let variance = hidden_states.pow(T::two())?.mean_keepdim(D::Minus1)?;
         // (xxx, hidden_size) => (xxx, hidden_size) 
-        let rms = (variance + self.variance_epsilon).sqrt();
+        let rms = (variance + self.variance_epsilon).sqrt()?;
         let hidden_states = hidden_states.broadcast_div(&rms)?;
         // (xxx, hidden_size) => (xxx, hidden_size)
         let out = self.weight.broadcast_mul(&hidden_states)?;
@@ -520,8 +520,8 @@ impl<T: FloatDType> LlamaCache<T> {
         let idx_theta = idx_theta.reshape((config.max_position_embeddings, 1))?; // (max_position_embeddings, 1)
         let idx_theta = idx_theta.matmul(&theta)?; // (max_position_embeddings, head_size//2)
 
-        let cos = idx_theta.cos(); // (max_position_embeddings, head_size//2)
-        let sin = idx_theta.sin(); // (max_position_embeddings, head_size//2)
+        let cos = idx_theta.cos()?; // (max_position_embeddings, head_size//2)
+        let sin = idx_theta.sin()?; // (max_position_embeddings, head_size//2)
 
         Ok(Self { 
             use_kv_cache,

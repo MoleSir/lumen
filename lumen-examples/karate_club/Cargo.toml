@@ -3,6 +3,12 @@ name = "karate_club"
 version = "0.1.0"
 edition = "2024"
 
+
+[[bin]]
+name = "karate_club" 
+path = "main.rs"
+
+
 [dependencies]
 lumen-core = { path = "../../lumen-core" }
 lumen-nn = { path = "../../lumen-nn" }

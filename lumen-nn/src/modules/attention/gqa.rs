@@ -130,7 +130,7 @@ impl<T: FloatDType> GroupQueryAttention<T> {
         // (batch_size, seq_len, hidden_size)
         let attn_result = attn_result
             .transpose(1, 2)?
-            .contiguous()
+            .contiguous()?
             .reshape((batch_size, seq_len, self.hidden_size))?;
 
         // 7. Output Projection

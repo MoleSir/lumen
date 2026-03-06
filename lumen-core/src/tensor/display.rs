@@ -11,6 +11,9 @@ use crate::{FloatCategory, FloatDType, IntCategory, IntDType, NumCategory, NumDT
 impl<T: WithDType> std::fmt::Debug for Tensor<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "Tensor[")?;
+        if self.is_meta() {
+            return write!(f, "Meta; {:?}, {}]", self.dims(), self.dtype())
+        }
         match self.dims() {
             [] => {
                 if let Ok(v) = self.to_scalar() {
@@ -18,7 +21,7 @@ impl<T: WithDType> std::fmt::Debug for Tensor<T> {
                 }
             }
             [s] if *s < 10 => {
-                for (i, v) in self.to_vec().iter().enumerate() {
+                for (i, v) in self.to_vec().expect("Meta Tensor").iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
@@ -149,7 +152,7 @@ trait TensorFormatter {
     fn max_width(&self, to_display: &Tensor<Self::Elem>) -> usize {
         let mut max_width = 1;
         if let Ok(t) = to_display.flatten_all() {
-            let vs = t.to_vec();
+            let vs = t.to_vec().expect("Meta Tensor");
             for &v in vs.iter() {
                 let mut fmt_size = FmtSize::new();
                 let _res = self.fmt(v, 1, &mut fmt_size);
@@ -189,7 +192,7 @@ trait TensorFormatter {
                 if let Ok(t) = t
                     .narrow(0, 0, edge_items)
                 {
-                    for v in t.to_vec().into_iter() {
+                    for v in t.to_vec().expect("Meta Tensor").into_iter() {
                         self.fmt(v, max_w, f)?;
                         write!(f, ", ")?;
                     }
@@ -198,7 +201,7 @@ trait TensorFormatter {
                 if let Ok(t) = t
                     .narrow(0, v - edge_items, edge_items)
                 {
-                    for v in t.to_vec().into_iter() {
+                    for v in t.to_vec().expect("Meta Tensor").into_iter() {
                         write!(f, ", ")?;
                         self.fmt(v, max_w, f)?;
                     }
@@ -206,7 +209,7 @@ trait TensorFormatter {
             }
             [_] => {
                 let elements_per_line = usize::max(1, po.line_width / (max_w + 2));
-                let vs = t.to_vec();
+                let vs = t.to_vec().expect("Meta Tensor");
                 for (i, v) in vs.into_iter().enumerate() {
                     if i > 0 {
                         if i % elements_per_line == 0 {
@@ -276,7 +279,7 @@ impl<S: FloatDType> FloatFormatter<S> {
         // values that end up being displayed according to [threshold].
         let values = t
             .flatten_all()?
-            .to_vec()
+            .to_vec().expect("Meta Tensor")
             .into_iter()
             .filter(|v: &S| v.is_finite() && !v.is_zero())
             .collect::<Vec<_>>();
@@ -407,6 +410,15 @@ fn get_summarized_data<T: WithDType>(t: &Tensor<T>, edge_items: usize) -> Result
 
 trait Display<T: WithDType> {
     fn fmt_display(tensor: &Tensor<T>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if tensor.is_meta() {
+            return write!(
+                f,
+                "Tensor[Meta; {:?}, {}]",
+                tensor.dims(),
+                tensor.dtype(),
+            )
+        }
+
         let po: std::sync::MutexGuard<'_, PrinterOptions> = PRINT_OPTS.lock().unwrap();
         let summarize = tensor.element_count() > po.threshold;
         let to_display = if summarize {

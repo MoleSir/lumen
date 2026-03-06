@@ -1,0 +1,23 @@
+[package]
+name = "rev_number"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "seq2seq" 
+path = "seq2seq.rs"
+
+[[bin]]
+name = "attention" 
+path = "attention.rs"
+
+[[bin]]
+name = "pointer" 
+path = "pointer.rs"
+
+[dependencies]
+lumen-core = { path = "../../lumen-core" }
+lumen-nn = { path = "../../lumen-nn" }
+lumen-dataset = { path = "../../lumen-dataset" }
+anyhow = "1.0"
+rand = "0.9"

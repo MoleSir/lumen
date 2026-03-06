@@ -4,7 +4,7 @@ use std::cell::Cell;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Init<T: FloatDType> {
-    Uninit,
+    Empty,
 
     /// Fills tensor with specified value everywhere
     Constant {
@@ -183,11 +183,11 @@ impl<T: FloatDType> Init<T> {
 
     pub fn apply(&self, shape: impl Into<Shape>, fan_in: Option<usize>, fan_out: Option<usize>) -> NnResult<Tensor<T>> {
         let shape = shape.into();
-        let result = if is_empty_init() {
-            Tensor::empty(shape)
+        let result = if is_meta_init() {
+            Tensor::meta(shape)
         } else {
             match self {
-                Init::Uninit => Tensor::uninit(shape),
+                Init::Empty => Tensor::empty(shape),
                 Init::Constant { value } => Tensor::full(shape, *value),
                 Init::Ones => Tensor::ones(shape),
                 Init::Zeros => Tensor::zeros(shape),
@@ -244,28 +244,28 @@ impl<T: FloatDType> Init<T> {
 }
 
 thread_local! {
-    static EMPTY_INIT: Cell<bool> = Cell::new(false);
+    static META_INIT: Cell<bool> = Cell::new(false);
 }
 
-fn is_empty_init() -> bool {
-    EMPTY_INIT.with(|c| c.get())
+fn is_meta_init() -> bool {
+    META_INIT.with(|c| c.get())
 }
 
-fn set_empty_init(enabled: bool) {
-    EMPTY_INIT.with(|c| c.set(enabled));
+fn set_meta_init(enabled: bool) {
+    META_INIT.with(|c| c.set(enabled));
 }
 
-pub struct EmptyInitGuard;
+pub struct MetaInitGuard;
 
-impl EmptyInitGuard {
+impl MetaInitGuard {
     pub fn new() -> Self {
-        set_empty_init(true);
+        set_meta_init(true);
         Self
     }
 }
 
-impl Drop for EmptyInitGuard {
+impl Drop for MetaInitGuard {
     fn drop(&mut self) {
-        set_empty_init(false);
+        set_meta_init(false);
     }
 }
