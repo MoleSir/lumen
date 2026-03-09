@@ -90,7 +90,7 @@ where
 #[cfg(test)]
 mod test {
     use std::{collections::HashMap, convert::Infallible};
-    use crate::{components::{Model, Normalize, PostProcess, PreTokenize, SpaceDecode}, types::{PreToken, Token}};
+    use crate::{components::{pre_tokenize::WhitespacePreTokenizer, Model, Normalize, PostProcess, SpaceDecode}, types::{PreToken, Token}};
     use super::Tokenizer;
 
     struct LowercaseNormalizer;
@@ -98,25 +98,6 @@ mod test {
         type Error = Infallible;
         fn normalize(&self, text: &str) -> Result<String, Infallible> {
             Ok(text.to_lowercase())
-        }
-    }
-
-    struct WhitespacePreTokenizer;
-    impl PreTokenize for WhitespacePreTokenizer {
-        type Error = Infallible;
-        fn pre_tokenize(&self, text: String) -> Result<Vec<PreToken>, Self::Error> {
-            let mut result = vec![];
-            let mut start = 0;
-            for word in text.split_whitespace() {
-                let idx = text[start..].find(word).unwrap();
-                let abs_start = start + idx;
-                let abs_end = abs_start + word.len();
-
-                result.push(PreToken::new(word, (abs_start, abs_end)));
-                start = abs_end;
-            }
-            
-            Ok(result)
         }
     }
 

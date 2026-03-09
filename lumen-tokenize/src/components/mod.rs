@@ -14,8 +14,7 @@ pub trait Normalize {
     fn normalize(&self, text: &str) -> Result<String, Self::Error>;
 }
 
-/// The `PreTokenize` is in charge of doing the pre-segmentation step. It splits the given string
-/// in multiple substrings.
+/// The `PreTokenize` is in charge of doing the pre-segmentation step. It splits the given string in multiple substrings.
 pub trait PreTokenize {
     type Error: std::error::Error + 'static;
     fn pre_tokenize(&self, text: String) -> Result<Vec<PreToken>, Self::Error>;

@@ -21,3 +21,10 @@ impl PreToken {
         Self { value: value.into(), offset }
     }
 }
+
+impl Into<PreToken> for &str {
+    fn into(self) -> PreToken {
+        let len = self.len();
+        PreToken::new(self, (0, len))
+    }
+}
