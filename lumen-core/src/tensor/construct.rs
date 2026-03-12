@@ -476,6 +476,16 @@ impl<S: WithDType, const N: usize> ToTensor<S> for &[S; N] {
     }
 }
 
+impl<S: WithDType, const N: usize> ToTensor<S> for [S; N] {
+    fn shape(&self) -> Result<Shape> {
+        Ok(Shape::from(self.len()))    
+    }
+
+    fn to_storage(self) -> Result<Storage<S>> {
+        Ok(Storage::new(self.to_vec()))
+    }
+}
+
 impl<S: WithDType> ToTensor<S> for &[S] {
     fn shape(&self) -> Result<Shape> {
         Ok(Shape::from(self.len()))    

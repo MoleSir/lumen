@@ -171,6 +171,9 @@ pub enum Error {
         op: &'static str,
     },
 
+    #[error("boolean index should like vector, but got {0}")]
+    BooleanIndexShouldLikeVector(Shape),
+
     #[error("index {index} of out range in {len} len vector")]
     VectorIndexOutOfRange {
         len: usize,

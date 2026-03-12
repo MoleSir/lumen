@@ -14,6 +14,24 @@ impl<T: WithDType> Tensor<T> {
                     current_dim += 1;
                     out
                 }
+                Indexer::Boolean(index) => {
+                    if index.dims1()? != x.dims()[current_dim] {
+                        return Err(Error::BooleanIndexShouldLikeVector(index.shape().clone()))
+                    }
+
+                    // index is  a 1'dim, len == x.dims(current_dim)
+                    // TODO: better
+                    let index = index.to_vec()?
+                        .into_iter()
+                        .enumerate()
+                        .filter(|(_, v)| *v)
+                        .map(|(i, _)| i as u32)
+                        .collect::<Vec<_>>();
+                    let index = Tensor::new(index)?;
+                    let out = x.index_select(index, current_dim)?;
+                    current_dim += 1;
+                    out
+                }
             };
         }
         Ok(x)
@@ -260,6 +278,7 @@ impl<T: WithDType> Tensor<T> {
 pub enum Indexer {
     Select(usize),
     Slice(Slice),
+    Boolean(Tensor<bool>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -328,6 +347,18 @@ impl From<usize> for Indexer {
 impl From<Slice> for Indexer {
     fn from(value: Slice) -> Self {
         Indexer::Slice(value)
+    }
+}
+
+impl From<&Tensor<bool>> for Indexer {
+    fn from(value: &Tensor<bool>) -> Self {
+        Indexer::Boolean(value.clone())
+    }
+}
+
+impl From<Tensor<bool>> for Indexer {
+    fn from(value: Tensor<bool>) -> Self {
+        Indexer::Boolean(value)
     }
 }
 
@@ -456,6 +487,18 @@ mod test {
         assert_eq!(selected_col.shape().dims(), &[3, 1]);
         let data_col = selected_col.to_vec().unwrap();
         assert_eq!(data_col, vec![1, 5, 9]);
+    }
+
+    #[test]
+    fn test_boolean_index() {
+        // [[ 0,  1,  2,  3],
+        //  [ 4,  5,  6,  7],
+        //  [ 8,  9, 10, 11]]
+        let arr = Tensor::arange(0, 12).unwrap().reshape((3, 4)).unwrap();
+        let index = Tensor::new([true, false, true]).unwrap();
+
+        let selected = arr.index(index).unwrap();
+        println!("{}", selected);
     }
 
     #[test]
