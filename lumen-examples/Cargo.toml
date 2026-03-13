@@ -11,4 +11,6 @@ members = [
     "rev_number",
     "sort_number",
     "ssl",
+    "fl_dtree",
+    "fl_dtree_tcp",
 ]
