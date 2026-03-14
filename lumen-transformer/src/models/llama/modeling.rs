@@ -209,9 +209,9 @@ impl<T: FloatDType> ModuleInit<T> for LlamaMlp<T> {
 impl<T: FloatDType> LlamaMlp<T> {
     pub fn forward(&self, x: &Tensor<T>) -> LlamaResult<Tensor<T>> {
         let up = self.up_proj.forward(x)?;
-        let gate = self.gate_proj.forward(x)?;
-        let up_gate = (up * gate).silu()?;
-        let out = self.down_proj.forward(&up_gate)?;
+        let gate = self.gate_proj.forward(x)?.silu()?;
+        let hidden = up * gate;
+        let out = self.down_proj.forward(&hidden)?;
         Ok(out)
     }
 }
@@ -436,10 +436,18 @@ impl<T: FloatDType> LlamaAttention<T> {
     }
 
     fn repeat_kv(&self, k: &Tensor<T>, v: &Tensor<T>) -> LlamaResult<(Tensor<T>, Tensor<T>)> {
-        let repeat_times = self.num_attention_heads / self.num_kv_heads;
-        let k = k.repeat_dim(1, repeat_times)?;
-        let v = v.repeat_dim(1, repeat_times)?;
+        let k = self.repeat(k)?;
+        let v = self.repeat(v)?;
         Ok((k, v))
+    }
+
+    fn repeat(&self, k: &Tensor<T>) -> LlamaResult<Tensor<T>> {
+        let repeat_times = self.num_attention_heads / self.num_kv_heads;
+        let (batch_size, _num_kv_heads, seq_len, head_size) = k.dims4()?;
+        let k = k.unsqueeze(2)?; 
+        let k = k.repeat_dim(2, repeat_times)?;
+        let k = k.reshape((batch_size, self.num_attention_heads, seq_len, head_size))?;
+        Ok(k)
     }
 }
 

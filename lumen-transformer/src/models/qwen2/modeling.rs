@@ -1,44 +1,63 @@
 use std::collections::HashMap;
 use lumen_core::{FloatDType, IntTensor, Tensor, D};
-use lumen_macros::Module;
-use lumen_nn::{init::Init, Embedding, Linear, ModuleInit, Parameter};
+use lumen_nn::{init::Init, Embedding, Linear, Module, ModuleInit, Parameter};
 use thiserrorctx::Context;
-use super::{DeepSeekConfig, DeepSeekCtxError, DeepSeekError, DeepSeekResult};
-
+use super::{Qwen2Config, Qwen2CtxError, Qwen2Error, Qwen2Result};
 
 // ========================================================================= //
 //                For Causal LM
 // ========================================================================= //
 
 #[derive(Module)]
-pub struct DeepSeekForCausalLM<T: FloatDType> {
-    pub model: DeepSeekModel<T>,
-    pub lm_head: Linear<T>, 
+pub struct Qwen2ForCausalLM<T: FloatDType> {
+    pub model: Qwen2Model<T>,
+    pub lm_head: Option<Linear<T>>,
+
+    #[module(skip)]
+    pub config: Qwen2Config,
 }
 
-impl<T: FloatDType> ModuleInit<T> for DeepSeekForCausalLM<T> {
-    type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+impl<T: FloatDType> ModuleInit<T> for Qwen2ForCausalLM<T> {
+    type Config = Qwen2Config;
+    type Error = Qwen2CtxError;
 
-    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
-        let model = DeepSeekModel::init(config, init).context("init llama model")?;
-        let lm_head = Linear::new(config.hidden_size, config.vocab_size, false, Some(init.unwrap_or_else(default_init_linear)))
-            .map_err(DeepSeekError::Nn)
-            .context("init lm head")?;
-        
-        Ok(Self { model, lm_head })
+    fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
+        let model = Qwen2Model::init(config, init).context("init Qwen2 model")?;
+        let lm_head = if config.tie_word_embeddings {
+            None
+        } else {
+            let lm_head_init = init.unwrap_or_else(default_init_linear);
+            let lm_head = Linear::new(config.hidden_size, config.vocab_size, false, Some(lm_head_init))
+                .map_err(Qwen2Error::Nn)
+                .context("init lm head")?;
+            Some(lm_head)
+        };
+        Ok(Self { model, lm_head, config: config.clone() })
     }
 }
 
-impl<T: FloatDType> DeepSeekForCausalLM<T> {
-    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut DeepSeekCache<T>) -> DeepSeekResult<Tensor<T>> {
+impl<T: FloatDType> Qwen2ForCausalLM<T> {
+    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Qwen2Cache<T>) -> Qwen2Result<Tensor<T>> {
         // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
         let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
-        // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
-        let hidden_states = self.lm_head.forward(&hidden_states)
-            .map_err(DeepSeekError::Nn)
-            .context("lm head forward")?;
-        Ok(hidden_states)
+        let logits = match &self.lm_head {
+            Some(lm_head) => {
+                // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
+                let logits = lm_head.forward(&hidden_states)
+                    .map_err(Qwen2Error::Nn)
+                    .context("lm head forward")?;
+                logits
+            }
+            None => {
+                // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
+                let wte_weight = &self.model.embed.embeddings;
+                let logits = lumen_nn::functional::linear(&hidden_states, &wte_weight, None)
+                    .map_err(|e| Qwen2Error::Nn(e))
+                    .context("lm head forward")?;
+                logits
+            }
+        };
+        Ok(logits)
     }
 }
 
@@ -47,38 +66,38 @@ impl<T: FloatDType> DeepSeekForCausalLM<T> {
 // ========================================================================= //
 
 #[derive(Module)]
-pub struct DeepSeekModel<T: FloatDType> {
+pub struct Qwen2Model<T: FloatDType> {
     pub embed: Embedding<T>,
-    pub layers: Vec<DeepSeekLayer<T>>,
-    pub norm: DeepSeekRMSNorm<T>,
+    pub layers: Vec<Qwen2Layer<T>>,
+    pub norm: Qwen2RMSNorm<T>,
 }
 
-impl<T: FloatDType> ModuleInit<T> for DeepSeekModel<T> {
-    type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+impl<T: FloatDType> ModuleInit<T> for Qwen2Model<T> {
+    type Config = Qwen2Config;
+    type Error = Qwen2CtxError;
 
-    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
+    fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
         let embed_init = init.unwrap_or_else(default_init_linear);
         let embed = Embedding::new(config.vocab_size, config.hidden_size, Some(embed_init))
-            .map_err(DeepSeekError::Nn)
+            .map_err(|e| Qwen2Error::Nn(e))
             .context("init embed")?;
         
         let mut layers = Vec::new();
         for _ in 0..config.num_hidden_layers {
-            layers.push(DeepSeekLayer::init(config, init)?);
+            layers.push(Qwen2Layer::init(config, init)?);
         }
         
-        let norm = DeepSeekRMSNorm::init(config, init).context("init rms norm")?;
+        let norm = Qwen2RMSNorm::init(config, init).context("init rms norm")?;
 
         Ok(Self { embed, layers, norm })
     }
 }
 
-impl<T: FloatDType> DeepSeekModel<T> {
-    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut DeepSeekCache<T>) -> DeepSeekResult<Tensor<T>> {
+impl<T: FloatDType> Qwen2Model<T> {
+    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Qwen2Cache<T>) -> Qwen2Result<Tensor<T>> {
         // embedding: (batch_size, seq_len) -> (batch_size, seq_len, hidden_size)
         let mut hidden_states = self.embed.forward(input_ids)
-            .map_err(DeepSeekError::Nn)
+            .map_err(|e| Qwen2Error::Nn(e))
             .context("embed forward")?;
         
         for (i, layer) in self.layers.iter().enumerate() {
@@ -99,30 +118,71 @@ impl<T: FloatDType> DeepSeekModel<T> {
 // ========================================================================= //
 
 #[derive(Module)]
-pub struct DeepSeekLayer<T: FloatDType> {
-    pub self_attn: DeepSeekAttention<T>,
-    pub moe: DeepSeekMoE<T>,
-    pub input_layernorm: DeepSeekRMSNorm<T>,
-    pub post_attention_layernorm: DeepSeekRMSNorm<T>,
+pub struct Qwen2Layer<T: FloatDType> {
+    pub self_attn: Qwen2Attention<T>,
+    pub mlp: Qwen2Mlp<T>,
+    pub input_layernorm: Qwen2RMSNorm<T>,
+    pub post_attention_layernorm: Qwen2RMSNorm<T>,
 }
 
-impl<T: FloatDType> ModuleInit<T> for DeepSeekLayer<T> {
-    type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+impl<T: FloatDType> ModuleInit<T> for Qwen2Layer<T> {
+    type Config = Qwen2Config;
+    type Error = Qwen2CtxError;
 
-    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
-        let self_attn = DeepSeekAttention::init(config, init).context("init attention")?;
-        let moe = DeepSeekMoE::init(config, init).context("init moe")?;
-        let input_layernorm = DeepSeekRMSNorm::init(config, init).context("init input layernorm")?;
-        let post_attention_layernorm = DeepSeekRMSNorm::init(config, init).context("init post atten layernorm")?;
+    fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
+        let self_attn = Qwen2Attention::init(config, init).context("init attention")?;
+        let mlp = Qwen2Mlp::init(config, init).context("init mlp")?;
+        let input_layernorm = Qwen2RMSNorm::init(config, init).context("init input layernorm")?;
+        let post_attention_layernorm = Qwen2RMSNorm::new(config).context("init post atten layernorm")?;
         Ok(Self {
-            self_attn, moe, input_layernorm, post_attention_layernorm,
+            self_attn, mlp, input_layernorm, post_attention_layernorm,
         })
     }
 }
 
-impl<T: FloatDType> DeepSeekLayer<T> {
-    pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut DeepSeekCache<T>) -> DeepSeekResult<Tensor<T>> {    
+impl<T: FloatDType> Qwen2Layer<T> {
+    /*
+
+                |
+                +---------------+
+                ^               |
+                |               |
+    +-----------------------+   |
+    |                       |   |
+    |           Mlp         |   |
+    |                       |   |
+    +-----------------------+   |
+                ^               |
+                |               |
+        +---------------+       |
+        |    RMSNorm    |       |
+        +---------------+       |
+                ^               |
+                |               |
+                +---------------+
+                |
+                |
+                |
+                +---------------+
+                ^               |
+                |               |
+    +-----------------------+   |
+    |                       |   |
+    |        Attention      |   |
+    |                       |   |
+    +-----------------------+   |
+                ^               |
+                |               |
+        +---------------+       |
+        |    RMSNorm    |       |
+        +---------------+       |
+                ^               |
+                |               |
+                +---------------+
+                |
+    
+    */
+    pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut Qwen2Cache<T>) -> Qwen2Result<Tensor<T>> {    
         // Self Attention
         let residual = hidden_states.clone();
         let hidden_states = self.input_layernorm.forward(hidden_states).context("input layernorm forward")?;
@@ -132,81 +192,10 @@ impl<T: FloatDType> DeepSeekLayer<T> {
         // Mlp
         let residual = hidden_states.clone();
         let hidden_states = self.post_attention_layernorm.forward(&hidden_states).context("post attention layer norm forward")?;
-        let hidden_states = self.moe.forward(&hidden_states).context("moe forward")?;
+        let hidden_states = self.mlp.forward(&hidden_states).context("mlp forward")?;
         let hidden_states = residual + hidden_states;
 
         Ok(hidden_states)
-    }
-}
-
-// ========================================================================= //
-//                MoE
-// ========================================================================= //
-
-#[derive(Module)]
-pub struct DeepSeekMoE<T: FloatDType> {
-    pub gate: Linear<T>,
-    pub experts: Vec<DeepSeekMlp<T>>,
-    pub shared_experts: DeepSeekMlp<T>,
-
-    #[module(skip)]
-    pub num_experts_per_tok: usize,
-    #[module(skip)]
-    pub num_routed_experts: usize,
-}
-
-impl<T: FloatDType> ModuleInit<T> for DeepSeekMoE<T> {
-    type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
-
-    fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
-        let gate_init = init.unwrap_or_else(default_init_linear);
-        let gate = Linear::new(config.hidden_size, config.num_routed_experts, false, Some(gate_init))
-            .map_err(DeepSeekError::Nn)
-            .context("init moe gate")?;
-    
-        let mut experts = Vec::new();
-        for i in 0..config.num_routed_experts {
-            let expert = DeepSeekMlp::init(
-                config.hidden_size, 
-                config.intermediate_size, 
-                init
-            ).with_context(|| format!("init expert {}", i))?;
-            experts.push(expert);
-        }
-
-        let shared_experts = DeepSeekMlp::init(
-            config.hidden_size,
-            config.shared_expert_intermediate_size,
-            init
-        ).context("init shared experts")?;
-
-        Ok(Self {
-            gate,
-            experts,
-            shared_experts,
-            num_experts_per_tok: config.num_experts_per_tok,
-            num_routed_experts: config.num_routed_experts,
-        })
-    }
-}
-
-impl<T: FloatDType> DeepSeekMoE<T> {
-    #[allow(unused)]
-    pub fn forward(&self, x: &Tensor<T>) -> DeepSeekResult<Tensor<T>> {
-        // 1. Shared Experts Path
-        // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, shared_expert_intermediate_size)
-        let shared_output = self.shared_experts.forward(x)?;
-
-        // 2.  Router (Gate)
-        // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, num_routed_experts)
-        let router_logits = self.gate.forward(x)?; 
-        // (batch_size, seq_len, num_routed_experts) => (batch_size, seq_len, num_routed_experts)
-        // for each token, get `num_routed_experts` prob to each expert
-        let routing_weights = lumen_nn::functional::softmax(&router_logits, D::Minus1)?;
-
-        // 3. Top-K Selection
-        unimplemented!()
     }
 }
 
@@ -215,23 +204,29 @@ impl<T: FloatDType> DeepSeekMoE<T> {
 // ========================================================================= //
 
 #[derive(Module)]
-pub struct DeepSeekMlp<T: FloatDType> {
+pub struct Qwen2Mlp<T: FloatDType> {
     pub up_proj: Linear<T>,
     pub gate_proj: Linear<T>,
     pub down_proj: Linear<T>,
 }
 
-impl<T: FloatDType> DeepSeekMlp<T> {
-    pub fn init(hidden_size: usize, intermediate_size: usize, init: Option<Init<T>>) -> DeepSeekResult<Self> {
+impl<T: FloatDType> ModuleInit<T> for Qwen2Mlp<T> {
+    type Config = Qwen2Config;
+    type Error = Qwen2CtxError;
+
+    fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
         let init = init.unwrap_or_else(default_init_linear);
-        let up_proj   = Linear::new(hidden_size, intermediate_size, false, Some(init))?;
-        let gate_proj = Linear::new(hidden_size, intermediate_size, false, Some(init))?;
-        let down_proj = Linear::new(intermediate_size, hidden_size, false, Some(init))?;
+
+        let up_proj   = Linear::new(config.hidden_size, config.intermediate_size, false, Some(init))?;
+        let gate_proj = Linear::new(config.hidden_size, config.intermediate_size, false, Some(init))?;
+        let down_proj = Linear::new(config.intermediate_size, config.hidden_size, false, Some(init))?;
     
         Ok(Self { up_proj, down_proj, gate_proj })
     }
+}
 
-    pub fn forward(&self, x: &Tensor<T>) -> DeepSeekResult<Tensor<T>> {
+impl<T: FloatDType> Qwen2Mlp<T> {
+    pub fn forward(&self, x: &Tensor<T>) -> Qwen2Result<Tensor<T>> {
         let up = self.up_proj.forward(x)?;
         let gate = self.gate_proj.forward(x)?.silu()?;
         let hidden = up * gate;
@@ -245,7 +240,7 @@ impl<T: FloatDType> DeepSeekMlp<T> {
 // ========================================================================= //
 
 #[derive(Module)]
-pub struct DeepSeekAttention<T: FloatDType> {
+pub struct Qwen2Attention<T: FloatDType> {
     pub q_proj: Linear<T>,
     pub k_proj: Linear<T>,
     pub v_proj: Linear<T>,
@@ -261,18 +256,18 @@ pub struct DeepSeekAttention<T: FloatDType> {
     pub max_position_embeddings: usize,
 }
 
-impl<T: FloatDType> ModuleInit<T> for DeepSeekAttention<T> {
-    type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+impl<T: FloatDType> ModuleInit<T> for Qwen2Attention<T> {
+    type Config = Qwen2Config;
+    type Error = Qwen2CtxError;
 
-    fn init(config: &DeepSeekConfig, init: Option<Init<T>>) -> DeepSeekResult<Self> {
+    fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
         // TODO: check 
         let head_size = config.hidden_size / config.num_attention_heads;
         
         let init = init.unwrap_or_else(default_init_linear);
-        let q_proj = Linear::new(config.hidden_size, config.hidden_size, false, Some(init))?;
-        let k_proj = Linear::new(config.hidden_size, config.num_kv_heads * head_size, false, Some(init))?;
-        let v_proj = Linear::new(config.hidden_size, config.num_kv_heads * head_size, false, Some(init))?;
+        let q_proj = Linear::new(config.hidden_size, config.hidden_size, true, Some(init))?;
+        let k_proj = Linear::new(config.hidden_size, config.num_kv_heads * head_size, true, Some(init))?;
+        let v_proj = Linear::new(config.hidden_size, config.num_kv_heads * head_size, true, Some(init))?;
         let o_proj = Linear::new(config.hidden_size, config.hidden_size, false, Some(init))?;
 
         Ok(Self {
@@ -285,8 +280,8 @@ impl<T: FloatDType> ModuleInit<T> for DeepSeekAttention<T> {
     }
 }
 
-impl<T: FloatDType> DeepSeekAttention<T> {
-    pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut DeepSeekCache<T>) -> DeepSeekResult<Tensor<T>> {
+impl<T: FloatDType> Qwen2Attention<T> {
+    pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut Qwen2Cache<T>) -> Qwen2Result<Tensor<T>> {
         let (batch_size, seq_len, hidden_size) = hidden_states.dims3()?;
         let q = self.q_proj.forward(hidden_states)?; // (batch_size, seq_len, head_size * num_attn_heads)
         let k = self.k_proj.forward(hidden_states)?; // (batch_size, seq_len, head_size * num_kv_heads)
@@ -392,7 +387,8 @@ impl<T: FloatDType> DeepSeekAttention<T> {
 
             // (seq_len, total_seq_len) => (batch_size, num_attn_heads, seq_len, total_seq_len)
             let mask = mask.broadcast_as(attn_weight.shape())?;
-            mask.if_else(<T as FloatDType>::min_value(), attn_weight)?
+            let mask_val = T::from_f64(-1e9);
+            mask.if_else(mask_val, attn_weight)?
         } else {
             attn_weight
         }; // (batch_size, num_attn_heads, seq_len, total_seq_len)
@@ -414,7 +410,7 @@ impl<T: FloatDType> DeepSeekAttention<T> {
         Ok(attn_out)
     }
 
-    fn apply_rotary_emb(&self, x: &Tensor<T>, index_pos: usize, cache: &DeepSeekCache<T>) -> DeepSeekResult<Tensor<T>> {
+    fn apply_rotary_emb(&self, x: &Tensor<T>, index_pos: usize, cache: &Qwen2Cache<T>) -> Qwen2Result<Tensor<T>> {
         // (batch_size, _n_heads, seq_len, head_size)
         let (_batch_size, _n_heads, seq_len, head_size) = x.dims4()?;
 
@@ -445,7 +441,7 @@ impl<T: FloatDType> DeepSeekAttention<T> {
         Ok(x_out)
     }
 
-    fn rotate_half(&self, x: &Tensor<T>) -> DeepSeekResult<Tensor<T>> {
+    fn rotate_half(&self, x: &Tensor<T>) -> Qwen2Result<Tensor<T>> {
         let last_dim = x.dims().len() - 1;
         let dim_size = x.dims()[last_dim];
         let half_dim = dim_size / 2;
@@ -459,11 +455,19 @@ impl<T: FloatDType> DeepSeekAttention<T> {
         Ok(x_rotated)
     }
 
-    fn repeat_kv(&self, k: &Tensor<T>, v: &Tensor<T>) -> DeepSeekResult<(Tensor<T>, Tensor<T>)> {
-        let repeat_times = self.num_attention_heads / self.num_kv_heads;
-        let k = k.repeat_dim(1, repeat_times)?;
-        let v = v.repeat_dim(1, repeat_times)?;
+    fn repeat_kv(&self, k: &Tensor<T>, v: &Tensor<T>) -> Qwen2Result<(Tensor<T>, Tensor<T>)> {
+        let k = self.repeat(k)?;
+        let v = self.repeat(v)?;
         Ok((k, v))
+    }
+
+    fn repeat(&self, k: &Tensor<T>) -> Qwen2Result<Tensor<T>> {
+        let repeat_times = self.num_attention_heads / self.num_kv_heads;
+        let (batch_size, _num_kv_heads, seq_len, head_size) = k.dims4()?;
+        let k = k.unsqueeze(2)?; 
+        let k = k.repeat_dim(2, repeat_times)?;
+        let k = k.reshape((batch_size, self.num_attention_heads, seq_len, head_size))?;
+        Ok(k)
     }
 }
 
@@ -472,17 +476,17 @@ impl<T: FloatDType> DeepSeekAttention<T> {
 // ========================================================================= //
 
 #[derive(Module)]
-pub struct DeepSeekRMSNorm<T: FloatDType> {
+pub struct Qwen2RMSNorm<T: FloatDType> {
     pub weight: Parameter<T>,
     #[module(skip)]
     pub variance_epsilon: T,
 }
 
-impl<T: FloatDType> ModuleInit<T> for DeepSeekRMSNorm<T> {
-    type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+impl<T: FloatDType> ModuleInit<T> for Qwen2RMSNorm<T> {
+    type Config = Qwen2Config;
+    type Error = Qwen2CtxError;
 
-    fn init(config: &DeepSeekConfig, init: Option<Init<T>>) -> DeepSeekResult<Self> {
+    fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
         let init = init.unwrap_or(Init::ones());
         let weight = init.init_param((config.hidden_size,))?;
         let variance_epsilon = T::from_f64(config.rms_norm_eps);
@@ -490,14 +494,14 @@ impl<T: FloatDType> ModuleInit<T> for DeepSeekRMSNorm<T> {
     }
 }
 
-impl<T: FloatDType> DeepSeekRMSNorm<T> {
-    pub fn new(config: &DeepSeekConfig) -> DeepSeekResult<Self> {
+impl<T: FloatDType> Qwen2RMSNorm<T> {
+    pub fn new(config: &Qwen2Config) -> Qwen2Result<Self> {
         let weight = Parameter::new(Tensor::ones((config.hidden_size,))?);
         let variance_epsilon = T::from_f64(config.rms_norm_eps);
         Ok(Self { weight, variance_epsilon })
     }
 
-    pub fn forward(&self, hidden_states: &Tensor<T>) -> DeepSeekResult<Tensor<T>> {
+    pub fn forward(&self, hidden_states: &Tensor<T>) -> Qwen2Result<Tensor<T>> {
         // (xxx, hidden_size) => (xxx, hidden_size)
         let variance = hidden_states.pow(T::two())?.mean_keepdim(D::Minus1)?;
         // (xxx, hidden_size) => (xxx, hidden_size) 
@@ -522,7 +526,7 @@ fn default_init_linear<T: FloatDType>() -> Init<T> {
 //                Cache
 // ========================================================================= //
 
-pub struct DeepSeekCache<T: FloatDType> {
+pub struct Qwen2Cache<T: FloatDType> {
     pub use_kv_cache: bool,
 
     masks: HashMap<usize, Tensor<bool>>,
@@ -531,8 +535,8 @@ pub struct DeepSeekCache<T: FloatDType> {
     sin: Tensor<T>,
 }
 
-impl<T: FloatDType> DeepSeekCache<T> {
-    pub fn new(use_kv_cache: bool, config: &DeepSeekConfig) -> DeepSeekResult<Self> {
+impl<T: FloatDType> Qwen2Cache<T> {
+    pub fn new(use_kv_cache: bool, config: &Qwen2Config) -> Qwen2Result<Self> {
         let theta = calculate_default_inv_freq::<T>(config);
         
         //    [0, 2, 4, ...] 
@@ -555,7 +559,7 @@ impl<T: FloatDType> DeepSeekCache<T> {
          })
     }
 
-    pub fn mask(&mut self, t: usize) -> DeepSeekResult<Tensor<bool>> {
+    pub fn mask(&mut self, t: usize) -> Qwen2Result<Tensor<bool>> {
         if let Some(mask) = self.masks.get(&t) {
             Ok(mask.clone())
         } else {
@@ -566,10 +570,71 @@ impl<T: FloatDType> DeepSeekCache<T> {
     }
 }
 
-fn calculate_default_inv_freq<T: FloatDType>(config: &DeepSeekConfig) -> Vec<T> {
+fn calculate_default_inv_freq<T: FloatDType>(config: &Qwen2Config) -> Vec<T> {
     let head_size = config.hidden_size / config.num_attention_heads;
     (0..head_size)
         .step_by(2)
         .map(|i| T::one() / T::from_f64(config.rope_theta.powf(i as f64 / head_size as f64)))
         .collect()
+}
+
+#[cfg(test)]
+mod test {
+    use lumen_core::Tensor;
+    use lumen_nn::{init::Init, Module, ModuleInit};
+
+    use crate::qwen2::Qwen2Result;
+
+    use super::{Qwen2Cache, Qwen2ForCausalLM, Qwen2Config};
+
+    #[test]
+    fn test_init() {
+        let init = Init::<f32>::standard_normal();
+        let config = Qwen2Config::test();
+        let model = Qwen2ForCausalLM::init(&config, Some(init)).unwrap();
+
+        for (name, param) in model.named_params() {
+            println!("{}: {}", name, param.shape());
+        }
+    }
+
+    #[test]
+    fn test_forward() {
+        fn test() -> Qwen2Result<()> {
+            let config = Qwen2Config::test();
+            let model = Qwen2ForCausalLM::init_default(&config)?;
+    
+            let input_ids = Tensor::<u32>::new(&[
+                [23, 89, 11, 2],
+                [90, 12, 43, 29],
+            ])?; // (2, 4)
+    
+            let mut cache = Qwen2Cache::<f32>::new(true, &config)?;
+
+            println!("{}", input_ids);
+            let result = model.forward(input_ids.clone(), 0, &mut cache)?;
+            println!("{}", result);
+            Ok(())
+        }
+
+        if let Err(e) = test() {
+            println!("{}", e);
+        }
+    }
+
+    #[test]
+    fn test_0_5b_load() {
+        fn test() -> Qwen2Result<()> {
+            let config = Qwen2Config::qwen2_0_5b_instruct();
+            let model = Qwen2ForCausalLM::<f32>::from_safetensors(&config, "./cache/qwen2_0.5b_instruct.safetensors")?;
+            for (name, _p) in model.named_params() {
+                println!("{}", name);
+            } 
+            Ok(())
+        }
+
+        if let Err(e) = test() {
+            println!("{}", e);
+        }
+    }
 }

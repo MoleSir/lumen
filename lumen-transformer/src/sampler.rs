@@ -19,6 +19,32 @@ impl Sampler {
         }
     }
 
+    /// 1. 贪婪/精确配置 (等价于 GreedySearch)
+    /// 适用于：代码生成、数学计算、JSON 格式化提取
+    pub fn strict(seed: u64) -> Self {
+        Self::new(0.1, 1.0, 1, seed)
+    }
+
+    /// 2. 均衡/聊天配置 (主流默认值)
+    /// 适用于：通用问答助理、闲聊、文章总结
+    pub fn chat_default(seed: u64) -> Self {
+        Self::new(0.7, 0.95, 50, seed)
+    }
+
+    /// 3. 创造力配置
+    /// 适用于：小说续写、头脑风暴、角色扮演
+    pub fn creative(seed: u64) -> Self {
+        Self::new(1.1, 0.99, 100, seed)
+    }
+
+    /// 4. 严谨分析配置
+    /// 适用于：逻辑推理、事实问答、数据分析
+    pub fn reasoning(seed: u64) -> Self {
+        Self::new(0.4, 0.85, 20, seed)
+    }
+}
+
+impl Sampler {
     pub fn sample<T: FloatDType>(&mut self, logits: &Tensor<T>) -> usize {
         let mut logits: Vec<_> = logits.iter().expect("Meta Tensor").map(|v| <T as NumDType>::to_f64(v)).collect();
         

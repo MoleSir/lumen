@@ -1,4 +1,4 @@
 mod models;
-mod base;
-pub use base::*;
 pub use models::*;
+mod sampler;
+pub use sampler::Sampler;
