@@ -1,5 +1,6 @@
 #![feature(mapped_lock_guards)]
 #![feature(float_erf)]
+#![feature(f16)]
 mod shape;
 mod layout;
 mod dtype;

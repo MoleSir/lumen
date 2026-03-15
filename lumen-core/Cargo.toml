@@ -17,3 +17,4 @@ rand_distr = { workspace = true }
 thiserrorctx = { workspace = true }
 thiserror = { workspace = true }
 bytemuck = { workspace = true }
+half = { workspace = true, features = ["bytemuck", "num-traits", "rand_distr"] }

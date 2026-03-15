@@ -66,11 +66,7 @@ impl NumDType for f64 {
     }
 }
 
-impl FloatDType for f64 {
-    fn min_value() -> Self {    
-        f64::MIN
-    }
-    
+impl FloatDType for f64 {    
     #[inline]
     fn sqr(self) -> Self {
         self * self

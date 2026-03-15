@@ -43,7 +43,7 @@ pub enum SafeTensorsDType {
     I16,
     #[serde(rename = "F16")]
     F16, 
-    #[serde(rename = "BF16")]
+    #[serde(rename = "Bf16")]
     Bf16,
 
     #[serde(rename = "U32")]
@@ -80,6 +80,7 @@ impl From<DType> for SafeTensorsDType {
     fn from(value: DType) -> Self {
         match value {
             DType::Bool => Self::Bool,
+            DType::Bf16 => Self::Bf16,
             DType::F32 => Self::F32,
             DType::F64 => Self::F64,
             DType::U8 => Self::U8,

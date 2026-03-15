@@ -52,6 +52,9 @@ pub enum NpyError {
     #[error("unsupport descr {0}")]
     UnsupportedDescr(String),
 
+    #[error("unsupport dtype {0}")]
+    UnsupportedDType(DType),
+
     #[error("Numpy does't support usize dtype")]
     UnsupportUSize,
 }
@@ -265,6 +268,8 @@ pub fn save_npy<W: Write>(tensor: impl Into<DynTensor>, writer: &mut W) -> NpyRe
         DynTensor::I32(t) => _save_npy(t, writer),
         DynTensor::F32(t) => _save_npy(t, writer),
         DynTensor::F64(t) => _save_npy(t, writer),
+        DynTensor::Bf16(_) =>
+            Err(NpyError::UnsupportedDType(DType::Bf16))?
     }
 }
 
@@ -338,6 +343,7 @@ fn dtype_to_descr(dtype: DType) -> NpyResult<&'static str> {
         DType::I32 => Ok("<i4"),
         DType::F32 => Ok("<f4"),
         DType::F64 => Ok("<f8"),
+        DType::Bf16 => Err(NpyError::UnsupportedDType(DType::Bf16))?,
     }
 }
 

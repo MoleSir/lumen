@@ -1,5 +1,5 @@
 use crate::{DynTensor, IntTensor, Result, Storage, Tensor};
-use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, UnsignedIntDType, WithDType};
+use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, WithDType};
 
 impl WithDType for u32 {
     const DTYPE: DType = DType::U32;
@@ -63,5 +63,3 @@ impl IntDType for u32 {
         IntTensor::U32(tensor)
     }
 }
-
-impl UnsignedIntDType for u32 {}

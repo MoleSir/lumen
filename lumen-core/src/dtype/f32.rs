@@ -70,10 +70,6 @@ impl NumDType for f32 {
 }
 
 impl FloatDType for f32 {
-    fn min_value() -> Self {    
-        f32::MIN
-    }
-    
     #[inline]
     fn sqr(self) -> Self {
         self * self

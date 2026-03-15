@@ -17,3 +17,4 @@ serde = { workspace = true, features = ["derive"] }
 bytemuck = { workspace = true }
 zip = { workspace = true }
 tempfile = { workspace = true }
+half = { workspace = true }

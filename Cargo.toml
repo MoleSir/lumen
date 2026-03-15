@@ -28,6 +28,7 @@ lumen-tokenize = { path = "./lumen-tokenize", package = "lumen-tokenize", versio
 lumen-transformer = { path = "./lumen-transformer", package = "lumen-transformer", version = "0.5.0" }
 lumen-python = { path = "./lumen-python", package = "lumen-python", version = "0.5.0" }
 
+half = "2.3"
 approx = "0.5.1"
 derive_builder = "0.20.2"
 num-traits = "0.2.19"

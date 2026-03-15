@@ -4,10 +4,12 @@ pub use float::*;
 pub use integer::*;
 use crate::{DType, Shape, Tensor, WithDType};
 use paste::paste;
+use half::bf16;
 
 #[derive(Clone)]
 pub enum DynTensor {
     Bool(Tensor<bool>),
+    Bf16(Tensor<bf16>),
     F32(Tensor<f32>),
     F64(Tensor<f64>),
     I32(Tensor<i32>),
@@ -19,6 +21,7 @@ impl DynTensor {
     pub fn dtype(&self) -> DType {
         match self {
             Self::Bool(_) => DType::Bool,
+            Self::Bf16(_) => DType::Bf16,
             Self::F32(_) => DType::F32,
             Self::F64(_) => DType::F64,
             Self::U8(_) => DType::U8,
@@ -30,6 +33,7 @@ impl DynTensor {
     pub fn shape(&self) -> &Shape {
         match self {
             Self::Bool(t) => t.shape(),
+            Self::Bf16(t) => t.shape(),
             Self::F32(t) => t.shape(),
             Self::F64(t) => t.shape(),
             Self::U8(t) => t.shape(),
@@ -94,4 +98,5 @@ impl_convert_with_type!(F64, f64);
 impl_convert_with_type!(I32, i32);
 impl_convert_with_type!(U32, u32);
 impl_convert_with_type!(U8, u8);
+impl_convert_with_type!(Bf16, bf16);
 

@@ -261,7 +261,7 @@ impl<T: FloatDType> Gpt2Attention<T> {
                 causal_mask
             };
             let mask = mask.broadcast_as(attn_weights.shape())?;
-            mask.if_else(<T as FloatDType>::min_value(), attn_weights)?
+            mask.if_else(T::MIN_VALUE, attn_weights)?
         } else {
             attn_weights
         }; // (batch_size, num_attn_heads, seq_len, total_seq)

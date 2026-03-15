@@ -4,24 +4,27 @@ mod u32;
 mod i32;
 mod bool;
 mod u8;
+mod bf16;
+
 use crate::{grad::{AutogradInfo, AutogradMetaT, NoAutograd}, DynTensor, IntTensor, Result, Tensor};
 use super::Storage;
 
 pub trait WithDType:
     Sized
     + Copy
+    + 'static
+    + Send
+    + Sync
     + std::cmp::PartialOrd
     + std::cmp::PartialEq
     + std::fmt::Display
     + bytemuck::NoUninit
-    + 'static
-    + Send
-    + Sync
 {
     const DTYPE: DType;
     const ZERO: Self;
     const ONE: Self;
     type AutogradMeta: AutogradMetaT<Self>;
+
     fn from_dyn(tensor: &DynTensor) -> crate::Result<Tensor<Self>>;
     fn into_dyn(tensor: Tensor<Self>) -> DynTensor;
 }
@@ -29,9 +32,12 @@ pub trait WithDType:
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum DType {
     Bool,  // boolean
+    
     U8,    // unsigned 8-bit
     U32,   // unsigned 32-bit
     I32,   // signed 32-bit
+
+    Bf16,  // b 16-bit float
     F32,   // 32-bit float
     F64,   // 64-bit float
 }
@@ -43,6 +49,7 @@ impl DType {
             DType::U8 => std::mem::size_of::<u8>(),
             DType::I32 => std::mem::size_of::<i32>(),
             DType::U32 => std::mem::size_of::<u32>(),
+            DType::Bf16 => std::mem::size_of::<half::bf16>(),
             DType::F32 => std::mem::size_of::<f32>(),
             DType::F64 => std::mem::size_of::<f64>(),
         }
@@ -64,6 +71,7 @@ impl std::fmt::Display for DType {
             Self::U8   => write!(f, "uint8"),
             Self::I32 => write!(f, "int32"),
             Self::U32 => write!(f, "uint32"),
+            Self::Bf16 => write!(f, "bfloat16"),
             Self::F32 => write!(f, "float32"),
             Self::F64 => write!(f, "float64"),
         }
@@ -72,7 +80,7 @@ impl std::fmt::Display for DType {
 
 pub trait NumDType: 
     WithDType 
-  + num_traits::Num    
+  + num_traits::Num // PartialEq + Zero + One + NumOps
   + num_traits::Bounded
   + rand_distr::uniform::SampleUniform
   + std::iter::Sum
@@ -107,8 +115,7 @@ pub trait NumDType:
 }
 
 pub trait IntDType: 
-    NumDType<Category = IntCategory>
-    + num_traits::Bounded 
+    NumDType<Category = IntCategory, AutogradMeta = NoAutograd>
     + num_traits::Pow<usize>
     + Ord
 {
@@ -117,20 +124,6 @@ pub trait IntDType:
     }
 
     fn to_inttensor(tensor: Tensor<Self>) -> IntTensor;
-}
-
-pub trait SignedIntDType : 
-    IntDType 
-  + num_traits::Signed 
-{
-    fn abs(self) -> Self;
-    fn neg(self) -> Self;
-}
-
-pub trait UnsignedIntDType : 
-    IntDType 
-  + num_traits::Unsigned 
-{
 }
 
 pub trait FloatDType: 
@@ -148,11 +141,10 @@ pub trait FloatDType:
     fn silu(self) -> Self;
     fn sigmoid(self) -> Self;
 
+    // const 
     fn two() -> Self;
     fn pi() -> Self;
     fn half() -> Self;
-
-    fn min_value() -> Self;
 
     fn random_normal_vec(count: usize, mean: Self, std: Self) -> crate::Result<Vec<Self>>;
 }
@@ -195,7 +187,7 @@ impl<T: NumDType> DTypeConvert<T> for bool {
 
 impl<T: NumDType> DTypeConvert<bool> for T {
     fn convert(self) -> bool {
-        self == T::zero() 
+        self != T::zero() 
     }
 }
 

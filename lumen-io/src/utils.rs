@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use half::bf16;
 use lumen_core::{DType, DynTensor, Shape, Tensor};
 
 pub fn write_tensor<W: Write>(writer: &mut W, tensor: &DynTensor) -> lumen_core::Result<()> {
@@ -11,6 +12,11 @@ pub fn write_tensor<W: Write>(writer: &mut W, tensor: &DynTensor) -> lumen_core:
         DynTensor::U8(t) => {
             for b in t.iter()? {
                 writer.write_all(&[b])?;
+            }
+        }
+        DynTensor::Bf16(t) => {
+            for v in t.iter()? {
+                writer.write_all(&bf16::to_le_bytes(v))?;
             }
         }
         DynTensor::F32(t) => {
@@ -68,6 +74,16 @@ pub fn load_tensor(dtype: DType, shape: impl Into<Shape>, bytes: &[u8]) -> lumen
         DType::U8 => {
             let data: Vec<u8> = bytes.to_vec();
             Ok(DynTensor::U8(Tensor::<u8>::from_vec(data, shape)?))
+        }
+        DType::Bf16 => {
+            let data: Vec<bf16> = bytes
+                .chunks_exact(2) 
+                .map(|chunk| {
+                    let arr: [u8; 2] = chunk.try_into().unwrap(); 
+                    bf16::from_le_bytes(arr)
+                })
+                .collect();
+            Ok(DynTensor::Bf16(Tensor::<bf16>::from_vec(data, shape)?))
         }
         DType::F32 => {
             let data: Vec<f32> = bytes

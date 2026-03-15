@@ -368,7 +368,7 @@ impl<T: FloatDType> LlamaAttention<T> {
 
             // (seq_len, total_seq_len) => (batch_size, num_attn_heads, seq_len, total_seq_len)
             let mask = mask.broadcast_as(attn_weight.shape())?;
-            mask.if_else(<T as FloatDType>::min_value(), attn_weight)?
+            mask.if_else(T::MIN_VALUE, attn_weight)?
         } else {
             attn_weight
         }; // (batch_size, num_attn_heads, seq_len, total_seq_len)

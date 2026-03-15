@@ -1,3 +1,4 @@
+use half::bf16;
 use lumen_core::{DynTensor, GradStore, NoGradGuard, TensorId};
 use pyo3::{exceptions::PyValueError, prelude::*};
 
@@ -11,6 +12,7 @@ pub struct PyGradStore {
 
 #[derive(Clone)]
 pub enum DynGradStore {
+    Bf16(GradStore<bf16>),
     F32(GradStore<f32>),
     F64(GradStore<f64>),
 }
@@ -59,6 +61,13 @@ impl PyGradStore {
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Option<PyTensor>> {
         if let Ok(tensor) = index.extract::<PyTensor>() {
             match &self.inner {
+                DynGradStore::Bf16(grads) => {
+                    if let DynTensor::Bf16(tensor) = &tensor.inner {
+                        Ok(grads.get(tensor).cloned().map(Into::into))
+                    } else {
+                        Err(PyValueError::new_err(format!("expect bf16 tenspor, but got {:?}", tensor.dtype())))
+                    }
+                }
                 DynGradStore::F32(grads) => {
                     if let DynTensor::F32(tensor) = &tensor.inner {
                         Ok(grads.get(tensor).cloned().map(Into::into))
@@ -76,6 +85,7 @@ impl PyGradStore {
             }
         } else if let Ok(id) = index.extract::<usize> () {
             match &self.inner {
+                DynGradStore::Bf16(grads) => Ok(grads.get_by_index(id).cloned().map(Into::into)),
                 DynGradStore::F32(grads) => Ok(grads.get_by_index(id).cloned().map(Into::into)),
                 DynGradStore::F64(grads) => Ok(grads.get_by_index(id).cloned().map(Into::into)),
             }
@@ -91,6 +101,11 @@ impl PyGradStore {
 
     fn __iter__(&self) -> PyGradStoreIter {
         let items: Vec<(TensorId, DynTensor)> = match &self.inner {
+            DynGradStore::Bf16(store) => {
+                store.iter()
+                    .map(|(k, v)| (*k, DynTensor::Bf16(v.clone())))
+                    .collect()
+            },
             DynGradStore::F32(store) => {
                 store.iter()
                     .map(|(k, v)| (*k, DynTensor::F32(v.clone())))
@@ -114,6 +129,7 @@ impl PyGradStore {
 
     fn keys(&self) -> Vec<usize> {
         match &self.inner {
+            DynGradStore::Bf16(store) => store.get_ids().map(|k| k.value()).collect(),
             DynGradStore::F32(store) => store.get_ids().map(|k| k.value()).collect(),
             DynGradStore::F64(store) => store.get_ids().map(|k| k.value()).collect(),
         }
@@ -121,6 +137,11 @@ impl PyGradStore {
 
     fn values(&self) -> Vec<PyTensor> {
         match &self.inner {
+            DynGradStore::Bf16(store) => {
+                store.tensors()
+                    .map(|v| PyTensor { inner: DynTensor::Bf16(v.clone()) })
+                    .collect()
+            },
             DynGradStore::F32(store) => {
                 store.tensors()
                     .map(|v| PyTensor { inner: DynTensor::F32(v.clone()) })
@@ -136,6 +157,7 @@ impl PyGradStore {
     
     fn __len__(&self) -> usize {
         match &self.inner {
+            DynGradStore::Bf16(store) => store.len(),
             DynGradStore::F32(store) => store.len(),
             DynGradStore::F64(store) => store.len(),
         }
