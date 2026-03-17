@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use async_stream::stream;
 use futures_core::Stream;
 use lumen_core::{FloatDType, IndexOp, IntTensor, Tensor};
@@ -8,8 +9,12 @@ pub mod llama;
 pub mod gpt2;
 pub mod deepseek;
 pub mod qwen2;
-
 pub mod common;
+
+pub trait PretrainedModel<T: FloatDType> : Sized {
+    type Error: Send + Sync + 'static + std::error::Error;
+    fn from_pretrained(path: impl Into<PathBuf>) -> Result<Self, Self::Error>;
+}
 
 pub trait ForCausalLM<T: FloatDType> {
     type Cache;

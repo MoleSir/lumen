@@ -10,10 +10,18 @@ license = { workspace = true }
 [dependencies]
 lumen-core = { workspace = true }
 lumen-nn = { workspace = true }
+lumen-io = { workspace = true }
 lumen-macros = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 thiserrorctx = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
 futures-core = { workspace = true }
 async-stream = { workspace = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }
+tokenizers = { workspace = true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+futures-util = "0.3"

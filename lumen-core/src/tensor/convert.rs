@@ -55,7 +55,6 @@ impl<T: WithDType> Tensor<T> {
     }
 }
 
-
 impl<From: WithDType> Tensor<From> {
     pub fn cast<To: WithDType>(&self) -> crate::Result<Tensor<To>> 
     where

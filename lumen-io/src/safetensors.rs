@@ -43,7 +43,7 @@ pub enum SafeTensorsDType {
     I16,
     #[serde(rename = "F16")]
     F16, 
-    #[serde(rename = "Bf16")]
+    #[serde(rename = "BF16")]
     Bf16,
 
     #[serde(rename = "U32")]
@@ -69,6 +69,7 @@ impl TryInto<DType> for SafeTensorsDType {
             Self::U8 => Ok(DType::U8),
             Self::I32 => Ok(DType::I32),
             Self::U32 => Ok(DType::U32),
+            Self::Bf16 => Ok(DType::Bf16),
             Self::F32 => Ok(DType::F32),
             Self::F64 => Ok(DType::F64),
             _ => Err(SafeTensorsError::UnsupportDType(self))

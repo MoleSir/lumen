@@ -1,9 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 use lumen_core::{FloatDType, IntTensor, Tensor, D};
-use lumen_macros::Module;
-use lumen_nn::{init::Init, Embedding, Linear, ModuleInit, Parameter};
+use lumen_nn::{init::{Init, MetaInitGuard}, Embedding, Linear, Module, ModuleInit, Parameter};
 use thiserrorctx::Context;
-use crate::ForCausalLM;
+use crate::{ForCausalLM, PretrainedModel};
 
 use super::{Gpt2Config, Gpt2CtxError, Gpt2Error, Gpt2Result};
 
@@ -14,7 +13,6 @@ use super::{Gpt2Config, Gpt2CtxError, Gpt2Error, Gpt2Result};
 #[derive(Module)]
 pub struct Gpt2ForCausalLM<T: FloatDType> {
     pub transformer: Gpt2Model<T>,
-    pub lm_head: Linear<T>,
 
     #[module(skip)] 
     pub config: Gpt2Config,
@@ -26,10 +24,7 @@ impl<T: FloatDType> ModuleInit<T> for Gpt2ForCausalLM<T> {
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let transformer = Gpt2Model::init(config, init).context("init transformer")?;
-        let lm_head_init = init.unwrap_or_else(default_init_linear);
-        let lm_head = Linear::new(config.n_embd, config.vocab_size, false, Some(lm_head_init))?;
-        
-        Ok(Self { transformer, lm_head, config: config.clone() })
+        Ok(Self { transformer, config: config.clone() })
     }
 }
 
@@ -43,10 +38,49 @@ impl<T: FloatDType> ForCausalLM<T> for Gpt2ForCausalLM<T> {
 
     fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Self::Cache) -> Result<Tensor<T>, Self::Error> {
         let hidden_states = self.transformer.forward(input_ids, start_pos, cache).context("transformer forward")?;
-        let logits = self.lm_head.forward(&hidden_states)
+        let wte_weight = &self.transformer.wte.weight;
+        let logits = lumen_nn::functional::linear(&hidden_states, &wte_weight, None)
             .map_err(Gpt2Error::Nn)
             .context("lm head forward")?;
         Ok(logits)
+    }
+}
+
+impl<T: FloatDType> PretrainedModel<T> for Gpt2ForCausalLM<T> {
+    type Error = Gpt2CtxError;
+    fn from_pretrained(path: impl Into<PathBuf>) -> Result<Self, Self::Error> {
+        let path: PathBuf = path.into();
+
+        // load config.json!
+        let config: Gpt2Config = {
+            let config_path = path.join("config.json");
+            let content = std::fs::read_to_string(config_path)?;
+            let config = serde_json::from_str(&content)?;
+            config
+        };
+
+        // load model.safetensors!
+        let tensors = lumen_io::safetensors::load_file(path.join("model.safetensors"))?.tensors;
+
+        const TRANSPOSE_LAYERS: [&'static str; 3] = [
+            "c_attn.weight", 
+            "c_proj.weight", 
+            "c_fc.weight"
+        ];
+
+        let mut new_tensors = HashMap::new();
+        for (name, mut tensor) in tensors {
+            if TRANSPOSE_LAYERS.iter().any(|&layer| name.ends_with(layer)) {
+                tensor = tensor.transpose_last()?.contiguous()?;
+            }
+            new_tensors.insert(format!("transformer.{name}"), tensor);
+        }
+
+        let _guard = MetaInitGuard::new();
+        let mut model = Self::init_default(&config)?;
+        model.load_named_states(&new_tensors, true)?;
+        
+        Ok(model)
     }
 }
 

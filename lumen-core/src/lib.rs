@@ -22,3 +22,5 @@ pub use grad::*;
 pub use variable::*;
 pub use scalar::*;
 pub use dynamic::*;
+
+pub use half::bf16;

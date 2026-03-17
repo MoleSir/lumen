@@ -1,46 +1,44 @@
 use lumen_core::{FloatDType, NumDType, Tensor};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::Rng;
 use std::cmp::Ordering;
 
 pub struct Sampler {
     temperature: f64,
     top_p: f64,
     top_k: usize,
-    seed: u64,
 }
 
 impl Sampler {
-    pub fn new(temperature: f64, top_p: f64, top_k: usize, seed: u64) -> Self { 
+    pub fn new(temperature: f64, top_p: f64, top_k: usize) -> Self { 
         Self {
             temperature,
             top_p,
             top_k,
-            seed
         }
     }
 
     /// 1. 贪婪/精确配置 (等价于 GreedySearch)
     /// 适用于：代码生成、数学计算、JSON 格式化提取
-    pub fn strict(seed: u64) -> Self {
-        Self::new(0.1, 1.0, 1, seed)
+    pub fn strict() -> Self {
+        Self::new(0.1, 1.0, 1)
     }
 
     /// 2. 均衡/聊天配置 (主流默认值)
     /// 适用于：通用问答助理、闲聊、文章总结
-    pub fn chat_default(seed: u64) -> Self {
-        Self::new(0.7, 0.95, 50, seed)
+    pub fn chat_default() -> Self {
+        Self::new(0.7, 0.95, 50)
     }
 
     /// 3. 创造力配置
     /// 适用于：小说续写、头脑风暴、角色扮演
-    pub fn creative(seed: u64) -> Self {
-        Self::new(1.1, 0.99, 100, seed)
+    pub fn creative() -> Self {
+        Self::new(1.1, 0.99, 100)
     }
 
     /// 4. 严谨分析配置
     /// 适用于：逻辑推理、事实问答、数据分析
-    pub fn reasoning(seed: u64) -> Self {
-        Self::new(0.4, 0.85, 20, seed)
+    pub fn reasoning() -> Self {
+        Self::new(0.4, 0.85, 20)
     }
 }
 
@@ -115,7 +113,7 @@ impl Sampler {
 
     fn multinomial_sample(&self, sorted_probs: &[(u32, f64)]) -> u32 {
         let total_prob: f64 = sorted_probs.iter().map(|(_, p)| p).sum();
-        let mut rng = StdRng::seed_from_u64(self.seed);
+        let mut rng = rand::rng();
         let mut rng_val = rng.random_range(0.0..1.0) * total_prob;
 
         for (index, prob) in sorted_probs {

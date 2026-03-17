@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 use lumen_core::{FloatDType, IntTensor, Tensor, D};
-use lumen_nn::{init::Init, Embedding, Linear, Module, ModuleInit, Parameter};
+use lumen_nn::{init::{Init, MetaInitGuard}, Embedding, Linear, Module, ModuleInit, Parameter};
 use thiserrorctx::Context;
-use crate::ForCausalLM;
+use crate::{ForCausalLM, PretrainedModel};
 
 use super::{Qwen2Config, Qwen2CtxError, Qwen2Error, Qwen2Result};
 
@@ -59,9 +59,9 @@ impl<T: FloatDType> ForCausalLM<T> for Qwen2ForCausalLM<T> {
             }
             None => {
                 // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
-                let wte_weight = &self.model.embed.embeddings;
+                let wte_weight = &self.model.embed_tokens.weight;
                 let logits = lumen_nn::functional::linear(&hidden_states, &wte_weight, None)
-                    .map_err(|e| Qwen2Error::Nn(e))
+                    .map_err(Qwen2Error::Nn)
                     .context("lm head forward")?;
                 logits
             }
@@ -70,13 +70,37 @@ impl<T: FloatDType> ForCausalLM<T> for Qwen2ForCausalLM<T> {
     }
 } 
 
+impl<T: FloatDType> PretrainedModel<T> for Qwen2ForCausalLM<T> {
+    type Error = Qwen2CtxError;
+
+    fn from_pretrained(path: impl Into<PathBuf>) -> Result<Self, Self::Error> {
+        let path: PathBuf = path.into();
+
+        // load config.json!
+        let config: Qwen2Config = {
+            let config_path = path.join("config.json");
+            let content = std::fs::read_to_string(config_path)?;
+            let config = serde_json::from_str(&content)?;
+            config
+        };
+
+        // load model.safetensors!
+        let tensors = lumen_io::safetensors::load_file(path.join("model.safetensors"))?.tensors;
+        let _guard = MetaInitGuard::new();
+        let mut model = Self::init_default(&config)?;
+        model.load_named_states(&tensors, true)?;
+        
+        Ok(model)
+    }
+}
+
 // ========================================================================= //
 //                          Model 
 // ========================================================================= //
 
 #[derive(Module)]
 pub struct Qwen2Model<T: FloatDType> {
-    pub embed: Embedding<T>,
+    pub embed_tokens: Embedding<T>,
     pub layers: Vec<Qwen2Layer<T>>,
     pub norm: Qwen2RMSNorm<T>,
 }
@@ -87,7 +111,7 @@ impl<T: FloatDType> ModuleInit<T> for Qwen2Model<T> {
 
     fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
         let embed_init = init.unwrap_or_else(default_init_linear);
-        let embed = Embedding::new(config.vocab_size, config.hidden_size, Some(embed_init))
+        let embed_tokens = Embedding::new(config.vocab_size, config.hidden_size, Some(embed_init))
             .map_err(|e| Qwen2Error::Nn(e))
             .context("init embed")?;
         
@@ -98,14 +122,14 @@ impl<T: FloatDType> ModuleInit<T> for Qwen2Model<T> {
         
         let norm = Qwen2RMSNorm::init(config, init).context("init rms norm")?;
 
-        Ok(Self { embed, layers, norm })
+        Ok(Self { embed_tokens, layers, norm })
     }
 }
 
 impl<T: FloatDType> Qwen2Model<T> {
     pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Qwen2Cache<T>) -> Qwen2Result<Tensor<T>> {
         // embedding: (batch_size, seq_len) -> (batch_size, seq_len, hidden_size)
-        let mut hidden_states = self.embed.forward(input_ids)
+        let mut hidden_states = self.embed_tokens.forward(input_ids)
             .map_err(|e| Qwen2Error::Nn(e))
             .context("embed forward")?;
         
@@ -258,7 +282,7 @@ pub struct Qwen2Attention<T: FloatDType> {
     #[module(skip)]
     pub num_attention_heads: usize,
     #[module(skip)]
-    pub num_kv_heads: usize,
+    pub num_key_value_heads: usize,
     #[module(skip)]
     pub head_size: usize,
     #[module(skip)]
@@ -275,14 +299,14 @@ impl<T: FloatDType> ModuleInit<T> for Qwen2Attention<T> {
         
         let init = init.unwrap_or_else(default_init_linear);
         let q_proj = Linear::new(config.hidden_size, config.hidden_size, true, Some(init))?;
-        let k_proj = Linear::new(config.hidden_size, config.num_kv_heads * head_size, true, Some(init))?;
-        let v_proj = Linear::new(config.hidden_size, config.num_kv_heads * head_size, true, Some(init))?;
+        let k_proj = Linear::new(config.hidden_size, config.num_key_value_heads * head_size, true, Some(init))?;
+        let v_proj = Linear::new(config.hidden_size, config.num_key_value_heads * head_size, true, Some(init))?;
         let o_proj = Linear::new(config.hidden_size, config.hidden_size, false, Some(init))?;
 
         Ok(Self {
             q_proj, k_proj, v_proj, o_proj,
             num_attention_heads: config.num_attention_heads,
-            num_kv_heads: config.num_kv_heads,
+            num_key_value_heads: config.num_key_value_heads,
             head_size,
             max_position_embeddings: config.max_position_embeddings,
         })
@@ -293,8 +317,8 @@ impl<T: FloatDType> Qwen2Attention<T> {
     pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut Qwen2Cache<T>) -> Qwen2Result<Tensor<T>> {
         let (batch_size, seq_len, hidden_size) = hidden_states.dims3()?;
         let q = self.q_proj.forward(hidden_states)?; // (batch_size, seq_len, head_size * num_attn_heads)
-        let k = self.k_proj.forward(hidden_states)?; // (batch_size, seq_len, head_size * num_kv_heads)
-        let v = self.v_proj.forward(hidden_states)?; // (batch_size, seq_len, head_size * num_kv_heads)
+        let k = self.k_proj.forward(hidden_states)?; // (batch_size, seq_len, head_size * num_key_value_heads)
+        let v = self.v_proj.forward(hidden_states)?; // (batch_size, seq_len, head_size * num_key_value_heads)
 
         // (batch_size, seq_len, head_size * num_attn_heads) => 
         // (batch_size, seq_len, num_attn_heads, head_size) => 
@@ -303,29 +327,29 @@ impl<T: FloatDType> Qwen2Attention<T> {
             .transpose(1, 2)?
             .contiguous()?;
 
-        // (batch_size, seq_len, head_size * num_kv_heads) => 
-        // (batch_size, seq_len, num_kv_heads, head_size) => 
-        // (batch_size, num_kv_heads, seq_len, head_size)
+        // (batch_size, seq_len, head_size * num_key_value_heads) => 
+        // (batch_size, seq_len, num_key_value_heads, head_size) => 
+        // (batch_size, num_key_value_heads, seq_len, head_size)
         let k = k
-            .reshape((batch_size, seq_len, self.num_kv_heads, self.head_size))?
+            .reshape((batch_size, seq_len, self.num_key_value_heads, self.head_size))?
             .transpose(1, 2)?
             .contiguous()?;
 
-        // (batch_size, seq_len, head_size * num_kv_heads) => 
-        // (batch_size, seq_len, num_kv_heads, head_size) => 
-        // (batch_size, num_kv_heads, seq_len, head_size)
+        // (batch_size, seq_len, head_size * num_key_value_heads) => 
+        // (batch_size, seq_len, num_key_value_heads, head_size) => 
+        // (batch_size, num_key_value_heads, seq_len, head_size)
         let mut v = v
-            .reshape((batch_size, seq_len, self.num_kv_heads, self.head_size))?
+            .reshape((batch_size, seq_len, self.num_key_value_heads, self.head_size))?
             .transpose(1, 2)?
             .contiguous()?;
 
         let q = self.apply_rotary_emb(&q, index_pos, cache)?; // (batch_size, num_attn_heads, seq_len, head_size)
-        let mut k = self.apply_rotary_emb(&k, index_pos, cache)?; // (batch_size, num_kv_heads, seq_len, head_size)
+        let mut k = self.apply_rotary_emb(&k, index_pos, cache)?; // (batch_size, num_key_value_heads, seq_len, head_size)
     
         if cache.use_kv_cache {
             if let Some((cache_k, cache_v)) = &cache.kvs[layer_idx] {
-                // cat [(batch_size, num_kv_heads, cache_seq_len, head_size), (batch_size, num_kv_heads, seq_len, head_size)]
-                // => (batch_size, num_kv_heads, total_seq_len, head_size)
+                // cat [(batch_size, num_key_value_heads, cache_seq_len, head_size), (batch_size, num_key_value_heads, seq_len, head_size)]
+                // => (batch_size, num_key_value_heads, total_seq_len, head_size)
                 k = Tensor::cat(&[cache_k, &k], 2)?.contiguous()?;
                 v = Tensor::cat(&[cache_v, &v], 2)?.contiguous()?;
                 
@@ -471,8 +495,8 @@ impl<T: FloatDType> Qwen2Attention<T> {
     }
 
     fn repeat(&self, k: &Tensor<T>) -> Qwen2Result<Tensor<T>> {
-        let repeat_times = self.num_attention_heads / self.num_kv_heads;
-        let (batch_size, _num_kv_heads, seq_len, head_size) = k.dims4()?;
+        let repeat_times = self.num_attention_heads / self.num_key_value_heads;
+        let (batch_size, _num_key_value_heads, seq_len, head_size) = k.dims4()?;
         let k = k.unsqueeze(2)?; 
         let k = k.repeat_dim(2, repeat_times)?;
         let k = k.reshape((batch_size, self.num_attention_heads, seq_len, head_size))?;
