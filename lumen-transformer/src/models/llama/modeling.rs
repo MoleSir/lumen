@@ -3,6 +3,8 @@ use lumen_core::{FloatDType, IntTensor, Tensor, D};
 use lumen_macros::Module;
 use lumen_nn::{init::Init, Embedding, Linear, ModuleInit, Parameter};
 use thiserrorctx::Context;
+use crate::ForCausalLM;
+
 use super::{LlamaConfig, LlamaCtxError, LlamaError, LlamaResult};
 
 // ========================================================================= //
@@ -13,6 +15,8 @@ use super::{LlamaConfig, LlamaCtxError, LlamaError, LlamaResult};
 pub struct LlamaForCausalLM<T: FloatDType> {
     pub model: LlamaModel<T>,
     pub lm_head: Linear<T>, 
+    #[module(skip)]
+    pub config: LlamaConfig,
 }
 
 impl<T: FloatDType> ModuleInit<T> for LlamaForCausalLM<T> {
@@ -26,21 +30,29 @@ impl<T: FloatDType> ModuleInit<T> for LlamaForCausalLM<T> {
             .map_err(LlamaError::Nn)
             .context("init lm head")?;
         
-        Ok(Self { model, lm_head })
+        Ok(Self { model, lm_head, config: config.clone() })
     }
 }
 
-impl<T: FloatDType> LlamaForCausalLM<T> {
-    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut LlamaCache<T>) -> LlamaResult<Tensor<T>> {
+impl<T: FloatDType> ForCausalLM<T> for LlamaForCausalLM<T> {
+    type Cache = LlamaCache<T>;
+    type Error = LlamaCtxError;
+
+    fn new_cache(&self) -> Result<Self::Cache, Self::Error> {
+        LlamaCache::new(true, &self.config)
+    }
+
+    fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Self::Cache) -> Result<Tensor<T>, Self::Error> {
         // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
         let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
         // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
         let hidden_states = self.lm_head.forward(&hidden_states)
             .map_err(LlamaError::Nn)
             .context("lm head forward")?;
-        Ok(hidden_states)
+        Ok(hidden_states) 
     }
 }
+
 
 // ========================================================================= //
 //                          Model 
@@ -562,7 +574,7 @@ fn calculate_default_inv_freq<T: FloatDType>(config: &LlamaConfig) -> Vec<T> {
 mod test {
     use lumen_core::Tensor;
     use lumen_nn::{init::Init, Module, ModuleInit};
-    use crate::llama::{LlamaConfig, LlamaResult};
+    use crate::{llama::{LlamaConfig, LlamaResult}, ForCausalLM};
     use super::{LlamaCache, LlamaForCausalLM};
 
     #[test]

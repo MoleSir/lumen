@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct DeepSeekConfig {
     pub hidden_size: usize,
     pub intermediate_size: usize,

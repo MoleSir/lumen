@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use lumen_core::{FloatDType, IntTensor, Tensor, D};
 use lumen_nn::{init::Init, Embedding, Linear, Module, ModuleInit, Parameter};
 use thiserrorctx::Context;
+use crate::ForCausalLM;
+
 use super::{Qwen2Config, Qwen2CtxError, Qwen2Error, Qwen2Result};
 
 // ========================================================================= //
@@ -36,8 +38,15 @@ impl<T: FloatDType> ModuleInit<T> for Qwen2ForCausalLM<T> {
     }
 }
 
-impl<T: FloatDType> Qwen2ForCausalLM<T> {
-    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Qwen2Cache<T>) -> Qwen2Result<Tensor<T>> {
+impl<T: FloatDType> ForCausalLM<T> for Qwen2ForCausalLM<T> {
+    type Cache = Qwen2Cache<T>;
+    type Error = Qwen2CtxError;
+
+    fn new_cache(&self) -> Result<Self::Cache, Self::Error> {
+        Qwen2Cache::new(true, &self.config)
+    }
+
+    fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Self::Cache) -> Result<Tensor<T>, Self::Error> {
         // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
         let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
         let logits = match &self.lm_head {
@@ -59,7 +68,7 @@ impl<T: FloatDType> Qwen2ForCausalLM<T> {
         };
         Ok(logits)
     }
-}
+} 
 
 // ========================================================================= //
 //                          Model 
@@ -583,7 +592,7 @@ mod test {
     use lumen_core::Tensor;
     use lumen_nn::{init::Init, Module, ModuleInit};
 
-    use crate::qwen2::Qwen2Result;
+    use crate::{qwen2::Qwen2Result, ForCausalLM};
 
     use super::{Qwen2Cache, Qwen2ForCausalLM, Qwen2Config};
 

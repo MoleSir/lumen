@@ -1,12 +1,12 @@
 use lumen_core::{FloatDType, NumDType, Tensor};
-use rand::{rngs::StdRng, SeedableRng, Rng};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::cmp::Ordering;
 
 pub struct Sampler {
     temperature: f64,
     top_p: f64,
     top_k: usize,
-    rng: StdRng,
+    seed: u64,
 }
 
 impl Sampler {
@@ -15,7 +15,7 @@ impl Sampler {
             temperature,
             top_p,
             top_k,
-            rng: StdRng::seed_from_u64(seed),
+            seed
         }
     }
 
@@ -45,7 +45,7 @@ impl Sampler {
 }
 
 impl Sampler {
-    pub fn sample<T: FloatDType>(&mut self, logits: &Tensor<T>) -> usize {
+    pub fn sample<T: FloatDType>(&self, logits: &Tensor<T>) -> u32 {
         let mut logits: Vec<_> = logits.iter().expect("Meta Tensor").map(|v| <T as NumDType>::to_f64(v)).collect();
         
         // temperature = 0, greedy sample
@@ -67,12 +67,12 @@ impl Sampler {
         self.multinomial_sample(&filtered_probs)
     }
 
-    fn argmax(&self, logits: &[f64]) -> usize {
+    fn argmax(&self, logits: &[f64]) -> u32 {
         logits.iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Equal))
             .map(|(index, _)| index)
-            .unwrap() 
+            .unwrap() as u32
     }
 
     fn softmax(&self, x: &[f64]) -> Vec<f64> {
@@ -82,8 +82,11 @@ impl Sampler {
         exps.iter().map(|&v| v / sum).collect()
     }
 
-    fn apply_top_k_top_p(&self, probs: Vec<f64>) -> Vec<(usize, f64)> {
-        let mut sorted_probs: Vec<(usize, f64)> = probs.into_iter().enumerate().collect();
+    fn apply_top_k_top_p(&self, probs: Vec<f64>) -> Vec<(u32, f64)> {
+        let mut sorted_probs: Vec<(u32, f64)> = probs.into_iter()
+            .enumerate()
+            .map(|(i, v)| (i as u32, v))
+            .collect();
         sorted_probs.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(Ordering::Equal));
 
         // top-k
@@ -110,9 +113,10 @@ impl Sampler {
         sorted_probs
     }
 
-    fn multinomial_sample(&mut self, sorted_probs: &[(usize, f64)]) -> usize {
+    fn multinomial_sample(&self, sorted_probs: &[(u32, f64)]) -> u32 {
         let total_prob: f64 = sorted_probs.iter().map(|(_, p)| p).sum();
-        let mut rng_val = self.rng.random_range(0.0..1.0) * total_prob;
+        let mut rng = StdRng::seed_from_u64(self.seed);
+        let mut rng_val = rng.random_range(0.0..1.0) * total_prob;
 
         for (index, prob) in sorted_probs {
             rng_val -= prob;

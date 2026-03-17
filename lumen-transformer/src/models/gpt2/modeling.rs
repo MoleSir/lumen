@@ -3,6 +3,8 @@ use lumen_core::{FloatDType, IntTensor, Tensor, D};
 use lumen_macros::Module;
 use lumen_nn::{init::Init, Embedding, Linear, ModuleInit, Parameter};
 use thiserrorctx::Context;
+use crate::ForCausalLM;
+
 use super::{Gpt2Config, Gpt2CtxError, Gpt2Error, Gpt2Result};
 
 // ========================================================================= //
@@ -12,7 +14,10 @@ use super::{Gpt2Config, Gpt2CtxError, Gpt2Error, Gpt2Result};
 #[derive(Module)]
 pub struct Gpt2ForCausalLM<T: FloatDType> {
     pub transformer: Gpt2Model<T>,
-    pub lm_head: Linear<T>, 
+    pub lm_head: Linear<T>,
+
+    #[module(skip)] 
+    pub config: Gpt2Config,
 }
 
 impl<T: FloatDType> ModuleInit<T> for Gpt2ForCausalLM<T> {
@@ -24,12 +29,19 @@ impl<T: FloatDType> ModuleInit<T> for Gpt2ForCausalLM<T> {
         let lm_head_init = init.unwrap_or_else(default_init_linear);
         let lm_head = Linear::new(config.n_embd, config.vocab_size, false, Some(lm_head_init))?;
         
-        Ok(Self { transformer, lm_head })
+        Ok(Self { transformer, lm_head, config: config.clone() })
     }
 }
 
-impl<T: FloatDType> Gpt2ForCausalLM<T> {
-    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Gpt2Cache<T>) -> Gpt2Result<Tensor<T>> {
+impl<T: FloatDType> ForCausalLM<T> for Gpt2ForCausalLM<T> {
+    type Cache = Gpt2Cache<T>;
+    type Error = Gpt2CtxError;
+
+    fn new_cache(&self) -> Result<Self::Cache, Self::Error> {
+        Ok(Gpt2Cache::new(true, &self.config))
+    }
+
+    fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Self::Cache) -> Result<Tensor<T>, Self::Error> {
         let hidden_states = self.transformer.forward(input_ids, start_pos, cache).context("transformer forward")?;
         let logits = self.lm_head.forward(&hidden_states)
             .map_err(Gpt2Error::Nn)
@@ -391,7 +403,7 @@ impl<T: FloatDType> Gpt2Cache<T> {
 mod test {
     use lumen_core::Tensor;
     use lumen_nn::{init::Init, Module, ModuleInit};
-    use crate::gpt2::{Gpt2Cache, Gpt2Config, Gpt2Result};
+    use crate::{gpt2::{Gpt2Cache, Gpt2Config, Gpt2Result}, ForCausalLM};
 
     use super::Gpt2ForCausalLM;
 

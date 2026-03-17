@@ -15,3 +15,5 @@ serde = { workspace = true, features = ["derive"] }
 thiserrorctx = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
+futures-core = { workspace = true }
+async-stream = { workspace = true }

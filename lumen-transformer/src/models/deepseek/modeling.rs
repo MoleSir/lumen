@@ -3,8 +3,9 @@ use lumen_core::{FloatDType, IntTensor, Tensor, D};
 use lumen_macros::Module;
 use lumen_nn::{init::Init, Embedding, Linear, ModuleInit, Parameter};
 use thiserrorctx::Context;
-use super::{DeepSeekConfig, DeepSeekCtxError, DeepSeekError, DeepSeekResult};
+use crate::ForCausalLM;
 
+use super::{DeepSeekConfig, DeepSeekCtxError, DeepSeekError, DeepSeekResult};
 
 // ========================================================================= //
 //                For Causal LM
@@ -14,6 +15,9 @@ use super::{DeepSeekConfig, DeepSeekCtxError, DeepSeekError, DeepSeekResult};
 pub struct DeepSeekForCausalLM<T: FloatDType> {
     pub model: DeepSeekModel<T>,
     pub lm_head: Linear<T>, 
+
+    #[module(skip)]
+    pub config: DeepSeekConfig,
 }
 
 impl<T: FloatDType> ModuleInit<T> for DeepSeekForCausalLM<T> {
@@ -26,12 +30,19 @@ impl<T: FloatDType> ModuleInit<T> for DeepSeekForCausalLM<T> {
             .map_err(DeepSeekError::Nn)
             .context("init lm head")?;
         
-        Ok(Self { model, lm_head })
+        Ok(Self { model, lm_head, config: config.clone() })
     }
 }
 
-impl<T: FloatDType> DeepSeekForCausalLM<T> {
-    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut DeepSeekCache<T>) -> DeepSeekResult<Tensor<T>> {
+impl<T: FloatDType> ForCausalLM<T> for DeepSeekForCausalLM<T> {
+    type Cache = DeepSeekCache<T>;
+    type Error = DeepSeekCtxError;
+
+    fn new_cache(&self) -> Result<Self::Cache, Self::Error> {
+        DeepSeekCache::new(true, &self.config)
+    }
+
+    fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Self::Cache) -> Result<Tensor<T>, Self::Error> {
         // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
         let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
         // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)

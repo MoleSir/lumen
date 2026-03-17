@@ -7,3 +7,4 @@ pub enum Gpt2Error {
     #[error(transparent)]
     Nn(#[from] lumen_nn::NnCtxError),
 }
+
