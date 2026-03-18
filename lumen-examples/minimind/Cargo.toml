@@ -1,0 +1,17 @@
+[package]
+name = "minimind"
+version = "0.1.0"
+edition = "2024"
+
+
+[[bin]]
+name = "pretrain" 
+path = "src/pretrain.rs"
+
+
+
+[dependencies]
+lumen-core = { path = "../../lumen-core" }
+lumen-transformer = { path = "../../lumen-transformer" }
+anyhow = "1.0"
+tokenizers = "0.22"

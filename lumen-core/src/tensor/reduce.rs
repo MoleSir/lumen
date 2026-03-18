@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use crate::{AutogradMetaT, Dim, NumDType, Result, Storage, StorageRef, Tensor, WithDType};
 use paste::paste;
 
@@ -150,6 +152,85 @@ impl<T: WithDType> Tensor<T> {
         shape[reduce_dim] = 1;
 
         Ok((storage, shape))
+    }
+}
+
+impl<T: NumDType> Tensor<T> {
+    pub fn topk<D: Dim>(&self, k: usize, dim: D) -> crate::Result<(Tensor<T>, Tensor<u32>)> {
+        let reduce_dim = dim.to_index(self.shape(), "topk")?;
+        assert!(reduce_dim < self.layout().dims().len());
+        let reduce_dim_stride = self.layout().stride()[reduce_dim];
+        let reduce_dim_size = self.layout().dims()[reduce_dim];
+        if k > reduce_dim_size {
+            return Err(crate::Error::IndexOutOfRange { max_size: reduce_dim_size, index: k, op: "topk"});
+        }
+
+        // 输出目标：值和数组的总大小
+        let dst_len = self.layout().element_count() / reduce_dim_size * k;
+        // 预先开辟足够的空间
+        let mut indices: Vec<u32> = Vec::with_capacity(dst_len);
+        let mut values: Vec<T> = Vec::with_capacity(dst_len);
+        let mut indexed: Vec<(u32, T)> = Vec::with_capacity(reduce_dim_size);
+
+        // 先去掉 dim 维度，遍历其他所有的可能的排列
+        let layout = self.layout().narrow(reduce_dim, 0, 1)?;
+        for src_index in layout.storage_indices() {
+            // 取出这个维度的一组数据
+            let arr: DimArray<'_, T> = DimArray {
+                src: self.storage_ref(src_index)?,
+                size: reduce_dim_size,
+                stride: reduce_dim_stride
+            };
+            // 索引 + 值进行排序
+            indexed.clear();
+            indexed.extend(arr.into_iter().enumerate().map(|(i, v)| (i as u32, v)));
+
+            assert!(indexed.len() >= k);
+            if k < indexed.len() {
+                // 先在 O(N) 时间内找出前 k 大的划分
+                indexed.select_nth_unstable_by(k - 1, |a, b| {
+                    b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal)
+                });
+                // 然后只对前 k 个进行排序 O(k log k)
+                indexed[..k].sort_unstable_by(|a, b| {
+                    b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal)
+                });
+            } else {
+                indexed.sort_unstable_by(|a, b| {
+                    b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal)
+                });
+            }
+
+            let topk_slice = &indexed[..k];
+
+            values.extend(topk_slice.iter().map(|(_, v)| *v));
+            indices.extend(topk_slice.iter().map(|(i, _)| *i));
+        }
+
+        assert_eq!(indices.len(), dst_len);
+        assert_eq!(values.len(), dst_len);
+
+        let mut physical_shape = self.dims().to_vec();
+        physical_shape.remove(reduce_dim);
+        physical_shape.push(k);
+        
+        let temp_values = Tensor::from_vec(values, physical_shape.clone())?;
+        let temp_indices = Tensor::from_vec(indices, physical_shape.clone())?;
+
+        // 如果 reduce_dim 本来就在最后，不需要转置
+        if reduce_dim == self.dims().len() - 1 {
+            return Ok((temp_values, temp_indices));
+        }
+
+        // 把最后一个维度移动回 reduce_dim 的位置
+        let ndims = physical_shape.len();
+        let mut permute_axes: Vec<usize> = (0..ndims - 1).collect(); // [0, 1, 2, ..., N-2]
+        permute_axes.insert(reduce_dim, ndims - 1);
+
+        let final_values = temp_values.permute(permute_axes.as_ref())?.contiguous()?;
+        let final_indices = temp_indices.permute(permute_axes)?.contiguous()?;
+
+        Ok((final_values, final_indices))
     }
 }
 
@@ -466,5 +547,83 @@ mod tests {
         
         let expected_var = Tensor::new(2.66666666666666666).unwrap();
         assert!(arr.var_all().unwrap().allclose(&expected_var, 1e-5, 1e-8).unwrap());
+    }
+
+    #[test]
+    fn test_topk_1d() {
+        // [10, 50, 20, 40, 30]
+        // topk(k=3, axis=0) -> 找最大的 3 个
+        // 期望 Values:  [50, 40, 30]
+        // 期望 Indices: [ 1,  3,  4]
+        let arr = Tensor::new(&[10, 50, 20, 40, 30]).unwrap();
+        let (val, idx) = arr.topk(3, 0).unwrap();
+
+        let expected_val = Tensor::new(&[50, 40, 30]).unwrap();
+        let expected_idx = Tensor::new(&[1u32, 3, 4]).unwrap(); // 注意索引是 u32
+
+        assert!(val.allclose(&expected_val, 1e-5, 1e-8).unwrap());
+        assert!(idx.allclose(&expected_idx, 1e-5, 1e-8).unwrap());
+    }
+
+    #[test]
+    fn test_topk_matrix_axis1() {
+        // 测试按行求 TopK (axis=1，也是连续内存)
+        // [[1, 5, 2],
+        //  [8, 4, 6]]
+        // topk(k=2, axis=1)
+        // 第一行 top2 -> [5, 2], 索引 -> [1, 2]
+        // 第二行 top2 -> [8, 6], 索引 -> [0, 2]
+        let arr = Tensor::new(&[[1, 5, 2], [8, 4, 6]]).unwrap();
+        let (val, idx) = arr.topk(2, 1).unwrap();
+
+        let expected_val = Tensor::new(&[[5, 2], [8, 6]]).unwrap();
+        let expected_idx = Tensor::new(&[[1u32, 2], [0, 2]]).unwrap();
+
+        assert!(val.allclose(&expected_val, 1e-5, 1e-8).unwrap());
+        assert!(idx.allclose(&expected_idx, 1e-5, 1e-8).unwrap());
+    }
+
+    #[test]
+    fn test_topk_matrix_axis0() {
+        // 【关键测试】测试按列求 TopK (axis=0，跨步幅提取)
+        // 用来验证内存 Layout 是否修复正确！
+        // [[1, 5, 2],
+        //  [8, 4, 6],
+        //  [3, 7, 9]]
+        // topk(k=2, axis=0) -> 找每列最大的 2 个
+        // 第 0 列: [1, 8, 3] -> top2 是 8(idx:1), 3(idx:2)
+        // 第 1 列: [5, 4, 7] -> top2 是 7(idx:2), 5(idx:0)
+        // 第 2 列: [2, 6, 9] -> top2 是 9(idx:2), 6(idx:1)
+        // 所以重组后的预期矩阵应该长这样：
+        // Values:  [[8, 7, 9], 
+        //           [3, 5, 6]]
+        // Indices: [[1, 2, 2], 
+        //           [2, 0, 1]]
+        let arr = Tensor::new(&[
+            [1, 5, 2], 
+            [8, 4, 6], 
+            [3, 7, 9]
+        ]).unwrap();
+        let (val, idx) = arr.topk(2, 0).unwrap();
+
+        let expected_val = Tensor::new(&[[8, 7, 9], [3, 5, 6]]).unwrap();
+        let expected_idx = Tensor::new(&[[1u32, 2, 2], [2, 0, 1]]).unwrap();
+
+        assert!(val.allclose(&expected_val, 1e-5, 1e-8).unwrap());
+        assert!(idx.allclose(&expected_idx, 1e-5, 1e-8).unwrap());
+    }
+
+    #[test]
+    fn test_topk_full_sort() {
+        // 测试当 k 等于该维度大小时，相当于进行沿轴的全量降序排序
+        // [[3, 1, 2]] -> topk(3, axis=1)
+        let arr = Tensor::new(&[[3, 1, 2]]).unwrap();
+        let (val, idx) = arr.topk(3, 1).unwrap();
+
+        let expected_val = Tensor::new(&[[3, 2, 1]]).unwrap();
+        let expected_idx = Tensor::new(&[[0u32, 2, 1]]).unwrap();
+
+        assert!(val.allclose(&expected_val, 1e-5, 1e-8).unwrap());
+        assert!(idx.allclose(&expected_idx, 1e-5, 1e-8).unwrap());
     }
 }
