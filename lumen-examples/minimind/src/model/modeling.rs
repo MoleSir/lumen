@@ -1,96 +1,41 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, str::FromStr};
+use anyhow::Context;
 use lumen_core::{FloatDType, IntTensor, Tensor, D};
-use lumen_nn::{init::{Init, MetaInitGuard}, Embedding, Linear, Module, ModuleInit, Parameter};
-use thiserrorctx::Context;
-use crate::{ForCausalLM, PretrainedModel};
-
-use super::{Qwen2Config, Qwen2CtxError, Qwen2Error, Qwen2Result};
+use lumen_nn::{init::Init, Activate, Dropout, Embedding, Linear, Module, ModuleForward, ModuleInit, Parameter};
+use super::MiniMindConfig;
 
 // ========================================================================= //
 //                For Causal LM
 // ========================================================================= //
 
 #[derive(Module)]
-pub struct Qwen2ForCausalLM<T: FloatDType> {
-    pub model: Qwen2Model<T>,
-    pub lm_head: Option<Linear<T>>,
-
+pub struct MiniMindForCausalLM<T: FloatDType> {
+    pub model: MiniMindModel<T>,
     #[module(skip)]
-    pub config: Qwen2Config,
+    pub config: MiniMindConfig,
 }
 
-impl<T: FloatDType> ModuleInit<T> for Qwen2ForCausalLM<T> {
-    type Config = Qwen2Config;
-    type Error = Qwen2CtxError;
+impl<T: FloatDType> ModuleInit<T> for MiniMindForCausalLM<T> {
+    type Config = MiniMindConfig;
+    type Error = anyhow::Error;
 
-    fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
-        let model = Qwen2Model::init(config, init).context("init Qwen2 model")?;
-        let lm_head = if config.tie_word_embeddings {
-            None
-        } else {
-            let lm_head_init = init.unwrap_or_else(default_init_linear);
-            let lm_head = Linear::new(config.hidden_size, config.vocab_size, false, Some(lm_head_init))
-                .map_err(Qwen2Error::Nn)
-                .context("init lm head")?;
-            Some(lm_head)
-        };
-        Ok(Self { model, lm_head, config: config.clone() })
+    fn init(config: &MiniMindConfig, init: Option<Init<T>>) -> anyhow::Result<Self> {
+        let model = MiniMindModel::init(config, init).context("init llama model")?;
+        Ok(Self { model, config: config.clone() })
     }
 }
 
-impl<T: FloatDType> ForCausalLM<T> for Qwen2ForCausalLM<T> {
-    type Cache = Qwen2Cache<T>;
-    type Error = Qwen2CtxError;
-
-    fn new_cache(&self) -> Result<Self::Cache, Self::Error> {
-        Qwen2Cache::new(true, &self.config)
-    }
-
-    fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Self::Cache) -> Result<Tensor<T>, Self::Error> {
+impl<T: FloatDType> MiniMindForCausalLM<T> {
+    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut MiniMindCache<T>) -> anyhow::Result<Tensor<T>> {
         // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
         let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
-        let logits = match &self.lm_head {
-            Some(lm_head) => {
-                // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
-                let logits = lm_head.forward(&hidden_states)
-                    .map_err(Qwen2Error::Nn)
-                    .context("lm head forward")?;
-                logits
-            }
-            None => {
-                // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
-                let wte_weight = &self.model.embed_tokens.weight;
-                let logits = lumen_nn::functional::linear(&hidden_states, &wte_weight, None)
-                    .map_err(Qwen2Error::Nn)
-                    .context("lm head forward")?;
-                logits
-            }
-        };
-        Ok(logits)
-    }
-} 
 
-impl<T: FloatDType> PretrainedModel<T> for Qwen2ForCausalLM<T> {
-    type Error = Qwen2CtxError;
-
-    fn from_pretrained(path: impl Into<PathBuf>) -> Result<Self, Self::Error> {
-        let path: PathBuf = path.into();
-
-        // load config.json!
-        let config: Qwen2Config = {
-            let config_path = path.join("config.json");
-            let content = std::fs::read_to_string(config_path)?;
-            let config = serde_json::from_str(&content)?;
-            config
-        };
-
-        // load model.safetensors!
-        let tensors = lumen_io::safetensors::load_file(path.join("model.safetensors"))?.tensors;
-        let _guard = MetaInitGuard::new();
-        let mut model = Self::init_default(&config)?;
-        model.load_named_states(&tensors, true)?;
+        let wte_weight = &self.model.embed_tokens.weight;
+        // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
+        let logits = lumen_nn::functional::linear(&hidden_states, &wte_weight, None)
+            .context("lm head forward")?;
         
-        Ok(model)
+        Ok(logits) 
     }
 }
 
@@ -99,39 +44,40 @@ impl<T: FloatDType> PretrainedModel<T> for Qwen2ForCausalLM<T> {
 // ========================================================================= //
 
 #[derive(Module)]
-pub struct Qwen2Model<T: FloatDType> {
+pub struct MiniMindModel<T: FloatDType> {
     pub embed_tokens: Embedding<T>,
-    pub layers: Vec<Qwen2Layer<T>>,
-    pub norm: Qwen2RMSNorm<T>,
+    pub layers: Vec<MiniMindLayer<T>>,
+    pub norm: MiniMindRMSNorm<T>,
+    pub dropout: Dropout<T>,
 }
 
-impl<T: FloatDType> ModuleInit<T> for Qwen2Model<T> {
-    type Config = Qwen2Config;
-    type Error = Qwen2CtxError;
+impl<T: FloatDType> ModuleInit<T> for MiniMindModel<T> {
+    type Config = MiniMindConfig;
+    type Error = anyhow::Error;
 
-    fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
+    fn init(config: &MiniMindConfig, init: Option<Init<T>>) -> anyhow::Result<Self> {
         let embed_init = init.unwrap_or_else(default_init_linear);
         let embed_tokens = Embedding::new(config.vocab_size, config.hidden_size, Some(embed_init))
-            .map_err(|e| Qwen2Error::Nn(e))
             .context("init embed")?;
         
         let mut layers = Vec::new();
         for _ in 0..config.num_hidden_layers {
-            layers.push(Qwen2Layer::init(config, init)?);
+            layers.push(MiniMindLayer::init(config, init)?);
         }
         
-        let norm = Qwen2RMSNorm::init(config, init).context("init rms norm")?;
+        let norm = MiniMindRMSNorm::init(config, init).context("init rms norm")?;
+        let dropout = Dropout::new(T::from_f64(config.dropout));
 
-        Ok(Self { embed_tokens, layers, norm })
+        Ok(Self { embed_tokens, layers, norm, dropout })
     }
 }
 
-impl<T: FloatDType> Qwen2Model<T> {
-    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Qwen2Cache<T>) -> Qwen2Result<Tensor<T>> {
+impl<T: FloatDType> MiniMindModel<T> {
+    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut MiniMindCache<T>) -> anyhow::Result<Tensor<T>> {
         // embedding: (batch_size, seq_len) -> (batch_size, seq_len, hidden_size)
-        let mut hidden_states = self.embed_tokens.forward(input_ids)
-            .map_err(|e| Qwen2Error::Nn(e))
+        let hidden_states = self.embed_tokens.forward(input_ids)
             .context("embed forward")?;
+        let mut hidden_states = self.dropout.forward(&hidden_states)?;
         
         for (i, layer) in self.layers.iter().enumerate() {
             // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, hidden_size)
@@ -151,29 +97,29 @@ impl<T: FloatDType> Qwen2Model<T> {
 // ========================================================================= //
 
 #[derive(Module)]
-pub struct Qwen2Layer<T: FloatDType> {
-    pub self_attn: Qwen2Attention<T>,
-    pub mlp: Qwen2Mlp<T>,
-    pub input_layernorm: Qwen2RMSNorm<T>,
-    pub post_attention_layernorm: Qwen2RMSNorm<T>,
+pub struct MiniMindLayer<T: FloatDType> {
+    pub self_attn: MiniMindAttention<T>,
+    pub mlp: MiniMindFeedForward<T>,
+    pub input_layernorm: MiniMindRMSNorm<T>,
+    pub post_attention_layernorm: MiniMindRMSNorm<T>,
 }
 
-impl<T: FloatDType> ModuleInit<T> for Qwen2Layer<T> {
-    type Config = Qwen2Config;
-    type Error = Qwen2CtxError;
+impl<T: FloatDType> ModuleInit<T> for MiniMindLayer<T> {
+    type Config = MiniMindConfig;
+    type Error = anyhow::Error;
 
-    fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
-        let self_attn = Qwen2Attention::init(config, init).context("init attention")?;
-        let mlp = Qwen2Mlp::init(config, init).context("init mlp")?;
-        let input_layernorm = Qwen2RMSNorm::init(config, init).context("init input layernorm")?;
-        let post_attention_layernorm = Qwen2RMSNorm::new(config).context("init post atten layernorm")?;
+    fn init(config: &MiniMindConfig, init: Option<Init<T>>) -> anyhow::Result<Self> {
+        let self_attn = MiniMindAttention::init(config, init).context("init attention")?;
+        let mlp = MiniMindFeedForward::init(config, init).context("init mlp")?;
+        let input_layernorm = MiniMindRMSNorm::init(config, init).context("init input layernorm")?;
+        let post_attention_layernorm = MiniMindRMSNorm::new(config).context("init post atten layernorm")?;
         Ok(Self {
             self_attn, mlp, input_layernorm, post_attention_layernorm,
         })
     }
 }
 
-impl<T: FloatDType> Qwen2Layer<T> {
+impl<T: FloatDType> MiniMindLayer<T> {
     /*
 
                 |
@@ -215,7 +161,7 @@ impl<T: FloatDType> Qwen2Layer<T> {
                 |
     
     */
-    pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut Qwen2Cache<T>) -> Qwen2Result<Tensor<T>> {    
+    pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut MiniMindCache<T>) -> anyhow::Result<Tensor<T>> {    
         // Self Attention
         let residual = hidden_states.clone();
         let hidden_states = self.input_layernorm.forward(hidden_states).context("input layernorm forward")?;
@@ -237,34 +183,40 @@ impl<T: FloatDType> Qwen2Layer<T> {
 // ========================================================================= //
 
 #[derive(Module)]
-pub struct Qwen2Mlp<T: FloatDType> {
+pub struct MiniMindFeedForward<T: FloatDType> {
     pub up_proj: Linear<T>,
     pub gate_proj: Linear<T>,
     pub down_proj: Linear<T>,
+    pub dropout: Dropout<T>,
+    pub act_fn: Activate,
 }
 
-impl<T: FloatDType> ModuleInit<T> for Qwen2Mlp<T> {
-    type Config = Qwen2Config;
-    type Error = Qwen2CtxError;
+impl<T: FloatDType> ModuleInit<T> for MiniMindFeedForward<T> {
+    type Config = MiniMindConfig;
+    type Error = anyhow::Error;
 
-    fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
+    fn init(config: &MiniMindConfig, init: Option<Init<T>>) -> anyhow::Result<Self> {
         let init = init.unwrap_or_else(default_init_linear);
 
-        let up_proj   = Linear::new(config.hidden_size, config.intermediate_size, false, Some(init))?;
-        let gate_proj = Linear::new(config.hidden_size, config.intermediate_size, false, Some(init))?;
-        let down_proj = Linear::new(config.intermediate_size, config.hidden_size, false, Some(init))?;
-    
-        Ok(Self { up_proj, down_proj, gate_proj })
+        let intermediate_size = config.intermediate_size();
+        let up_proj   = Linear::new(config.hidden_size, intermediate_size, false, Some(init))?;
+        let gate_proj = Linear::new(config.hidden_size, intermediate_size, false, Some(init))?;
+        let down_proj = Linear::new(intermediate_size, config.hidden_size, false, Some(init))?;
+        let dropout = Dropout::new(T::from_f64(config.dropout));
+        let act_fn = Activate::from_str(&config.hidden_act)?;
+        
+        Ok(Self { up_proj, down_proj, gate_proj, dropout, act_fn })
     }
 }
 
-impl<T: FloatDType> Qwen2Mlp<T> {
-    pub fn forward(&self, x: &Tensor<T>) -> Qwen2Result<Tensor<T>> {
+impl<T: FloatDType> MiniMindFeedForward<T> {
+    pub fn forward(&self, x: &Tensor<T>) -> anyhow::Result<Tensor<T>> {
         let up = self.up_proj.forward(x)?;
-        let gate = self.gate_proj.forward(x)?.silu()?;
+        let gate = self.act_fn.forward(self.gate_proj.forward(x)?)?;
         let hidden = up * gate;
         let out = self.down_proj.forward(&hidden)?;
-        Ok(out)
+        let dropout_out = self.dropout.forward(&out)?;
+        Ok(dropout_out)
     }
 }
 
@@ -273,11 +225,13 @@ impl<T: FloatDType> Qwen2Mlp<T> {
 // ========================================================================= //
 
 #[derive(Module)]
-pub struct Qwen2Attention<T: FloatDType> {
+pub struct MiniMindAttention<T: FloatDType> {
     pub q_proj: Linear<T>,
     pub k_proj: Linear<T>,
     pub v_proj: Linear<T>,
     pub o_proj: Linear<T>,
+    pub attn_dropout: Dropout<T>,
+    pub resid_dropout: Dropout<T>,
 
     #[module(skip)]
     pub num_attention_heads: usize,
@@ -289,22 +243,26 @@ pub struct Qwen2Attention<T: FloatDType> {
     pub max_position_embeddings: usize,
 }
 
-impl<T: FloatDType> ModuleInit<T> for Qwen2Attention<T> {
-    type Config = Qwen2Config;
-    type Error = Qwen2CtxError;
+impl<T: FloatDType> ModuleInit<T> for MiniMindAttention<T> {
+    type Config = MiniMindConfig;
+    type Error = anyhow::Error;
 
-    fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
+    fn init(config: &MiniMindConfig, init: Option<Init<T>>) -> anyhow::Result<Self> {
         // TODO: check 
         let head_size = config.hidden_size / config.num_attention_heads;
         
         let init = init.unwrap_or_else(default_init_linear);
-        let q_proj = Linear::new(config.hidden_size, config.hidden_size, true, Some(init))?;
-        let k_proj = Linear::new(config.hidden_size, config.num_key_value_heads * head_size, true, Some(init))?;
-        let v_proj = Linear::new(config.hidden_size, config.num_key_value_heads * head_size, true, Some(init))?;
+        let q_proj = Linear::new(config.hidden_size, config.hidden_size, false, Some(init))?;
+        let k_proj = Linear::new(config.hidden_size, config.num_key_value_heads * head_size, false, Some(init))?;
+        let v_proj = Linear::new(config.hidden_size, config.num_key_value_heads * head_size, false, Some(init))?;
         let o_proj = Linear::new(config.hidden_size, config.hidden_size, false, Some(init))?;
+        let attn_dropout = Dropout::new(T::from_f64(config.dropout));
+        let resid_dropout = Dropout::new(T::from_f64(config.dropout));
 
         Ok(Self {
             q_proj, k_proj, v_proj, o_proj,
+            attn_dropout, resid_dropout,
+
             num_attention_heads: config.num_attention_heads,
             num_key_value_heads: config.num_key_value_heads,
             head_size,
@@ -313,8 +271,8 @@ impl<T: FloatDType> ModuleInit<T> for Qwen2Attention<T> {
     }
 }
 
-impl<T: FloatDType> Qwen2Attention<T> {
-    pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut Qwen2Cache<T>) -> Qwen2Result<Tensor<T>> {
+impl<T: FloatDType> MiniMindAttention<T> {
+    pub fn forward(&self, hidden_states: &Tensor<T>, index_pos: usize, layer_idx: usize, cache: &mut MiniMindCache<T>) -> anyhow::Result<Tensor<T>> {
         let (batch_size, seq_len, hidden_size) = hidden_states.dims3()?;
         let q = self.q_proj.forward(hidden_states)?; // (batch_size, seq_len, head_size * num_attn_heads)
         let k = self.k_proj.forward(hidden_states)?; // (batch_size, seq_len, head_size * num_key_value_heads)
@@ -420,14 +378,14 @@ impl<T: FloatDType> Qwen2Attention<T> {
 
             // (seq_len, total_seq_len) => (batch_size, num_attn_heads, seq_len, total_seq_len)
             let mask = mask.broadcast_as(attn_weight.shape())?;
-            let mask_val = T::from_f64(-1e9);
-            mask.if_else(mask_val, attn_weight)?
+            mask.if_else(T::MIN_VALUE, attn_weight)?
         } else {
             attn_weight
         }; // (batch_size, num_attn_heads, seq_len, total_seq_len)
 
         // (batch_size, num_attn_heads, seq_len, total_seq_len)
         let attn_score = lumen_nn::functional::softmax(&attn_weight_masked, 3)?;
+        let attn_score = self.attn_dropout.forward(&attn_score)?;
 
         // (batch_size, num_attn_heads, seq_len, total_seq_len) @ (batch_size, num_attn_heads, total_seq_len, head_size)
         // => (batch_size, num_attn_heads, seq_len, head_size)
@@ -439,11 +397,12 @@ impl<T: FloatDType> Qwen2Attention<T> {
 
         // => (batch_size, seq_len, hidden_size)
         let attn_out = self.o_proj.forward(&attn_value)?;
+        let attn_out = self.resid_dropout.forward(&attn_out)?;
 
         Ok(attn_out)
     }
 
-    fn apply_rotary_emb(&self, x: &Tensor<T>, index_pos: usize, cache: &Qwen2Cache<T>) -> Qwen2Result<Tensor<T>> {
+    fn apply_rotary_emb(&self, x: &Tensor<T>, index_pos: usize, cache: &MiniMindCache<T>) -> anyhow::Result<Tensor<T>> {
         // (batch_size, _n_heads, seq_len, head_size)
         let (_batch_size, _n_heads, seq_len, head_size) = x.dims4()?;
 
@@ -474,7 +433,7 @@ impl<T: FloatDType> Qwen2Attention<T> {
         Ok(x_out)
     }
 
-    fn rotate_half(&self, x: &Tensor<T>) -> Qwen2Result<Tensor<T>> {
+    fn rotate_half(&self, x: &Tensor<T>) -> anyhow::Result<Tensor<T>> {
         let last_dim = x.dims().len() - 1;
         let dim_size = x.dims()[last_dim];
         let half_dim = dim_size / 2;
@@ -488,13 +447,13 @@ impl<T: FloatDType> Qwen2Attention<T> {
         Ok(x_rotated)
     }
 
-    fn repeat_kv(&self, k: &Tensor<T>, v: &Tensor<T>) -> Qwen2Result<(Tensor<T>, Tensor<T>)> {
+    fn repeat_kv(&self, k: &Tensor<T>, v: &Tensor<T>) -> anyhow::Result<(Tensor<T>, Tensor<T>)> {
         let k = self.repeat(k)?;
         let v = self.repeat(v)?;
         Ok((k, v))
     }
 
-    fn repeat(&self, k: &Tensor<T>) -> Qwen2Result<Tensor<T>> {
+    fn repeat(&self, k: &Tensor<T>) -> anyhow::Result<Tensor<T>> {
         let repeat_times = self.num_attention_heads / self.num_key_value_heads;
         let (batch_size, _num_key_value_heads, seq_len, head_size) = k.dims4()?;
         let k = k.unsqueeze(2)?; 
@@ -509,17 +468,17 @@ impl<T: FloatDType> Qwen2Attention<T> {
 // ========================================================================= //
 
 #[derive(Module)]
-pub struct Qwen2RMSNorm<T: FloatDType> {
+pub struct MiniMindRMSNorm<T: FloatDType> {
     pub weight: Parameter<T>,
     #[module(skip)]
     pub variance_epsilon: T,
 }
 
-impl<T: FloatDType> ModuleInit<T> for Qwen2RMSNorm<T> {
-    type Config = Qwen2Config;
-    type Error = Qwen2CtxError;
+impl<T: FloatDType> ModuleInit<T> for MiniMindRMSNorm<T> {
+    type Config = MiniMindConfig;
+    type Error = anyhow::Error;
 
-    fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
+    fn init(config: &MiniMindConfig, init: Option<Init<T>>) -> anyhow::Result<Self> {
         let init = init.unwrap_or(Init::ones());
         let weight = init.init_param((config.hidden_size,))?;
         let variance_epsilon = T::from_f64(config.rms_norm_eps);
@@ -527,14 +486,14 @@ impl<T: FloatDType> ModuleInit<T> for Qwen2RMSNorm<T> {
     }
 }
 
-impl<T: FloatDType> Qwen2RMSNorm<T> {
-    pub fn new(config: &Qwen2Config) -> Qwen2Result<Self> {
+impl<T: FloatDType> MiniMindRMSNorm<T> {
+    pub fn new(config: &MiniMindConfig) -> anyhow::Result<Self> {
         let weight = Parameter::new(Tensor::ones((config.hidden_size,))?);
         let variance_epsilon = T::from_f64(config.rms_norm_eps);
         Ok(Self { weight, variance_epsilon })
     }
 
-    pub fn forward(&self, hidden_states: &Tensor<T>) -> Qwen2Result<Tensor<T>> {
+    pub fn forward(&self, hidden_states: &Tensor<T>) -> anyhow::Result<Tensor<T>> {
         // (xxx, hidden_size) => (xxx, hidden_size)
         let variance = hidden_states.pow(T::two())?.mean_keepdim(D::Minus1)?;
         // (xxx, hidden_size) => (xxx, hidden_size) 
@@ -559,7 +518,7 @@ fn default_init_linear<T: FloatDType>() -> Init<T> {
 //                Cache
 // ========================================================================= //
 
-pub struct Qwen2Cache<T: FloatDType> {
+pub struct MiniMindCache<T: FloatDType> {
     pub use_kv_cache: bool,
 
     masks: HashMap<usize, Tensor<bool>>,
@@ -568,8 +527,8 @@ pub struct Qwen2Cache<T: FloatDType> {
     sin: Tensor<T>,
 }
 
-impl<T: FloatDType> Qwen2Cache<T> {
-    pub fn new(use_kv_cache: bool, config: &Qwen2Config) -> Qwen2Result<Self> {
+impl<T: FloatDType> MiniMindCache<T> {
+    pub fn new(use_kv_cache: bool, config: &MiniMindConfig) -> anyhow::Result<Self> {
         let theta = calculate_default_inv_freq::<T>(config);
         
         //    [0, 2, 4, ...] 
@@ -592,7 +551,7 @@ impl<T: FloatDType> Qwen2Cache<T> {
          })
     }
 
-    pub fn mask(&mut self, t: usize) -> Qwen2Result<Tensor<bool>> {
+    pub fn mask(&mut self, t: usize) -> anyhow::Result<Tensor<bool>> {
         if let Some(mask) = self.masks.get(&t) {
             Ok(mask.clone())
         } else {
@@ -603,7 +562,7 @@ impl<T: FloatDType> Qwen2Cache<T> {
     }
 }
 
-fn calculate_default_inv_freq<T: FloatDType>(config: &Qwen2Config) -> Vec<T> {
+fn calculate_default_inv_freq<T: FloatDType>(config: &MiniMindConfig) -> Vec<T> {
     let head_size = config.hidden_size / config.num_attention_heads;
     (0..head_size)
         .step_by(2)
@@ -611,61 +570,45 @@ fn calculate_default_inv_freq<T: FloatDType>(config: &Qwen2Config) -> Vec<T> {
         .collect()
 }
 
-#[cfg(test)]
-mod test {
-    use lumen_core::Tensor;
-    use lumen_nn::{init::Init, Module, ModuleInit};
-    use crate::{qwen2::Qwen2Result, ForCausalLM};
-    use super::{Qwen2Cache, Qwen2ForCausalLM, Qwen2Config};
+// #[cfg(test)]
+// mod test {
+//     use lumen_core::Tensor;
+//     use lumen_nn::{init::Init, Module, ModuleInit};
+//     use crate::{llama::{MiniMindConfig, anyhow::Result}, ForCausalLM};
+//     use super::{MiniMindCache, MiniMindForCausalLM};
 
-    #[test]
-    fn test_init() {
-        let init = Init::<f32>::standard_normal();
-        let config = Qwen2Config::test();
-        let model = Qwen2ForCausalLM::init(&config, Some(init)).unwrap();
+//     #[test]
+//     fn test_init() {
+//         let init = Init::<f32>::standard_normal();
+//         let config = MiniMindConfig::test();
+//         let model = MiniMindForCausalLM::init(&config, Some(init)).unwrap();
 
-        for (name, param) in model.named_params() {
-            println!("{}: {}", name, param.shape());
-        }
-    }
+//         for (name, param) in model.named_params() {
+//             println!("{}: {}", name, param.shape());
+//         }
+//     }
 
-    #[test]
-    fn test_forward() {
-        fn test() -> Qwen2Result<()> {
-            let config = Qwen2Config::test();
-            let model = Qwen2ForCausalLM::init_default(&config)?;
+//     #[test]
+//     fn test_forward() {
+//         fn test() -> anyhow::Result<()> {
+//             let config = MiniMindConfig::test();
+//             let model = MiniMindForCausalLM::init_default(&config)?;
     
-            let input_ids = Tensor::<u32>::new(&[
-                [23, 89, 11, 2],
-                [90, 12, 43, 29],
-            ])?; // (2, 4)
+//             let input_ids = Tensor::<u32>::new(&[
+//                 [23, 89, 11, 2],
+//                 [90, 12, 43, 29],
+//             ])?; // (2, 4)
     
-            let mut cache = Qwen2Cache::<f32>::new(true, &config)?;
+//             let mut cache = MiniMindCache::<f32>::new(true, &config)?;
 
-            println!("{}", input_ids);
-            let result = model.forward(input_ids.clone(), 0, &mut cache)?;
-            println!("{}", result);
-            Ok(())
-        }
+//             println!("{}", input_ids);
+//             let result = model.forward(input_ids.clone(), 0, &mut cache)?;
+//             println!("{}", result);
+//             Ok(())
+//         }
 
-        if let Err(e) = test() {
-            println!("{}", e);
-        }
-    }
-
-    #[test]
-    fn test_0_5b_load() {
-        fn test() -> Qwen2Result<()> {
-            let config = Qwen2Config::qwen2_0_5b_instruct();
-            let model = Qwen2ForCausalLM::<f32>::from_safetensors(&config, "./cache/qwen2_0.5b_instruct.safetensors")?;
-            for (name, _p) in model.named_params() {
-                println!("{}", name);
-            } 
-            Ok(())
-        }
-
-        if let Err(e) = test() {
-            println!("{}", e);
-        }
-    }
-}
+//         if let Err(e) = test() {
+//             println!("{}", e);
+//         }
+//     }
+// }

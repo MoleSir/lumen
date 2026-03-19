@@ -24,5 +24,8 @@ pub enum NnError {
     BatchNorm1dUnsupportShape(Shape),
 
     #[error("drop_p {0} invalid(not in [0, 1)])")]
-    DropoutInvalid(f64)
+    DropoutInvalid(f64),
+
+    #[error("unsuppor activate {0}")]
+    UnsupportActivate(String),
 }

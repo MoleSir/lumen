@@ -2,21 +2,14 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use crate::utils;
 
-pub fn derive_impl(ast: &syn::DeriveInput) -> proc_macro::TokenStream {
-    match &ast.data {
-        syn::Data::Struct(_) => generate_struct(ast),
-        syn::Data::Enum(_) => panic!("Enum modules aren't supported yet."),
-        syn::Data::Union(_) => panic!("Union modules aren't supported yet."),
-    }
-    .into()
-}
+use super::common;
 
-fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
+pub fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
     let lumen = utils::get_lumen_nn_path();
     let name = &ast.ident;
 
     // extract generic param
-    let validated_generic = match validate_and_extract_generic(&ast.generics) {
+    let validated_generic = match common::validate_and_extract_generic(&ast.generics) {
         Ok(res) => res,
         Err(e) => return e.to_compile_error().into(),
     };
@@ -27,7 +20,7 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
             (quote! { #impl_generics }, quote! { #user_generic_ident })
         }
         None => {
-            (quote! { <T: FloatDType> }, quote! { T })
+            (quote! { <T: lumen_core::FloatDType> }, quote! { T })
         }
     };
 
@@ -74,7 +67,7 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
             write!(f, "{}", self.display())
         },
         None => quote! {
-            use crate::modules::Module;
+            use #lumen::modules::Module;
             write!(f, "{}", Module::<f64>::display(&*self))
         },
     };
@@ -254,49 +247,4 @@ fn generate_struct(ast: &syn::DeriveInput) -> TokenStream {
     // panic!("{}", codegen);
 
     codegen
-}
-
-fn validate_and_extract_generic(generics: &syn::Generics) -> syn::Result<Option<&syn::Ident>> {
-    let params: Vec<_> = generics.params.iter().collect();
-
-    // 1. check count
-    if params.len() > 1 {
-        return Err(syn::Error::new_spanned(
-            generics, 
-            "Module struct allows at most one generic parameter (e.g., <T: FloatDType>)."
-        ));
-    }
-
-    // no params
-    if params.is_empty() {
-        return Ok(None);
-    }
-
-    // 2. a param must be bounds by `FloatDType`
-    let param = params[0];
-    let type_param = match param {
-        syn::GenericParam::Type(tp) => tp,
-        _ => return Err(syn::Error::new_spanned(
-            param, 
-            "Module struct generic parameter must be a type parameter, not lifetime or const."
-        )),
-    };
-
-    let has_float_dtype = type_param.bounds.iter().any(|bound| {
-        if let syn::TypeParamBound::Trait(trait_bound) = bound {
-            if let Some(segment) = trait_bound.path.segments.last() {
-                return segment.ident == "FloatDType";
-            }
-        }
-        false
-    });
-
-    if !has_float_dtype {
-        return Err(syn::Error::new_spanned(
-            type_param, 
-            format!("The generic parameter '{}' must be bound by FloatDType (e.g., {}: FloatDType).", type_param.ident, type_param.ident)
-        ));
-    }
-
-    Ok(Some(&type_param.ident))
 }
