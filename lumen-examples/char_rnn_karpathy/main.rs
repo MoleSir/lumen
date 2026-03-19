@@ -40,7 +40,8 @@ everywhere you look data
     let mut hprev = Tensor::zeros((HIDDEN_SIZE, 1))?;
 
     for _ in 0..EPOCH {
-        for (b, (inputs, targets)) in dataset.iter().enumerate() {
+        for (b, batch) in dataset.iter().enumerate() {
+            let (inputs, targets) = batch?;
             let state = rnn.forward(&inputs, &hprev)?;
             hprev = state.hs.get(&(inputs.len() as i32 - 1)).expect("get hpre").clone();
 
@@ -108,10 +109,11 @@ impl TextDataset {
 
 impl Dataset for TextDataset {
     type Item = (Vec<usize>, Vec<usize>);
+    type Error = anyhow::Error;
 
-    fn get(&self, index: usize) -> Option<Self::Item> {
+    fn get(&self, index: usize) -> anyhow::Result<Option<Self::Item>> {
         if index >= self.len() {
-            None
+            Ok(None)
         } else {
             let start = index * self.stride;
             let end = start + self.seq_length;
@@ -119,10 +121,10 @@ impl Dataset for TextDataset {
             let input = &self.data[start..end];
             let target = &self.data[start+1..end+1];
             
-            let input = self.encode(input).expect("encode input");
-            let target = self.encode(target).expect("encode expect");
+            let input = self.encode(input)?;
+            let target = self.encode(target)?;
 
-            Some((input, target))
+            Ok(Some((input, target)))
         }
     }
 

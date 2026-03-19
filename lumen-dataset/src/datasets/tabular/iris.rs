@@ -1,6 +1,6 @@
-use std::{fs::File, io::{BufRead, BufReader}, path::{Path, PathBuf}};
+use std::{convert::Infallible, fs::File, io::{BufRead, BufReader}, path::{Path, PathBuf}};
 use lumen_core::Tensor;
-use crate::{utils, Batcher, DataLoader, Dataset, VecDataset};
+use crate::{utils, Batcher, DataLoader, Dataset, common::VecDataset};
 
 // UCI Machine Learning Repository mirror
 const URL: &str = "https://archive.ics.uci.edu/ml/machine-learning-databases/iris/";
@@ -22,7 +22,9 @@ pub struct IrisDataset {
 
 impl Dataset for IrisDataset {
     type Item = IrisItem;
-    fn get(&self, index: usize) -> Option<IrisItem> {
+    type Error = Infallible;
+
+    fn get(&self, index: usize) -> Result<Option<IrisItem>, Self::Error> {
         self.dataset.get(index)
     }
 
@@ -119,7 +121,8 @@ pub struct IrisBatcher;
 
 impl Batcher for IrisBatcher {
     type Item = IrisItem;
-    type Output = Result<IrisBatch, IrisError>;
+    type Output = IrisBatch;
+    type Error = IrisError;
     
     fn batch(&self, items: Vec<IrisItem>) -> IrisResult<IrisBatch> {
         let mut features_vec = vec![];

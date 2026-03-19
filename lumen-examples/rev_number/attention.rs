@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+
 use anyhow::Context;
 use lumen_core::{FloatDType, IndexOp, IntTensor, NoGradGuard, Tensor};
 use lumen_dataset::{Batcher, DataLoader, Dataset};
@@ -306,8 +308,9 @@ impl Seq2SeqDataset {
 
 impl Dataset for Seq2SeqDataset {
     type Item = (Vec<u32>, Vec<u32>);
+    type Error = Infallible;
     
-    fn get(&self, _index: usize) -> Option<Self::Item> {
+    fn get(&self, _index: usize) -> Result<Option<Self::Item>, Self::Error> {
         let mut rng = rng();
         
         // rand a seq_len
@@ -321,7 +324,7 @@ impl Dataset for Seq2SeqDataset {
         trg.reverse();
         trg.push(self.token_config.eos_token);
 
-        Some((src, trg))
+        Ok(Some((src, trg)))
     }
 
     fn len(&self) -> usize {
@@ -341,9 +344,10 @@ impl Seq2SeqBatcher {
 
 impl Batcher for Seq2SeqBatcher {
     type Item = (Vec<u32>, Vec<u32>);
-    type Output = Result<(Tensor<u32>, Tensor<u32>), lumen_core::Error>;
+    type Output = (Tensor<u32>, Tensor<u32>);
+    type Error = lumen_core::Error;
 
-    fn batch(&self, items: Vec<(Vec<u32>, Vec<u32>)>) -> Self::Output {
+    fn batch(&self, items: Vec<(Vec<u32>, Vec<u32>)>) -> lumen_core::Result<Self::Output> {
         let mut xs = vec![];
         let mut ys = vec![];
         

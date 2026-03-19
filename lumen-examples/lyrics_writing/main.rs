@@ -156,24 +156,25 @@ impl LyricsDataset {
 
 impl Dataset for LyricsDataset {
     type Item = (Tensor<u32>, Tensor<u32>);
+    type Error = lumen_core::Error;
 
     fn len(&self) -> usize {
         if self.data.element_count() <= 1 { return 0; }
         (self.data.element_count() - 1) / self.seq_len
     }
 
-    fn get(&self, index: usize) -> Option<Self::Item> {
+    fn get(&self, index: usize) -> Result<Option<Self::Item>, lumen_core::Error> {
         if index >= self.len() {
-            return None;
+            return Ok(None);
         }
 
         let start = index * self.seq_len;
         let end = start + self.seq_len;
 
-        let input = self.data.index(start..end).unwrap(); // (seq_len, )
-        let output = self.data.index(start+1..end+1).unwrap(); // (seq_len, )
+        let input = self.data.index(start..end)?; // (seq_len, )
+        let output = self.data.index(start+1..end+1)?; // (seq_len, )
 
-        Some((input, output))
+        Ok(Some((input, output)))
     }
 }
 

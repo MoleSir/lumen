@@ -44,7 +44,6 @@ fn result_main() -> anyhow::Result<()> {
     Ok(())
 }
 
-
 pub fn train(
     model: &Net<f32>,
     train_loader: &MnistDataLoader,

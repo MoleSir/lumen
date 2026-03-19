@@ -13,6 +13,15 @@ where
     shuffle: bool,
 } 
 
+#[derive(Debug, thiserror::Error)]
+pub enum DataLoaderError {
+    #[error("dataset error: {0}")]
+    Dataset(String),
+
+    #[error("batcher error: {0}")]
+    Batcher(String),
+}
+
 pub struct DataLoaderIter<'a, D, B> 
 where 
     D: Dataset,
@@ -92,7 +101,7 @@ where
     D: Dataset,
     B: Batcher<Item = D::Item> 
 {
-    type Item = B::Output;
+    type Item = Result<B::Output, DataLoaderError>;
     fn next(&mut self) -> Option<Self::Item> {
         iter_next(&self.loader, &mut self.cursor, &self.indices)
     }
@@ -103,7 +112,7 @@ where
     D: Dataset,
     B: Batcher<Item = D::Item> 
 {
-    type Item = B::Output;
+    type Item = Result<B::Output, DataLoaderError>;
     fn next(&mut self) -> Option<Self::Item> {
         iter_next(&self.loader, &mut self.cursor, &self.indices)
     }
@@ -115,7 +124,7 @@ where
     B: Batcher<Item = D::Item> 
 {
     type IntoIter = DataLoaderIntoIter<D, B>;
-    type Item = B::Output;
+    type Item = Result<B::Output, DataLoaderError>;
     fn into_iter(self) -> Self::IntoIter {
         let indices = self.get_iter_indices();
         DataLoaderIntoIter {
@@ -126,7 +135,7 @@ where
     }
 }
 
-fn iter_next<D, B>(loader: &DataLoader<D, B>, cursor: &mut usize, indices: &[usize]) -> Option<B::Output> 
+fn iter_next<D, B>(loader: &DataLoader<D, B>, cursor: &mut usize, indices: &[usize]) -> Option<Result<B::Output, DataLoaderError>> 
 where 
     D: Dataset,
     B: Batcher<Item = D::Item> 
@@ -135,15 +144,26 @@ where
     if begin >= loader.dataset.len() {
         None
     } else {
-        let end = *cursor + loader.batch_size;
-        let end = end.min(loader.dataset.len());
-        let mut items = vec![];
-        for index in begin..end {
-            let index = indices[index];
-            items.push(loader.dataset.get(index).unwrap());
-        }        
-        *cursor += items.len();
-        let batch = loader.batcher.batch(items);
-        Some(batch)
+        let mut f = || -> Result<B::Output, DataLoaderError> {
+            let end = *cursor + loader.batch_size;
+            let end = end.min(loader.dataset.len());
+            let mut items = vec![];
+            for index in begin..end {
+                let index = indices[index];
+                let item = loader.dataset
+                    .get(index)
+                    .map_err(|e| DataLoaderError::Dataset(e.to_string()))?
+                    .expect("must valid item");
+                items.push(item);
+            }        
+            *cursor += items.len();
+            let batch = loader.batcher
+                .batch(items)
+                .map_err(|e| DataLoaderError::Batcher(e.to_string()))?;
+
+            Ok(batch)
+        };
+
+        Some(f())
     }
 }

@@ -52,12 +52,13 @@ impl FunctionDataset {
 
 impl Dataset for FunctionDataset {
     type Item = (Tensor<f64>, Tensor<f64>);
+    type Error = lumen_core::Error;
 
     fn len(&self) -> usize {
         self.num_samples
     }
 
-    fn get(&self, _index: usize) -> Option<(Tensor<f64>, Tensor<f64>)> {
+    fn get(&self, _index: usize) -> Result<Option<(Tensor<f64>, Tensor<f64>)>, Self::Error> {
         let mut rng = rand::rng();
         let normalized_xs: Vec<f64>;
 
@@ -82,10 +83,10 @@ impl Dataset for FunctionDataset {
             })
             .collect();
 
-        Some((
-            Tensor::new(normalized_xs.as_slice()).unwrap().unsqueeze(1).unwrap(),
-            Tensor::new(ys.as_slice()).unwrap().unsqueeze(1).unwrap(),
-        ))
+        Ok(Some((
+            Tensor::new(normalized_xs.as_slice())?.unsqueeze(1)?,
+            Tensor::new(ys.as_slice())?.unsqueeze(1)?,
+        )))
     }
 }
 

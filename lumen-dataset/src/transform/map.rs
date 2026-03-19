@@ -31,10 +31,11 @@ where
     M: Map<Item = D::Item>,
 {
     type Item = M::Output;
+    type Error = D::Error;
 
-    fn get(&self, index: usize) -> Option<Self::Item> {
-        let item = self.dataset.get(index);
-        item.map(|item| self.map.map(item))
+    fn get(&self, index: usize) -> Result<Option<Self::Item>, Self::Error> {
+        let item = self.dataset.get(index)?;
+        Ok(item.map(|item| self.map.map(item)))
     }
 
     fn len(&self) -> usize {

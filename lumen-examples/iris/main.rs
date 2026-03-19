@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_nn::{functional::LossReduction, optim::{Optimizer, SGD}, CrossEntropyLoss, Linear, Module, Relu};
-use lumen_dataset::common::{IrisDataLoader, IrisDataset};
+use lumen_dataset::tabular::{IrisDataLoader, IrisDataset};
 
 #[derive(Module)]
 pub struct Mlp<T: FloatDType> {

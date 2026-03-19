@@ -1,4 +1,3 @@
-use lumen_core::IndexOp;
 use lumen_dataset::{DataLoader, TensorPairBatcher};
 use lumen_nn::{functional::LossReduction, optim::{AdamW, AdamWConfig, Optimizer}, Module, ModuleInit};
 use minimind::{dataset::{cross_entropy_with_ignore, PretrainDataset}, model::{MiniMindCache, MiniMindConfigBuilder, MiniMindForCausalLM}};
@@ -38,16 +37,15 @@ fn result_main() -> anyhow::Result<()> {
         for batch in loader.iter() {
             // (batch_size, seq_len, )
             let (input_ids, label) = batch?;
-            let (batch_size, seq_len) = input_ids.dims2()?;
 
             // (batch_size, seq_len, vocab_size)
             let output_ids = model.forward(input_ids, 0, &mut cache)?;
             // (batch_size * seq_len, vocab_size)
-            let output_ids = output_ids.flatten(0, 1)?.index(0..(batch_size * seq_len-1))?; 
-            // (batch_size * seq_len, 1) => (batch_size * seq_len - 1, 1)
-            let label = label.flatten_all()?.index(1..)?.unsqueeze(1)?;
+            let output_ids = output_ids.flatten(0, 1)?;
+            // (batch_size * seq_len, 1)
+            let label = label.flatten_all()?.unsqueeze(1)?;
 
-            let loss = cross_entropy_with_ignore(&output_ids, &label, LossReduction::Sum)?;
+            let loss = cross_entropy_with_ignore(&output_ids, &label, LossReduction::Mean)?;
             let grads = loss.backward()?;
             optimizer.step(&grads)?;
         }

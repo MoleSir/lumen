@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+
 use anyhow::Context;
 use lumen_core::{FloatDType, IndexOp, IntTensor, NoGradGuard, Tensor};
 use lumen_dataset::{Batcher, DataLoader, Dataset};
@@ -293,8 +295,9 @@ impl PointerNetDataset {
 
 impl Dataset for PointerNetDataset {
     type Item = (Vec<u32>, Vec<u32>);
+    type Error = Infallible;
     
-    fn get(&self, _index: usize) -> Option<Self::Item> {
+    fn get(&self, _index: usize) -> Result<Option<Self::Item>, Self::Error> {
         let mut rng = rng();
         
         // rand a seq_len
@@ -309,7 +312,7 @@ impl Dataset for PointerNetDataset {
         let mut trg_indices: Vec<u32> = (0..seq_len as u32).rev().collect();
         trg_indices.push(seq_len as u32);
 
-        Some((src, trg_indices))
+        Ok(Some((src, trg_indices)))
     }
 
     fn len(&self) -> usize {
@@ -329,9 +332,10 @@ impl PointerNetBatcher {
 
 impl Batcher for PointerNetBatcher {
     type Item = (Vec<u32>, Vec<u32>);
-    type Output = Result<(Tensor<u32>, Tensor<u32>), lumen_core::Error>;
+    type Output = (Tensor<u32>, Tensor<u32>);
+    type Error = lumen_core::Error;
 
-    fn batch(&self, items: Vec<(Vec<u32>, Vec<u32>)>) -> Self::Output {
+    fn batch(&self, items: Vec<(Vec<u32>, Vec<u32>)>) -> lumen_core::Result<Self::Output> {
         let mut xs = vec![];
         let mut ys = vec![];
         
