@@ -18,3 +18,10 @@ thiserrorctx = { workspace = true }
 thiserror = { workspace = true }
 bytemuck = { workspace = true }
 half = { workspace = true, features = ["bytemuck", "num-traits", "rand_distr"] }
+rayon = { workspace = true, optional = true }
+matrixmultiply = { workspace = true, optional = true }
+
+
+[features]
+default = []
+matmul_opt = ["rayon", "matrixmultiply"]
