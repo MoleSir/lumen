@@ -51,7 +51,7 @@ macro_rules! impl_activate {
                 fn from_str(s: &str) -> Result<Self, Self::Err> {
                     match s {
                         $(
-                            stringify!($str) => Ok(Self::$name()),
+                            stringify!($name) => Ok(Self::$name()),
                         )*
                         _ => Err(NnError::UnsupportActivate(s.to_string()))?,
                     }
@@ -111,5 +111,18 @@ impl<T: FloatDType> ModuleForward<T> for Activate {
             Self::Silu(a) => ModuleForward::forward(a, input),
             Self::Tanh(a) => ModuleForward::forward(a, input),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::str::FromStr;
+
+    use super::Activate;
+
+    #[test]
+    fn test_new() {
+        let _ = Activate::from_str("gelu").unwrap();
+        let _ = Activate::from_str("silu").unwrap();
     }
 }
