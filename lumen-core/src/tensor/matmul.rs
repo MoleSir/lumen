@@ -70,8 +70,11 @@ impl<T: NumDType> Tensor<T> {
         let (bs, ms, ns, ks) = bmnk;
         
         let mut dst = vec![T::zero(); bs * ms * ns];
+        // let count = bs * ms * ns;
+        // let mut dst: Vec<T> = Vec::with_capacity(count);
+        // unsafe { dst.set_len(count); }
     
-        #[cfg(not(feature = "matmul_opt"))]
+        #[cfg(not(feature = "operator_opt"))]
         {
             let l_stride_m = lhs_layout.stride()[lhs_rank - 2];
             let l_stride_k = lhs_layout.stride()[lhs_rank - 1];
@@ -119,7 +122,7 @@ impl<T: NumDType> Tensor<T> {
             }
         }
 
-        #[cfg(feature = "matmul_opt")]
+        #[cfg(feature = "operator_opt")]
         {
             use rayon::prelude::*;
 
@@ -131,9 +134,6 @@ impl<T: NumDType> Tensor<T> {
 
             let type_id = TypeId::of::<T>();
 
-            // ==========================================
-            // 🚀 优化路径 1：T 是 f32
-            // ==========================================
             if type_id == TypeId::of::<f32>() {
                 dst.par_chunks_mut(ms * ns).enumerate().for_each(|(b, dst_slice)| {
                     let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
@@ -156,9 +156,6 @@ impl<T: NumDType> Tensor<T> {
                     }
                 });
             }
-            // ==========================================
-            // 🚀 优化路径 2：T 是 f64
-            // ==========================================
             else if type_id == TypeId::of::<f64>() {
                 dst.par_chunks_mut(ms * ns).enumerate().for_each(|(b, dst_slice)| {
                     let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
@@ -180,9 +177,6 @@ impl<T: NumDType> Tensor<T> {
                     }
                 });
             }
-            // ==========================================
-            // 🐢 通用路径：针对其他类型 (i32, custom types等)
-            // ==========================================
             else {
                 let lhs_data = lhs.data();
                 let rhs_data = rhs.data();
@@ -192,7 +186,7 @@ impl<T: NumDType> Tensor<T> {
                     let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
                     let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);
 
-                    // ⚠️ 这里必须使用 m -> k -> n 顺序，防止 Cache Miss
+                    // 这里必须使用 m -> k -> n 顺序，防止 Cache Miss
                     for m in 0..ms {
                         for k in 0..ks {
                             // 提取不变的值，减少内层循环查询

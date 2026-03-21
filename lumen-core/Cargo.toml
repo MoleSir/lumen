@@ -24,4 +24,4 @@ matrixmultiply = { workspace = true, optional = true }
 
 [features]
 default = []
-matmul_opt = ["rayon", "matrixmultiply"]
+operator_opt = ["rayon", "matrixmultiply"]

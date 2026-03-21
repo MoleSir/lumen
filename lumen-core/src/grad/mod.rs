@@ -7,4 +7,5 @@ pub use meta::*;
 pub use store::*;
 pub use op::*;
 pub use global::*;
+#[cfg(test)]
 mod test;

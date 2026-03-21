@@ -247,9 +247,9 @@ impl<'a> Iterator for StorageIndices<'a> {
 
 #[derive(Debug, Clone)]
 pub struct ContiguousStorageIndices {
-    init_storage_index: usize,
-    storage_index: usize,
-    end_index: usize, 
+    pub init_storage_index: usize,
+    pub storage_index: usize,
+    pub end_index: usize, 
 }
 
 impl ContiguousStorageIndices {

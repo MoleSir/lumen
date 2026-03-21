@@ -1,4 +1,4 @@
-use crate::{TensorOrScalar, grad::BinaryOp, AutogradMetaT, CmpOp, Error, FloatDType, NumDType, Shape, Storage, UnaryOp, WithDType};
+use crate::{grad::BinaryOp, AutogradMetaT, CmpOp, Error, FloatDType, NumDType, Shape, Storage, StorageIndices, TensorOrScalar, UnaryOp, WithDType};
 use super::Tensor;
 use paste::paste;
 
@@ -23,10 +23,10 @@ impl<T: WithDType> Tensor<T> {
 }
 
 impl<T: WithDType> Tensor<T> {
-    fn compute_binary_scalar_rhs_op<U, F>(lhs: &Tensor<T>, rhs: T, mut f: F, _op_name: &'static str) -> crate::Result<(Storage<U>, Shape)>
+    fn compute_binary_scalar_rhs_op<U, F>(lhs: &Tensor<T>, rhs: T, f: F, _op_name: &'static str) -> crate::Result<(Storage<U>, Shape)>
         where 
             U: WithDType, 
-            F: FnMut(T, T) -> U 
+            F: Fn(T, T) -> U 
     {
         let shape = lhs.shape();
         let lhs_storage = lhs.storage_read()?;
@@ -42,10 +42,10 @@ impl<T: WithDType> Tensor<T> {
         Ok((storage, shape.clone()))
     }
 
-    fn compute_binary_scalar_lhs_op<U, F>(lhs: T, rhs: &Tensor<T>, mut f: F, _op_name: &'static str) -> crate::Result<(Storage<U>, Shape)>
+    fn compute_binary_scalar_lhs_op<U, F>(lhs: T, rhs: &Tensor<T>, f: F, _op_name: &'static str) -> crate::Result<(Storage<U>, Shape)>
         where 
             U: WithDType, 
-            F: FnMut(T, T) -> U 
+            F: Fn(T, T) -> U 
     {
         let shape = rhs.shape();
         let rhs_storage = rhs.storage_read()?;
@@ -61,10 +61,10 @@ impl<T: WithDType> Tensor<T> {
         Ok((storage, shape.clone()))
     }
 
-    fn compute_binary_op<U, F>(lhs: &Tensor<T>, rhs: &Tensor<T>, mut f: F, op_name: &'static str) -> crate::Result<(Storage<U>, Shape)>
+    fn compute_binary_op<U, F>(lhs: &Tensor<T>, rhs: &Tensor<T>, f: F, op_name: &'static str) -> crate::Result<(Storage<U>, Shape)>
         where 
             U: WithDType, 
-            F: FnMut(T, T) -> U 
+            F: Fn(T, T) -> U + Send + Sync 
     {
         let shape = Tensor::<T>::same_shape_binary_op(lhs, rhs, op_name)?;
         let lhs_storage = lhs.storage_read()?;
@@ -77,10 +77,23 @@ impl<T: WithDType> Tensor<T> {
         let lhs = lhs_storage.data();
         let rhs = rhs_storage.data();
         
-        let output: Vec<_> = lhs_layout.storage_indices().zip(rhs_layout.storage_indices())
-            .map(|(lhs_index, rhs_index)| f(lhs[lhs_index], rhs[rhs_index]))
-            .collect();
-        
+        let output: Vec<_> = match (lhs_layout.storage_indices(), rhs_layout.storage_indices()) {
+            (StorageIndices::ContiguousStorageIndices(lhs_index), StorageIndices::ContiguousStorageIndices(rhs_index)) => {
+                let lhs = &lhs[lhs_index.init_storage_index..lhs_index.end_index];
+                let rhs = &rhs[rhs_index.init_storage_index..rhs_index.end_index];
+
+                lhs.iter()
+                    .zip(rhs.iter())
+                    .map(|(&l, &r)| f(l, r))
+                    .collect()
+            }
+            (lhs_index, rhs_index) => {
+                lhs_index.zip(rhs_index)
+                    .map(|(lhs_index, rhs_index)| f(lhs[lhs_index], rhs[rhs_index]))
+                    .collect()
+            }
+        };
+
         let storage = Storage::<U>::new(output);
         Ok((storage, shape.clone()))
     }
@@ -88,7 +101,7 @@ impl<T: WithDType> Tensor<T> {
     fn binary_op<U, F>(lhs: &Tensor<T>, rhs: &Tensor<T>, f: F, meta: U::AutogradMeta, op_name: &'static str) -> crate::Result<Tensor<U>>
     where 
         U: WithDType, 
-        F: FnMut(T, T) -> U 
+        F: Fn(T, T) -> U + Sync + Send
     {
         let (storage, shape) = Self::compute_binary_op(lhs, rhs, f, op_name)?;
         Ok(Tensor::<U>::from_storage(storage, shape, meta))
@@ -97,7 +110,7 @@ impl<T: WithDType> Tensor<T> {
     fn binary_scalar_rhs_op<U, F>(lhs: &Tensor<T>, rhs: T, f: F, meta: U::AutogradMeta, op_name: &'static str) -> crate::Result<Tensor<U>>
     where 
         U: WithDType, 
-        F: FnMut(T, T) -> U 
+        F: Fn(T, T) -> U 
     {
         let (storage, shape) = Self::compute_binary_scalar_rhs_op(lhs, rhs, f, op_name)?;
         Ok(Tensor::<U>::from_storage(storage, shape, meta))
@@ -106,7 +119,7 @@ impl<T: WithDType> Tensor<T> {
     fn binary_scalar_lhs_op<U, F>(lhs: T, rhs: &Tensor<T>, f: F, meta: U::AutogradMeta, op_name: &'static str) -> crate::Result<Tensor<U>>
     where 
         U: WithDType, 
-        F: FnMut(T, T) -> U 
+        F: Fn(T, T) -> U 
     {
         let (storage, shape) = Self::compute_binary_scalar_lhs_op(lhs, rhs, f, op_name)?;
         Ok(Tensor::<U>::from_storage(storage, shape, meta))
@@ -155,9 +168,9 @@ impl<T: NumDType> Tensor<T> {
 }
 
 impl<T: NumDType> Tensor<T> {
-    fn binary_op_inplace<F>(lhs: &Tensor<T>, rhs: &Tensor<T>, mut f: F, op_name: &'static str) -> crate::Result<()> 
+    fn binary_op_inplace<F>(lhs: &Tensor<T>, rhs: &Tensor<T>, f: F, op_name: &'static str) -> crate::Result<()> 
     where 
-        F: FnMut(T, T) -> T
+        F: Fn(T, T) -> T
     {
         let _ = Tensor::<T>::same_shape_binary_op(lhs, rhs, op_name)?;
 
@@ -177,9 +190,9 @@ impl<T: NumDType> Tensor<T> {
         Ok(())
     }
 
-    fn binary_op_scalar_inplace<F>(lhs: &Tensor<T>, rhs: T, mut f: F, _op_name: &'static str) -> crate::Result<()> 
+    fn binary_op_scalar_inplace<F>(lhs: &Tensor<T>, rhs: T, f: F, _op_name: &'static str) -> crate::Result<()> 
     where 
-        F: FnMut(T, T) -> T
+        F: Fn(T, T) -> T
     {
         let mut lhs_storage = lhs.storage_write()?;
         let lhs_layout = lhs.layout();
@@ -304,24 +317,34 @@ impl Tensor<bool> {
 //////////////////////////////////////////////////////////////////////////////
 
 impl<T: WithDType> Tensor<T> {
-    fn compute_unary_op<U, F>(&self, mut f: F) -> crate::Result<Storage<U>> 
+    fn compute_unary_op<U, F>(&self, f: F) -> crate::Result<Storage<U>> 
     where
         U: WithDType,
-        F: FnMut(T) -> U
+        F: Fn(T) -> U
     {
         let storage = self.storage_read()?;
         let vec = storage.data();
-        let mut output = vec![];
-        for index in self.layout().storage_indices() {
-            output.push( f(vec[index]) );
-        }
+
+        let output: Vec<_> = match self.storage_indices() {
+            StorageIndices::ContiguousStorageIndices(index) => {
+                let data = &vec[index.init_storage_index..index.end_index];
+                data.iter()
+                    .map(|&v| f(v))
+                    .collect()
+            }
+            index => {
+                index.into_iter()
+                    .map(|i| f(vec[i]))
+                    .collect()
+            }
+        };
         
         Ok(Storage::new(output))
     }
 
-    fn unary_assign_op<F>(&self, mut f: F) -> crate::Result<()>
+    fn unary_assign_op<F>(&self, f: F) -> crate::Result<()>
     where
-        F: FnMut(T) -> T
+        F: Fn(T) -> T
     {
         let mut storage = self.storage_write()?;
         let vec = storage.data_mut();
@@ -1019,6 +1042,16 @@ mod tests {
         let b = Tensor::new(&[[2., 2.], [1., 5.]])?;
         let _ = a + b;
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_large_ops() -> crate::Result<()> {
+        let a = Tensor::randn(0.0, 1.0, (5000, 1000))?;
+        let b = Tensor::randn(0.0, 1.0, (5000, 1000))?;
+        let now = std::time::Instant::now();
+        let _ = a + b;
+        println!("{:?}", std::time::Instant::now() - now);
         Ok(())
     }
 }

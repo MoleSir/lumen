@@ -1,22 +1,23 @@
 use std::cmp::Ordering;
-
-use crate::{AutogradMetaT, Dim, NumDType, Result, Storage, StorageRef, Tensor, WithDType};
+use crate::{AutogradMetaT, Dim, NumDType, Result, Storage, Tensor, WithDType};
 use paste::paste;
 
-use super::ResettableIterator;
+/*
 
+        let (storage, shape) = self.compute_reduce_op(reduce_dim, op, keepdim)?;
+        Ok(Tensor::<R>::from_storage(storage, shape, meta))
+*/
 macro_rules! reduce_impl {
     ($fn_name:ident, $reduce:ident, $op:ident) => {
         paste! {
             pub fn $fn_name<D: Dim>(&self, axis: D) -> Result<Self> {
-                let (storage, dims) = self.compute_reduec_axis_op(axis, $reduce::op, stringify!($fn_name))?;
+                let (storage, dims) = self.compute_reduce_op(axis, $reduce, false)?;
                 let meta = T::AutogradMeta::on_reduce_op(self, &dims, crate::ReduceOp::$op);
-                let res = Self::from_storage(storage, dims, meta);
-                res.squeeze(axis)
+                Ok(Self::from_storage(storage, dims, meta))
             }
         
             pub fn [< $fn_name _keepdim >]<D: Dim>(&self, axis: D) -> Result<Self> {
-                let (storage, dims) = self.compute_reduec_axis_op(axis, $reduce::op, stringify!([< $fn_name _keepdim >]))?;
+                let (storage, dims) = self.compute_reduce_op(axis, $reduce, true)?;
                 let meta = T::AutogradMeta::on_reduce_op(self, &dims, crate::ReduceOp::$op);
                 Ok(Self::from_storage(storage, dims, meta))
             }
@@ -72,60 +73,72 @@ impl<T: NumDType> Tensor<T> {
     }
 
     pub fn argmin_keepdim<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
-        let (storage, dims) = self.compute_reduec_axis_op(axis, ReduceArgMin::op, "argmin")?;
+        let (storage, dims) = self.compute_reduce_op(axis, ReduceArgMin, true)?;
         Ok(Tensor::from_storage(storage, dims, Default::default()))
     }
 
     pub fn argmin<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
-        let (storage, dims) = self.compute_reduec_axis_op(axis, ReduceArgMin::op, "argmin_keepdim")?;
+        let (storage, dims) = self.compute_reduce_op(axis, ReduceArgMin, false)?;
         let res = Tensor::from_storage(storage, dims, Default::default());
-        res.squeeze(axis)
+        Ok(res)
     }
 
     pub fn argmax_keepdim<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
-        let (storage, dims) = self.compute_reduec_axis_op(axis, ReduceArgMax::op, "argmax")?;
+        let (storage, dims) = self.compute_reduce_op(axis, ReduceArgMax, true)?;
         Ok(Tensor::from_storage(storage, dims, Default::default()))
     }
 
     pub fn argmax<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
-        let (storage, dims) = self.compute_reduec_axis_op(axis, ReduceArgMax::op, "argmax_keepdim")?;
+        let (storage, dims) = self.compute_reduce_op(axis, ReduceArgMax, false)?;
         let res = Tensor::from_storage(storage, dims, Default::default());
-        res.squeeze(axis)
+        Ok(res)
     }
 }
 
 impl Tensor<bool> {
-    pub fn all(&self) -> crate::Result<bool> {
+    pub fn all_all(&self) -> crate::Result<bool> {
         self.iter().map(|mut i| i.all(|a| a))
     }
 
-    pub fn any(&self) -> crate::Result<bool> {
+    pub fn any_all(&self) -> crate::Result<bool> {
         self.iter().map(|mut i| i.any(|a| a))
     } 
 
-    pub fn all_axis<D: Dim>(&self, axis: D) -> Result<Tensor<bool>> {
-        self.reduec_axis_op(axis, ReduceAll::op, Default::default(), "all")
+    pub fn all_keepdim<D: Dim>(&self, axis: D) -> Result<Tensor<bool>> {
+        self.reduce_op(axis, ReduceAll, true, Default::default())
     }
 
-    pub fn any_axis<D: Dim>(&self, axis: D) -> Result<Tensor<bool>> {
-        self.reduec_axis_op(axis, ReduceAny::op, Default::default(), "any")
+    pub fn any_keepdim<D: Dim>(&self, axis: D) -> Result<Tensor<bool>> {
+        self.reduce_op(axis, ReduceAny, true, Default::default())
+    }
+
+    pub fn all<D: Dim>(&self, axis: D) -> Result<Tensor<bool>> {
+        self.reduce_op(axis, ReduceAll, false, Default::default())
+    }
+
+    pub fn any<D: Dim>(&self, axis: D) -> Result<Tensor<bool>> {
+        self.reduce_op(axis, ReduceAny, false, Default::default())
     }
 }
 
 impl<T: WithDType> Tensor<T> {
-    fn reduec_axis_op<'a, F, R: WithDType, D: Dim>(&'a self, reduce_dim: D, f: F, meta: R::AutogradMeta, op_name: &'static str) -> Result<Tensor<R>> 
+    fn reduce_op<'a, R, Op, D>(&'a self, reduce_dim: D, op: Op, keepdim: bool, meta: R::AutogradMeta) -> Result<Tensor<R>> 
     where 
-        F: Fn(&mut DimArrayIter<'a, T>) -> R
+        R: WithDType,
+        D: Dim,
+        Op: ReduceOp<T, Output = R>,
     {
-        let (storage, shape) = self.compute_reduec_axis_op(reduce_dim, f, op_name)?;
+        let (storage, shape) = self.compute_reduce_op(reduce_dim, op, keepdim)?;
         Ok(Tensor::<R>::from_storage(storage, shape, meta))
     }
 
-    fn compute_reduec_axis_op<'a, F, R: WithDType, D: Dim>(&'a self, reduce_dim: D, f: F, op_name: &'static str) -> Result<(Storage<R>, Vec<usize>)> 
+    fn compute_reduce_op<'a, R, Op, D>(&'a self, reduce_dim: D, _: Op, keepdim: bool) -> Result<(Storage<R>, Vec<usize>)> 
     where 
-        F: Fn(&mut DimArrayIter<'a, T>) -> R
+        R: WithDType,
+        D: Dim,
+        Op: ReduceOp<T, Output = R>,
     {
-        let reduce_dim = reduce_dim.to_index(self.shape(), op_name)?;
+        let reduce_dim = reduce_dim.to_index(self.shape(), Op::NAME)?;
         assert!(reduce_dim < self.layout().dims().len());
         let reduce_dim_stride = self.layout().stride()[reduce_dim];
         let reduce_dim_size = self.layout().dims()[reduce_dim];
@@ -134,22 +147,37 @@ impl<T: WithDType> Tensor<T> {
         let mut dst: Vec<R> = Vec::with_capacity(dst_len);
         let dst_to_set = dst.spare_capacity_mut();
 
+        let storage = self.storage_read()?;
+        let storage_slice = storage.data();
+
         let layout = self.layout().narrow(reduce_dim, 0, 1)?;
         for (dst_index, src_index) in layout.storage_indices().enumerate() {
-            let arr: DimArray<'_, T> = DimArray {
-                src: self.storage_ref(src_index)?,
-                size: reduce_dim_size,
-                stride: reduce_dim_stride
-            };
-            let mut iter: DimArrayIter<'_, T> = arr.into_iter();
-            dst_to_set[dst_index].write(f(&mut iter));
+            if reduce_dim_stride == 1 {
+                let end_index = src_index + reduce_dim_size;
+                let chunk = &storage_slice[src_index..end_index];
+                let v = Op::op(chunk.iter().copied());
+                dst_to_set[dst_index].write(v);
+            } else {
+                let arr: DimArray<'_, T> = DimArray {
+                    src: &storage_slice[src_index..],
+                    size: reduce_dim_size,
+                    stride: reduce_dim_stride
+                };
+                let iter: DimArrayIter<'_, T> = arr.into_iter();
+                let v = Op::op(iter);
+                dst_to_set[dst_index].write(v);
+            }  
         }
         unsafe { dst.set_len(dst_len) };
 
         let storage = Storage::new(dst);
         let mut shape = self.dims().to_vec();
-        // shape.remove(reduce_dim);
-        shape[reduce_dim] = 1;
+
+        if keepdim {
+            shape[reduce_dim] = 1;
+        } else {
+            shape.remove(reduce_dim);
+        }
 
         Ok((storage, shape))
     }
@@ -173,11 +201,13 @@ impl<T: NumDType> Tensor<T> {
         let mut indexed: Vec<(u32, T)> = Vec::with_capacity(reduce_dim_size);
 
         // 先去掉 dim 维度，遍历其他所有的可能的排列
+        let storage = self.storage_read()?;
+        let storage_slice = storage.data();
         let layout = self.layout().narrow(reduce_dim, 0, 1)?;
         for src_index in layout.storage_indices() {
             // 取出这个维度的一组数据
             let arr: DimArray<'_, T> = DimArray {
-                src: self.storage_ref(src_index)?,
+                src: &storage_slice[src_index..],
                 size: reduce_dim_size,
                 stride: reduce_dim_stride
             };
@@ -236,54 +266,67 @@ impl<T: NumDType> Tensor<T> {
 
 pub trait ReduceOp<D: WithDType> {
     type Output: WithDType;
-    fn op(arr: &mut DimArrayIter<'_, D>) -> Self::Output;
+    const NAME: &'static str;
+    fn op<I>(iter: I) -> Self::Output
+    where
+        I: Iterator<Item = D> + ExactSizeIterator + Clone;
 }
 
 pub struct ReduceAll;
 impl ReduceOp<bool> for ReduceAll {
     type Output = bool;
-    fn op(arr: &mut DimArrayIter<'_, bool>) -> Self::Output {
-        arr.into_iter().all(|b| b)
+    const NAME: &'static str = "all";
+    fn op<I>(mut iter: I) -> Self::Output 
+    where I: Iterator<Item = bool> + ExactSizeIterator + Clone {
+        iter.all(|b| b)
     }
 }
 
 pub struct ReduceAny;
 impl ReduceOp<bool> for ReduceAny {
     type Output = bool;
-    fn op(arr: &mut DimArrayIter<'_, bool>) -> Self::Output {
-        arr.into_iter().any(|b| b)
+    const NAME: &'static str = "any";
+    fn op<I>(mut iter: I) -> Self::Output 
+    where I: Iterator<Item = bool> + ExactSizeIterator + Clone {
+        iter.any(|b| b)
     }
 }
 
 pub struct ReduceSum;
 impl<D: NumDType> ReduceOp<D> for ReduceSum {
+    const NAME: &'static str = "sum";
     type Output = D;
-    fn op(arr: &mut DimArrayIter<'_, D>) -> Self::Output {
-        arr.into_iter().sum::<D>()
+    fn op<I>(iter: I) -> Self::Output 
+    where I: Iterator<Item = D> + ExactSizeIterator + Clone {
+        iter.sum::<D>()
     }
 } 
 
 pub struct ReduceMean;
 impl<D: NumDType> ReduceOp<D> for ReduceMean {
     type Output = D;
-    fn op(arr: &mut DimArrayIter<'_, D>) -> Self::Output {
-        let len = arr.len();
-        arr.into_iter().sum::<D>() / D::from_usize(len)
+    const NAME: &'static str = "mean";
+    fn op<I>(iter: I) -> Self::Output 
+    where I: Iterator<Item = D> + ExactSizeIterator + Clone {
+        let len = iter.len();
+        iter.sum::<D>() / D::from_usize(len)
     }
 } 
 
 pub struct ReduceVar;
 impl<D: NumDType> ReduceOp<D> for ReduceVar {
     type Output = D;
-    fn op(arr: &mut DimArrayIter<'_, D>) -> Self::Output {
-        let len = arr.len();
+    const NAME: &'static str = "var";
+    fn op<I>(iter: I) -> Self::Output 
+    where I: Iterator<Item = D> + ExactSizeIterator + Clone {
+        let len = iter.len();
         if len == 0 { return D::zero(); }
 
-        let mean = ReduceMean::op(arr);
+        // 利用 Clone 给 Mean 使用，本迭代器保留用于第二次遍历
+        let mean = ReduceMean::op(iter.clone());
         
-        arr.reset();
         let mut sum_sq_diff = D::zero();
-        while let Some(v) = arr.next() {
+        for v in iter {
             let diff = v - mean;
             sum_sq_diff += diff * diff;
         }
@@ -295,26 +338,40 @@ impl<D: NumDType> ReduceOp<D> for ReduceVar {
 pub struct ReduceProduct;
 impl<D: NumDType> ReduceOp<D> for ReduceProduct {
     type Output = D;
-    fn op(arr: &mut DimArrayIter<'_, D>) -> Self::Output {
-        arr.into_iter().product::<D>()
+    const NAME: &'static str = "product";
+    fn op<I>(iter: I) -> Self::Output 
+    where I: Iterator<Item = D> + ExactSizeIterator + Clone {
+        iter.product::<D>()
     }
 } 
 
 pub struct ReduceMin;
 impl<D: NumDType> ReduceOp<D> for ReduceMin {
     type Output = D;
-    fn op(arr: &mut DimArrayIter<'_, D>) -> Self::Output {
-        arr.into_iter()
-            .reduce(|a, b| D::minimum(a, b)).unwrap()
+    const NAME: &'static str = "min";
+    fn op<I>(iter: I) -> Self::Output 
+    where I: Iterator<Item = D> + ExactSizeIterator + Clone {
+        iter.reduce(|a, b| D::minimum(a, b)).unwrap()
+    }
+} 
+
+pub struct ReduceMax;
+impl<D: NumDType> ReduceOp<D> for ReduceMax {
+    type Output = D;
+    const NAME: &'static str = "max";
+    fn op<I>(iter: I) -> Self::Output 
+    where I: Iterator<Item = D> + ExactSizeIterator + Clone {
+        iter.reduce(|a, b| D::maximum(a, b)).unwrap()
     }
 } 
 
 pub struct ReduceArgMin;
 impl<D: NumDType> ReduceOp<D> for ReduceArgMin {
     type Output = u32;
-    fn op(arr: &mut DimArrayIter<'_, D>) -> Self::Output {
-        arr.into_iter()
-            .enumerate()
+    const NAME: &'static str = "arg_min";
+    fn op<I>(iter: I) -> Self::Output 
+    where I: Iterator<Item = D> + ExactSizeIterator + Clone {
+        iter.enumerate()
             .reduce(|(ia, a), (ib, b)| {
                 if a.partial_cmp(&b) == Some(std::cmp::Ordering::Less) {
                     (ia, a)
@@ -325,21 +382,13 @@ impl<D: NumDType> ReduceOp<D> for ReduceArgMin {
     }
 } 
 
-pub struct ReduceMax;
-impl<D: NumDType> ReduceOp<D> for ReduceMax {
-    type Output = D;
-    fn op(arr: &mut DimArrayIter<'_, D>) -> Self::Output {
-        arr.into_iter()
-            .reduce(|a, b| D::maximum(a, b)).unwrap()
-    }
-} 
-
 pub struct ReduceArgMax;
 impl<D: NumDType> ReduceOp<D> for ReduceArgMax {
     type Output = u32;
-    fn op(arr: &mut DimArrayIter<'_, D>) -> Self::Output {
-        arr.into_iter()
-            .enumerate()
+    const NAME: &'static str = "arg_max";
+    fn op<I>(iter: I) -> Self::Output 
+    where I: Iterator<Item = D> + ExactSizeIterator + Clone {
+        iter.enumerate()
             .reduce(|(ia, a), (ib, b)| {
                 if a.partial_cmp(&b) == Some(std::cmp::Ordering::Greater) {
                     (ia, a)
@@ -348,17 +397,18 @@ impl<D: NumDType> ReduceOp<D> for ReduceArgMax {
                 }
             }).unwrap().0 as u32
     }
-} 
+}
 
+#[derive(Clone)]
 pub struct DimArray<'a, T> {
-    src: StorageRef<'a, T>,
+    src: &'a [T],
     size: usize,
     stride: usize
 }
 
 impl<'a, T: WithDType> DimArray<'a, T> {
     pub fn get(&self, index: usize) -> T {
-        self.src.get_unchecked(index * self.stride)
+        self.src[index * self.stride]
     }
 
     #[allow(unused)]
@@ -382,6 +432,7 @@ impl<'a, T: WithDType> IntoIterator for DimArray<'a, T> {
     }
 }
 
+#[derive(Clone)]
 pub struct DimArrayIter<'a, T> {
     array: DimArray<'a, T>,
     index: usize,
@@ -403,12 +454,6 @@ impl<'a, T: WithDType> Iterator for DimArrayIter<'a, T> {
 impl<'a, T: WithDType> ExactSizeIterator for DimArrayIter<'a, T> {
     fn len(&self) -> usize {
         self.array.size
-    }
-}
-
-impl<'a, T: WithDType> ResettableIterator for DimArrayIter<'a, T> {
-    fn reset(&mut self) {
-        self.index = 0
     }
 }
 
@@ -625,5 +670,14 @@ mod tests {
 
         assert!(val.allclose(&expected_val, 1e-5, 1e-8).unwrap());
         assert!(idx.allclose(&expected_idx, 1e-5, 1e-8).unwrap());
+    }
+
+    #[test]
+    fn test_large_ops() {
+        let a = Tensor::randn(0.0, 1.0, (64, 2048)).unwrap();
+        let now = std::time::Instant::now();
+        let s = a.sum_keepdim(1).unwrap();
+        println!("{:?}", std::time::Instant::now() - now);
+        println!("{:?}", s.dims());
     }
 }
