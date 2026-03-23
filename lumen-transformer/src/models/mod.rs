@@ -12,15 +12,13 @@ pub mod qwen2;
 pub mod common;
 
 pub trait PretrainedModel<T: FloatDType> : Sized {
-    type Error: Send + Sync + 'static + std::error::Error;
+    type Error;
     fn from_pretrained(path: impl Into<PathBuf>) -> Result<Self, Self::Error>;
 }
 
 pub trait ForCausalLM<T: FloatDType> {
     type Cache;
-    type Error: 
-          std::error::Error + Sync + Send + 'static
-        + From<lumen_core::Error>;
+    type Error: From<lumen_core::Error>;
 
     fn new_cache(&self) -> Result<Self::Cache, Self::Error>;
 

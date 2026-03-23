@@ -22,7 +22,7 @@ use super::ModuleForward;
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
 
-#[derive(Module)]
+#[derive(Module, Clone)]
 pub enum Activate {
     GeluErf(GeluErf),
     Gelu(Gelu),

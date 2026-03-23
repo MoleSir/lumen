@@ -9,13 +9,20 @@ name = "pretrain"
 path = "./src/trainer/pretrain.rs"
 
 
+[[bin]]
+name = "ppo"
+path = "./src/trainer/ppo.rs"
+
+
 [dependencies]
-lumen-core = { path = "../../lumen-core" }
+lumen-core = { path = "../../lumen-core", features = ["operator_opt"] }
 lumen-dataset = { path = "../../lumen-dataset" }
 lumen-nn = { path = "../../lumen-nn" }
+lumen-transformer = { path = "../../lumen-transformer" }
 
 serde = { version = "1.0", features = ["derive"] } 
 serde_json = "1.0"
 anyhow = "1.0"
 tokenizers = "0.22"
 derive_builder = "0.20.2"
+rand = "0.10.0"

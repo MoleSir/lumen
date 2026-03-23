@@ -2,7 +2,7 @@ use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
 use crate::{NnResult, NnCtxError, ModuleForward};
 
-#[derive(Module)]
+#[derive(Module, Clone)]
 pub struct Recip;
 
 impl Recip {

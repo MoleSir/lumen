@@ -11,6 +11,7 @@ mod grad;
 mod variable;
 mod scalar;
 mod dynamic;
+pub mod utils;
 
 pub use shape::*;
 pub use layout::*;

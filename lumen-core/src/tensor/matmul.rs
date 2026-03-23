@@ -1,4 +1,4 @@
-use std::{any::TypeId, ops::Deref};
+use std::ops::Deref;
 use num_traits::Zero;
 use crate::{AutogradMetaT, Error, Layout, NumDType, Result, Shape, Storage};
 use super::Tensor;
@@ -68,11 +68,9 @@ impl<T: NumDType> Tensor<T> {
         let lhs_rank = lhs_layout.shape().rank();
         let rhs_rank = rhs_layout.shape().rank();
         let (bs, ms, ns, ks) = bmnk;
+        let mns = ms * ns;
         
-        let mut dst = vec![T::zero(); bs * ms * ns];
-        // let count = bs * ms * ns;
-        // let mut dst: Vec<T> = Vec::with_capacity(count);
-        // unsafe { dst.set_len(count); }
+        let mut dst = vec![T::zero(); bs * mns];
     
         #[cfg(not(feature = "operator_opt"))]
         {
@@ -125,8 +123,8 @@ impl<T: NumDType> Tensor<T> {
         #[cfg(feature = "operator_opt")]
         {
             use rayon::prelude::*;
+            use std::any::TypeId;
 
-            // 获取最后两个维度的 stride
             let l_stride_m = lhs_layout.stride()[lhs_rank - 2] as isize;
             let l_stride_k = lhs_layout.stride()[lhs_rank - 1] as isize;
             let r_stride_k = rhs_layout.stride()[rhs_rank - 2] as isize;
@@ -135,12 +133,13 @@ impl<T: NumDType> Tensor<T> {
             let type_id = TypeId::of::<T>();
 
             if type_id == TypeId::of::<f32>() {
-                dst.par_chunks_mut(ms * ns).enumerate().for_each(|(b, dst_slice)| {
+                for b in 0..bs {
+                    let start_index = b*mns;
+                    let dst_slice = &mut dst[start_index..start_index+mns];
                     let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
                     let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);
 
                     unsafe {
-                        // 绝对安全：我们已经验证了 T 就是 f32
                         let lhs_ptr = lhs.data().as_ptr().add(l_batch_offset) as *const f32;
                         let rhs_ptr = rhs.data().as_ptr().add(r_batch_offset) as *const f32;
                         let dst_ptr = dst_slice.as_mut_ptr() as *mut f32;
@@ -154,10 +153,12 @@ impl<T: NumDType> Tensor<T> {
                             dst_ptr, ns as isize, 1
                         );
                     }
-                });
+                }
             }
             else if type_id == TypeId::of::<f64>() {
-                dst.par_chunks_mut(ms * ns).enumerate().for_each(|(b, dst_slice)| {
+                for b in 0..bs {
+                    let start_index = b*mns;
+                    let dst_slice = &mut dst[start_index..start_index+mns];
                     let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
                     let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);
 
@@ -165,7 +166,7 @@ impl<T: NumDType> Tensor<T> {
                         let lhs_ptr = lhs.data().as_ptr().add(l_batch_offset) as *const f64;
                         let rhs_ptr = rhs.data().as_ptr().add(r_batch_offset) as *const f64;
                         let dst_ptr = dst_slice.as_mut_ptr() as *mut f64;
-
+                        
                         matrixmultiply::dgemm(
                             ms, ks, ns, 
                             1.0, 
@@ -175,21 +176,18 @@ impl<T: NumDType> Tensor<T> {
                             dst_ptr, ns as isize, 1
                         );
                     }
-                });
+                }
             }
             else {
                 let lhs_data = lhs.data();
                 let rhs_data = rhs.data();
 
-                // 依然使用多线程处理 Batch
                 dst.par_chunks_mut(ms * ns).enumerate().for_each(|(b, dst_slice)| {
                     let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
                     let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);
 
-                    // 这里必须使用 m -> k -> n 顺序，防止 Cache Miss
                     for m in 0..ms {
                         for k in 0..ks {
-                            // 提取不变的值，减少内层循环查询
                             let l_idx = l_batch_offset + (m as isize * l_stride_m + k as isize * l_stride_k) as usize;
                             let l_val = unsafe { *lhs_data.get_unchecked(l_idx) };
                             
@@ -214,7 +212,7 @@ impl<T: NumDType> Tensor<T> {
         Storage::new(dst)
     }
 
-    // 将你原本的 batch 偏移量计算提取成一个辅助函数，使代码更整洁
+    #[cfg(feature = "operator_opt")]
     fn compute_batch_offset(b: usize, layout: &Layout) -> usize {
         let rank = layout.shape().rank();
         let batch_dims = &layout.dims()[..rank - 2];
@@ -231,6 +229,7 @@ impl<T: NumDType> Tensor<T> {
         offset
     }
 }
+
 
 #[cfg(test)]
 #[allow(unused)]
@@ -256,8 +255,20 @@ mod tests {
 
     #[test]
     fn test_large_matmul() {
-        let w = Tensor::randn(0.0, 1.0, (1024, 1024)).unwrap();
-        let x = Tensor::randn(0.0, 1.0, (512, 1024)).unwrap();
+        let w = Tensor::randn(0.0, 1.0, (128, 1024, 1024)).unwrap();
+        let x = Tensor::randn(0.0, 1.0, (128, 512, 1024)).unwrap();
+
+        let start = std::time::Instant::now();
+        let y = x.matmul(&w).unwrap();
+        let end = std::time::Instant::now();
+        
+        eprintln!("{:?}", end - start);
+    }
+
+    #[test]
+    fn test_small_matmul() {
+        let w = Tensor::randn(0.0, 1.0, (32, 32)).unwrap();
+        let x = Tensor::randn(0.0, 1.0, (32, 32)).unwrap();
 
         let start = std::time::Instant::now();
         let y = x.matmul(&w).unwrap();

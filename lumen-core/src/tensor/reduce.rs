@@ -79,8 +79,7 @@ impl<T: NumDType> Tensor<T> {
 
     pub fn argmin<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
         let (storage, dims) = self.compute_reduce_op(axis, ReduceArgMin, false)?;
-        let res = Tensor::from_storage(storage, dims, Default::default());
-        Ok(res)
+        Ok(Tensor::from_storage(storage, dims, Default::default()))
     }
 
     pub fn argmax_keepdim<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
@@ -90,8 +89,7 @@ impl<T: NumDType> Tensor<T> {
 
     pub fn argmax<D: Dim>(&self, axis: D) -> Result<Tensor<u32>> {
         let (storage, dims) = self.compute_reduce_op(axis, ReduceArgMax, false)?;
-        let res = Tensor::from_storage(storage, dims, Default::default());
-        Ok(res)
+        Ok(Tensor::from_storage(storage, dims, Default::default()))
     }
 }
 
@@ -142,7 +140,7 @@ impl<T: WithDType> Tensor<T> {
         assert!(reduce_dim < self.layout().dims().len());
         let reduce_dim_stride = self.layout().stride()[reduce_dim];
         let reduce_dim_size = self.layout().dims()[reduce_dim];
-
+   
         let dst_len = self.layout().element_count() / reduce_dim_size;
         let mut dst: Vec<R> = Vec::with_capacity(dst_len);
         let dst_to_set = dst.spare_capacity_mut();
@@ -674,7 +672,7 @@ mod tests {
 
     #[test]
     fn test_large_ops() {
-        let a = Tensor::randn(0.0, 1.0, (64, 2048)).unwrap();
+        let a = Tensor::randn(0.0, 1.0, (1000, 4096)).unwrap();
         let now = std::time::Instant::now();
         let s = a.sum_keepdim(1).unwrap();
         println!("{:?}", std::time::Instant::now() - now);

@@ -2,7 +2,7 @@ use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
 use crate::{functional as F, ModuleForward, NnCtxError, NnResult};
 
-#[derive(Module)]
+#[derive(Module, Clone)]
 #[module(display = "display")]
 #[module(train = "set_train")]
 pub struct Dropout<T: FloatDType> {

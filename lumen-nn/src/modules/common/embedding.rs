@@ -5,7 +5,7 @@ use crate::{init::Init, NnCtxError, NnResult};
 use crate::{ModuleInit, Parameter};
 
 /// A simple lookup table that stores embeddings of a fixed dictionary and size.
-#[derive(Module)]
+#[derive(Module, Clone)]
 pub struct Embedding<T: FloatDType> {
     pub weight: Parameter<T>,
 

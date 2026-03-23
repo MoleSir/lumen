@@ -1,6 +1,6 @@
 use lumen_dataset::{DataLoader, TensorPairBatcher};
 use lumen_nn::{functional::LossReduction, optim::{AdamW, AdamWConfig, Optimizer}, Module, ModuleInit};
-use minimind::{dataset::{cross_entropy_with_ignore, PretrainDataset}, model::{MiniMindCache, MiniMindConfigBuilder, MiniMindForCausalLM}};
+use minimind::{dataset::PretrainDataset, model::{CrossEntropy, MiniMindCache, MiniMindConfigBuilder, MiniMindForCausalLM}};
 use tokenizers::Tokenizer;
 
 fn main() {
@@ -30,6 +30,7 @@ fn result_main() -> anyhow::Result<()> {
     ad_config.lr = LR;
     let mut optimizer = AdamW::new(model.params(), ad_config)?;
 
+    let cirt = CrossEntropy::new(LossReduction::Mean);
     let mut cache = MiniMindCache::new(false, &config)?;
 
     model.train(true);
@@ -45,7 +46,7 @@ fn result_main() -> anyhow::Result<()> {
             // (batch_size * seq_len, 1)
             let label = label.flatten_all()?.unsqueeze(1)?;
 
-            let loss = cross_entropy_with_ignore(&output_ids, &label, LossReduction::Mean)?;
+            let loss = cirt.forward(&output_ids, &label)?;
             let grads = loss.backward()?;
             optimizer.step(&grads)?;
         }

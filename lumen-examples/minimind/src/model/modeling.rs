@@ -2,13 +2,14 @@ use std::{collections::HashMap, str::FromStr};
 use anyhow::Context;
 use lumen_core::{FloatDType, IntTensor, Tensor, D};
 use lumen_nn::{init::Init, Activate, Dropout, Embedding, Linear, Module, ModuleForward, ModuleInit, Parameter};
+use lumen_transformer::ForCausalLM;
 use super::MiniMindConfig;
 
 // ========================================================================= //
 //                For Causal LM
 // ========================================================================= //
 
-#[derive(Module)]
+#[derive(Module, Clone)]
 pub struct MiniMindForCausalLM<T: FloatDType> {
     pub model: MiniMindModel<T>,
     #[module(skip)]
@@ -39,11 +40,33 @@ impl<T: FloatDType> MiniMindForCausalLM<T> {
     }
 }
 
+impl<T: FloatDType> ForCausalLM<T> for MiniMindForCausalLM<T> {
+    type Cache = MiniMindCache<T>;
+    type Error = anyhow::Error;
+
+    fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Self::Cache) -> Result<Tensor<T>, Self::Error> {
+        // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
+        let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
+
+        let wte_weight = &self.model.embed_tokens.weight;
+        // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
+        let logits = lumen_nn::functional::linear(&hidden_states, &wte_weight, None)
+            .context("lm head forward")?;
+        
+        Ok(logits) 
+    }
+
+    fn new_cache(&self) -> Result<Self::Cache, Self::Error> {
+        MiniMindCache::new(true, &self.config)
+    }
+
+}
+
 // ========================================================================= //
 //                          Model 
 // ========================================================================= //
 
-#[derive(Module)]
+#[derive(Module, Clone)]
 pub struct MiniMindModel<T: FloatDType> {
     pub embed_tokens: Embedding<T>,
     pub layers: Vec<MiniMindLayer<T>>,
@@ -96,7 +119,7 @@ impl<T: FloatDType> MiniMindModel<T> {
 //                Layer
 // ========================================================================= //
 
-#[derive(Module)]
+#[derive(Module, Clone)]
 pub struct MiniMindLayer<T: FloatDType> {
     pub self_attn: MiniMindAttention<T>,
     pub mlp: MiniMindFeedForward<T>,
@@ -182,7 +205,7 @@ impl<T: FloatDType> MiniMindLayer<T> {
 //                MLP
 // ========================================================================= //
 
-#[derive(Module)]
+#[derive(Module, Clone)]
 pub struct MiniMindFeedForward<T: FloatDType> {
     pub up_proj: Linear<T>,
     pub gate_proj: Linear<T>,
@@ -224,7 +247,7 @@ impl<T: FloatDType> MiniMindFeedForward<T> {
 //                Attention
 // ========================================================================= //
 
-#[derive(Module)]
+#[derive(Module, Clone)]
 pub struct MiniMindAttention<T: FloatDType> {
     pub q_proj: Linear<T>,
     pub k_proj: Linear<T>,
@@ -467,7 +490,7 @@ impl<T: FloatDType> MiniMindAttention<T> {
 //                RmsNorm
 // ========================================================================= //
 
-#[derive(Module)]
+#[derive(Module, Clone)]
 pub struct MiniMindRMSNorm<T: FloatDType> {
     pub weight: Parameter<T>,
     #[module(skip)]

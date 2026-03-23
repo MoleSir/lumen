@@ -1,13 +1,12 @@
 use std::path::Path;
 
 use anyhow::Context;
-use lumen_core::{FloatDType, Tensor};
+use lumen_core::Tensor;
 use lumen_dataset::{common::JsonlDataset, Dataset};
-use lumen_nn::functional::LossReduction;
 use serde::Deserialize;
 use tokenizers::Tokenizer;
 
-pub const IGNORE_ID: u32 = u32::MAX;
+use crate::model::IGNORE_ID;
 
 pub struct PretrainDataset {
     pub tokenizer: Tokenizer,
@@ -85,35 +84,6 @@ impl Dataset for PretrainDataset {
 
     fn len(&self) -> usize {
         self.jsonl_dataset.len()
-    }
-}
-
-pub fn cross_entropy_with_ignore<T: FloatDType>(
-    input: &Tensor<T>, 
-    target: &Tensor<u32>,
-    reduction: LossReduction,
-) -> anyhow::Result<Tensor<T>> {
-    let (safe_target, mask) = {
-        let valid_mask = target.ne(IGNORE_ID)?;
-        let safe_target = valid_mask.if_else(target, 0)?;
-        let float_mask = valid_mask.cast::<T>()?; 
-        (safe_target, float_mask)
-    };
-
-    let log_probs = lumen_nn::functional::log_softmax(input, 1)?;
-    let gathered = log_probs.gather(safe_target, 1)?;
-    let mut loss = gathered.neg()?;
-
-    loss = loss.mul(&mask)?;
-
-    match reduction {
-        LossReduction::None => Ok(loss),
-        LossReduction::Sum => Ok(loss.sum_all()?),
-        LossReduction::Mean => {
-            let sum_loss = loss.sum_all()?;
-            let valid_count = mask.sum_all()?;
-            Ok(sum_loss.div(&valid_count)?)
-        }
     }
 }
 
