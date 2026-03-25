@@ -1,0 +1,38 @@
+[package]
+name = "hands-on-rl"
+version = "0.1.0"
+edition = "2024"
+
+
+[[bin]]
+name = "ch02"
+path = "./chapters/ch02_bernoulli_bandit.rs"
+
+
+[[bin]]
+name = "ch05"
+path = "./chapters/ch05_temporal_difference.rs"
+
+
+[[bin]]
+name = "ch07"
+path = "./chapters/ch07_dqn.rs"
+
+
+[[bin]]
+name = "ch09"
+path = "./chapters/ch09_reinforce.rs"
+
+
+[[bin]]
+name = "ch10"
+path = "./chapters/ch10_actor_critic.rs"
+
+
+[dependencies]
+lumen-core = { path = "../../lumen-core", features = ["operator_opt"] }
+lumen-nn = { path = "../../lumen-nn" }
+rand = "0.10"
+plotters = "0.3"
+anyhow = "1.0"
+gym-rs = "0.3.0"

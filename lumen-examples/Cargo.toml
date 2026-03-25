@@ -13,5 +13,6 @@ members = [
     "ssl",
     "fl_dtree",
     "fl_dtree_tcp",
-    "minimind"
+    "minimind",
+    "hands-on-rl"
 ]
