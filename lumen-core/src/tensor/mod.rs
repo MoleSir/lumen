@@ -13,7 +13,7 @@ mod boolean;
 pub use construct::ToTensor;
 use std::{borrow::Borrow, hash::Hash, sync::Arc};
 pub use indexer::{Slice, IndexOp};
-use crate::{AutogradInfo, Error, FloatDType, Op, Storage};
+use crate::{AutogradInfo, AutogradMetaT, Error, FloatDType, Op, Storage};
 use super::{DType, Dim, DimCoordinates, DimNCoordinates, Layout, NumDType, Shape, StorageArc, StorageIndices, StorageMut, StorageRef, WithDType};
 pub use iter::*;
 pub use indexer::*;
@@ -208,6 +208,11 @@ impl<T: WithDType> Tensor<T> {
     pub fn dim5_coordinates(&self) -> crate::Result<DimNCoordinates<5>> {
         self.shape().dim5_coordinates()
     }
+
+    #[inline]
+    pub fn requires_grad(&self) -> bool {
+        self.0.meta.requires_grad()
+    }
 }
 
 impl<T: NumDType> Tensor<T> {
@@ -233,11 +238,6 @@ impl<T: FloatDType> Tensor<T> {
                 meta: AutogradInfo::val(), 
             }))
         }
-    }
-
-    #[inline]
-    pub fn requires_grad(&self) -> bool {
-        self.0.meta.requires_grad()
     }
     
     #[inline]

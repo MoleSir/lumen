@@ -11,26 +11,24 @@ impl<T: WithDType> Tensor<T> {
     }
 
     pub fn copy(&self) -> crate::Result<Self> {
+        // MARK? need meta？
         let storage = self.storage_read()?.copy(self.layout());
         let meta = T::AutogradMeta::on_copy_op(self);
         Ok(Self::from_storage(storage, self.shape(), meta))
     }
 
-    pub fn copy_from(&self, source: &Self) -> Result<()> {
-        if self.shape() != source.shape() {
-            Err(Error::ShapeMismatchCopyFrom { dst: self.shape().clone(), src: source.shape().clone() })?
+    /// WARNING: This is an unsafe operation that bypasses the autograd engine. 
+    /// It does NOT track computation history and cannot compute gradients. 
+    /// Attempting to call this method on a tensor with `requires_grad=True` 
+    /// will raise a Error.
+    pub fn copy_(&self, source: impl Into<TensorOrScalar<T>>) -> Result<()> {
+        if self.requires_grad() {
+            return Err(crate::Error::InplaceOpInWhenRequiresGrad);
         }
-
-        let mut storage = self.storage_write()?;
-        for (self_storage_index, src_value) in self.layout().storage_indices().zip(source.iter()?) {
-            storage.set_unchecked(self_storage_index, src_value);
-        }
-
-        Ok(())
+        self.impl_copy_(source)
     }
 
-    // no grad record
-    pub fn assign(&self, source: impl Into<TensorOrScalar<T>>) -> Result<()> {
+    pub(crate) fn impl_copy_(&self, source: impl Into<TensorOrScalar<T>>) -> Result<()> {
         match source.into() {
             TensorOrScalar::Scalar(src) => {
                 let mut storage = self.storage_write()?;
@@ -78,13 +76,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_assign() {
+    fn test_copy_() {
         let a = Tensor::new(&[[1, 2, 3], [3, 4, 5], [4, 5, 6]]).unwrap();
-        a.index(0).unwrap().assign(100).unwrap();
+        a.index(0).unwrap().copy_(100).unwrap();
         println!("{}", a);
-        a.index((1, 1)).unwrap().assign(200).unwrap();
+        a.index((1, 1)).unwrap().copy_(200).unwrap();
         println!("{}", a);
-        a.index((1.., 1..)).unwrap().assign(999).unwrap();
+        a.index((1.., 1..)).unwrap().copy_(999).unwrap();
         println!("{}", a);
     }
 

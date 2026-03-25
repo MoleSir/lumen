@@ -210,7 +210,19 @@ impl<T: NumDType> Tensor<T> {
 macro_rules! binary_inplace_op_impl {
     ($fn_name:ident) => {
         paste! {
+            /// WARNING: This is an unsafe operation that bypasses the autograd engine. 
+            /// It does NOT track computation history and cannot compute gradients. 
+            /// Attempting to call this method on a tensor with `requires_grad=True` 
+            /// will raise a Error.
             pub fn [< $fn_name _ >](&self, rhs: impl Into<TensorOrScalar<T>>) -> crate::Result<Self> {
+                if self.requires_grad() {
+                    return Err(crate::Error::InplaceOpInWhenRequiresGrad);
+                }
+
+                self.[<impl_ $fn_name _ >](rhs)
+            }
+
+            pub(crate) fn [<impl_ $fn_name _ >](&self, rhs: impl Into<TensorOrScalar<T>>) -> crate::Result<Self> {
                 let rhs = rhs.into();
                 match rhs {
                     TensorOrScalar::Scalar(rhs) => Self::binary_op_scalar_inplace(self, rhs, T::$fn_name, stringify!([< $fn_name _scalar_ >]))?,
@@ -228,6 +240,18 @@ impl<T: NumDType> Tensor<T> {
     binary_inplace_op_impl!(sub);
     binary_inplace_op_impl!(mul);
     binary_inplace_op_impl!(div);
+    binary_inplace_op_impl!(minimum);
+    binary_inplace_op_impl!(maximum);
+
+    /// WARNING: This is an unsafe operation that bypasses the autograd engine. 
+    /// It does NOT track computation history and cannot compute gradients. 
+    /// Attempting to call this method on a tensor with `requires_grad=True` 
+    /// will raise a Error.
+    pub fn clamp_(&self, min: T, max: T) -> crate::Result<()> {
+        self.maximum_(min)?;
+        self.minimum_(max)?;
+        Ok(())
+    }
 }
 
 impl<T: NumDType> Tensor<T> {
@@ -342,10 +366,23 @@ impl<T: WithDType> Tensor<T> {
         Ok(Storage::new(output))
     }
 
+    fn unary_op<U, F>(&self, f: F, meta: U::AutogradMeta) -> crate::Result<Tensor<U>> 
+    where
+        U: WithDType,
+        F: Fn(T) -> U
+    {
+        let storage = self.compute_unary_op(f)?;
+        Ok(Tensor::from_storage(storage, self.shape(), meta))
+    }
+
     fn unary_assign_op<F>(&self, f: F) -> crate::Result<()>
     where
         F: Fn(T) -> T
     {
+        if self.requires_grad() {
+            return Err(crate::Error::InplaceOpInWhenRequiresGrad);
+        }
+
         let mut storage = self.storage_write()?;
         let vec = storage.data_mut();
         for index in self.layout().storage_indices() {
@@ -355,87 +392,38 @@ impl<T: WithDType> Tensor<T> {
     }
 }
 
-impl<T: NumDType> Tensor<T> {
-    pub fn affine(&self, mul: T, add: T) -> crate::Result<Self> {
-        if self.element_count() == 0 {
-            return Ok(self.clone());
-        }
-        let storage = self.compute_unary_op(|v| v * mul + add)?;
-        Ok(Self::from_storage(storage, self.shape(), Default::default()))
-    }
-
-    pub fn affine_assign(&self, mul: T, add: T) -> crate::Result<()> {
-        if self.element_count() == 0 {
-            return Ok(());
-        }
-        self.unary_assign_op(|v| v * mul + add)
-    }
-}
-
 macro_rules! float_unary_op_impl {
     ($fn_name:ident) => {
         paste! {
             pub fn $fn_name(&self) -> crate::Result<Self> {
-                if self.element_count() == 0 {
-                    return Ok(self.clone());
-                }
-                let storage = self.compute_unary_op(F::$fn_name)?;
                 let meta = F::AutogradMeta::on_unray_op(self, UnaryOp:: [< $fn_name:camel >]);
-                Ok(Self::from_storage(storage, self.shape(), meta))
+                self.unary_op(F::$fn_name, meta)
+            }
+
+            /// WARNING: This is an unsafe operation that bypasses the autograd engine. 
+            /// It does NOT track computation history and cannot compute gradients. 
+            /// Attempting to call this method on a tensor with `requires_grad=True` 
+            /// will raise a Error.
+            #[inline]
+            pub fn [<$fn_name _>](&self) -> crate::Result<()> {
+                self.unary_assign_op(F::$fn_name)
             }
         }
     };
-}
-
-impl<T: WithDType> Tensor<T> {
-    pub fn map<F, O>(&self, f: F) -> crate::Result<Tensor<O>>
-    where 
-        O: WithDType,
-        F: Fn(T) -> O,
-    {
-        let storage = self.compute_unary_op(f)?;
-        Ok(Tensor::from_storage(storage, self.shape(), Default::default()))
-    }
-
-    pub fn map_assign<F>(&self, f: F) -> crate::Result<()>
-    where 
-        F: Fn(T) -> T,
-    {
-        if self.element_count() == 0 {
-            return Ok(());
-        }
-        self.unary_assign_op(f)
-    }
-}
-
-impl<T: NumDType + Neg<Output = T>> Tensor<T> {
-    pub fn neg(&self) -> crate::Result<Self> {
-        if self.element_count() == 0 {
-            return Ok(self.clone());
-        }
-        let storage = self.compute_unary_op(Neg::neg)?;
-        let meta = T::AutogradMeta::on_unray_op(self, UnaryOp::Neg);
-        Ok(Self::from_storage(storage, self.shape(), meta))
-    }
 }
 
 impl<F: FloatDType> Tensor<F> {
     float_unary_op_impl!(floor);
     float_unary_op_impl!(ceil);
     float_unary_op_impl!(round);
-
     float_unary_op_impl!(exp);
     float_unary_op_impl!(ln);
-
     float_unary_op_impl!(sin);
     float_unary_op_impl!(cos);
     float_unary_op_impl!(tanh);
-
     float_unary_op_impl!(sqrt);
     float_unary_op_impl!(sqr);
     float_unary_op_impl!(abs);
-    // float_unary_op_impl!(neg);
-
     float_unary_op_impl!(recip);
     float_unary_op_impl!(gelu);
     float_unary_op_impl!(gelu_erf);
@@ -445,25 +433,69 @@ impl<F: FloatDType> Tensor<F> {
     float_unary_op_impl!(sigmoid);
 
     pub fn leaky_relu(&self, negative_slope: F) -> crate::Result<Self> {
-        if self.element_count() == 0 {
-            return Ok(self.clone());
-        }
-        let f = |v: F| F::leaky_relu(v, negative_slope);
-        let storage = self.compute_unary_op(f)?;
         let meta = F::AutogradMeta::on_unray_op(self, UnaryOp::LeakyRelu(negative_slope));
-        Ok(Self::from_storage(storage, self.shape(), meta))
+        self.unary_op(|v: F| F::leaky_relu(v, negative_slope), meta)
+    }
+
+    #[inline]
+    pub fn leaky_relu_(&self, negative_slope: F) -> crate::Result<()> {
+        self.unary_assign_op(|v: F| F::leaky_relu(v, negative_slope))
     }
 }
 
 impl<F: FloatDType> Tensor<F> {
     pub fn pow(&self, e: F) -> crate::Result<Self> {
-        if self.element_count() == 0 {
-            return Ok(self.clone());
-        }
-        let f = |v: F| v.powf(e); 
-        let storage = self.compute_unary_op(f)?;
-        let meta = F::AutogradMeta::on_pow_op(self, e);
-        Ok(Self::from_storage(storage, self.shape(), meta))
+        let meta = F::AutogradMeta::on_unray_op(self, UnaryOp::Pow(e));
+        self.unary_op(|v: F| v.powf(e), meta)
+    }
+
+    #[inline]
+    pub fn pow_(&self, e: F) -> crate::Result<()> {
+        self.unary_assign_op(|v: F| v.powf(e))
+    }
+}
+
+impl<T: WithDType> Tensor<T> {
+    #[inline]
+    pub fn map<F, O>(&self, f: F) -> crate::Result<Tensor<O>>
+    where 
+        O: WithDType,
+        F: Fn(T) -> O,
+    {
+        self.unary_op(f, Default::default())
+    }
+
+    #[inline]
+    pub fn map_<F>(&self, f: F) -> crate::Result<()>
+    where 
+        F: Fn(T) -> T,
+    {
+        self.unary_assign_op(f)
+    }
+}
+
+impl<T: NumDType + Neg<Output = T>> Tensor<T> {
+    pub fn neg(&self) -> crate::Result<Self> {
+        let meta = T::AutogradMeta::on_unray_op(self, UnaryOp::Neg);
+        self.unary_op(T::neg, meta)
+    }
+
+    #[inline]
+    pub fn neg_(&self) -> crate::Result<()> {
+        self.unary_assign_op(T::neg)
+    }
+}
+
+impl<T: NumDType> Tensor<T> {
+    /// y = mul * a + add
+    pub fn affine(&self, mul: T, add: T) -> crate::Result<Self> {
+        let meta = T::AutogradMeta::on_unray_op(self, UnaryOp::Affine{ mul, add });
+        self.unary_op(|v| v * mul + add, meta)
+    }
+
+    #[inline]
+    pub fn affine_(&self, mul: T, add: T) -> crate::Result<()> {
+        self.unary_assign_op(|v| v * mul + add)
     }
 }
 
@@ -670,6 +702,63 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_inplace_safe_ops() -> crate::Result<()> {
+        let data = vec![-1.5f32, -0.5, 0.0, 0.5, 1.5];
+    
+        macro_rules! test_op {
+            ($op:ident, $op_inplace:ident) => {{
+                let a = Tensor::new(data.clone())?;
+                let b = Tensor::new(data.clone())?;
+    
+                let out = a.$op()?;
+                b.$op_inplace()?;
+    
+                assert!(b.allclose(&out, 1e-5, 1e-6)?);
+            }};
+        }
+    
+        test_op!(floor, floor_);
+        test_op!(ceil, ceil_);
+        test_op!(round, round_);
+        test_op!(sin, sin_);
+        test_op!(cos, cos_);
+        test_op!(tanh, tanh_);
+        test_op!(abs, abs_);
+        test_op!(relu, relu_);
+        test_op!(silu, silu_);
+        test_op!(sigmoid, sigmoid_);
+    
+        Ok(())
+    }
+    
+    #[test]
+    fn test_inplace_positive_domain_ops() -> crate::Result<()> {
+        let data = vec![0.1f32, 0.5, 1.0, 2.0];
+    
+        macro_rules! test_op {
+            ($op:ident, $op_inplace:ident) => {{
+                let a = Tensor::new(data.clone())?;
+                let b = Tensor::new(data.clone())?;
+    
+                let out = a.$op()?;
+                b.$op_inplace()?;
+    
+                assert!(b.allclose(&out, 1e-5, 1e-6)?);
+            }};
+        }
+    
+        test_op!(ln, ln_);
+        test_op!(sqrt, sqrt_);
+        test_op!(recip, recip_);
+        test_op!(exp, exp_);
+        test_op!(gelu, gelu_);
+        test_op!(gelu_erf, gelu_erf_);
+        test_op!(erf, erf_);
+    
+        Ok(())
+    }
+
+    #[test]
     fn test_exp_log() -> crate::Result<()> {
         let a = Tensor::new(&[0.0f32, 1.0, 2.0])?;
         let exp_a = a.exp()?;
@@ -861,14 +950,14 @@ mod tests {
     }
 
     #[test]
-    fn test_affine_and_affine_assign() -> crate::Result<()> {
+    fn test_affine_and_affine_() -> crate::Result<()> {
         let a = Tensor::<f64>::ones((3, 3))?;
         let b = a.affine(3., 2.)?;
         let expected = Tensor::new(&[[5., 5., 5.],[5.,5.,5.],[5.,5.,5.]])?;
         assert!(b.allclose(&expected, 1e-6, 1e-6)?);
 
         let a2 = Tensor::<f64>::ones((3, 3))?;
-        a2.affine_assign(3., 2.)?;
+        a2.affine_(3., 2.)?;
         assert!(a2.allclose(&expected, 1e-6, 1e-6)?);
         Ok(())
     }

@@ -1,5 +1,5 @@
 use std::{fmt::Display, ops::Deref};
-use crate::{AutogradMetaT, Dim, Error, IntTensor, NumDType, Result, WithDType};
+use crate::{AutogradMetaT, Dim, Error, IntTensor, NumDType, Result, WithDType, D};
 use super::Tensor;
 
 impl<T: WithDType> Tensor<T> {
@@ -9,6 +9,11 @@ impl<T: WithDType> Tensor<T> {
         for indexer in indexers.iter() {
             x = match indexer {
                 Indexer::Select(n) => x.narrow(current_dim, *n, 1)?.squeeze(current_dim)?,
+                Indexer::SelectD(d) => {
+                    let dim_size = x.dim(current_dim)?;
+                    let n = d.to_real_index(dim_size, "index")?;
+                    x.narrow(current_dim, n, 1)?.squeeze(current_dim)?
+                }
                 Indexer::Slice(range) => {
                     let out = x.slice(current_dim, range)?;
                     current_dim += 1;
@@ -277,6 +282,7 @@ impl<T: WithDType> Tensor<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Indexer {
     Select(usize),
+    SelectD(D),
     Slice(Slice),
     Boolean(Tensor<bool>),
 }
@@ -341,6 +347,12 @@ impl Display for Slice {
 impl From<usize> for Indexer {
     fn from(index: usize) -> Self {
         Indexer::Select(index)
+    }
+}
+
+impl From<D> for Indexer {
+    fn from(index: D) -> Self {
+        Indexer::SelectD(index)
     }
 }
 
@@ -865,6 +877,15 @@ mod test {
 
         let expected = arr.index((s!(1:3), s!(0:5), s!(1:2))).unwrap();
         assert!(sub.allclose(&expected, 0.0, 0.0).unwrap());
+    }
+
+    #[test]
+    fn test_index_dim() {
+        let arr = Tensor::<f32>::zeros((3, 3)).unwrap();
+        // last col
+        let sub = arr.index((.., D::Minus1)).unwrap();
+        sub.copy_(5.2).unwrap();
+        println!("{}", arr);
     }
 
     #[test]

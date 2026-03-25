@@ -6,7 +6,6 @@ pub enum Op<T: FloatDType> {
     BinaryScalarRhs(Tensor<T>, T, BinaryOp),
     BinaryScalarLhs(T, Tensor<T>, BinaryOp),
     Unary(Tensor<T>, UnaryOp<T>),
-    Pow(Tensor<T>, T),
     Reduce(Tensor<T>, ReduceOp, Vec<usize>),
     Matmul(Tensor<T>, Tensor<T>),
     Broadcast(Tensor<T>),
@@ -79,4 +78,7 @@ pub enum UnaryOp<T: WithDType> {
     Ceil,
     Round,
     Sign,
+
+    Affine { mul: T, add: T },
+    Pow(T),
 }

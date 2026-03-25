@@ -2,6 +2,23 @@ use std::f64::consts::PI;
 use crate::{Tensor, Var};
 
 #[test]
+fn test_not_leaf() -> crate::Result<()> {
+    let a = Tensor::<f64>::ones((3, 3))?;
+    let b = Var::<f64>::ones((3, 3))?;
+
+    let y = &a * &b; 
+    let z = &y * &y;
+
+    let grads = z.backward()?;
+
+    println!("{}", grads.get(&a).is_some());
+    println!("{}", grads.get(&b).is_some());
+    println!("{}", grads.get(&y).is_some());
+
+    Ok(())
+}
+
+#[test]
 fn test_binary() -> crate::Result<()> {
     let a = Var::<f64>::ones((3, 3))?;
     let b = Var::<f64>::new(&[

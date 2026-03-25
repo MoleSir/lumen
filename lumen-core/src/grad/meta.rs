@@ -4,11 +4,11 @@ use crate::{FloatDType, IntTensor, Tensor, WithDType};
 use crate::grad::{BinaryOp, Op, ReduceOp, UnaryOp};
 
 pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
+    fn requires_grad(&self) -> bool;
     fn on_binary_op(lhs: &Tensor<T>, rhs: &Tensor<T>, op: BinaryOp) -> Self;
     fn on_binary_scalar_rhs_op(lhs: &Tensor<T>, rhs: T, op: BinaryOp) -> Self;
     fn on_binary_scalar_lhs_op(lhs: T, rhs: &Tensor<T>, op: BinaryOp) -> Self;
     fn on_unray_op(t: &Tensor<T>, op: UnaryOp<T>) -> Self; 
-    fn on_pow_op(t: &Tensor<T>, e: T) -> Self;
     fn on_broadcast_op(t: &Tensor<T>) -> Self;
     fn on_reduce_op(t: &Tensor<T>, dims: &[usize], op: ReduceOp) -> Self;
     fn on_matmul_op(lhs: &Tensor<T>, rhs: &Tensor<T>) -> Self;
@@ -61,10 +61,6 @@ impl<T: FloatDType> AutogradInfo<T>  {
         self.requires_grad() && self.op.is_none()
     }
 
-    pub fn requires_grad(&self) -> bool {
-        self.requires_grad.read().unwrap().clone()
-    }
-
     pub fn set_requires_grad(&self, mode: bool) {
         *self.requires_grad.write().unwrap() = mode;
     }
@@ -77,6 +73,11 @@ impl<T: FloatDType> Default for AutogradInfo<T> {
 } 
 
 impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
+    fn requires_grad(&self) -> bool {
+        self.requires_grad.read().unwrap().clone()
+
+    }
+
     fn on_binary_op(lhs: &Tensor<T>, rhs: &Tensor<T>, op: BinaryOp) -> Self {
         if crate::is_grad_enabled() && (lhs.requires_grad() || rhs.requires_grad()) {
             Self::var_from_op(Op::Binary(lhs.clone(), rhs.clone(), op))
@@ -104,14 +105,6 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
     fn on_unray_op(t: &Tensor<T>, op: UnaryOp<T>) -> Self {
         if crate::is_grad_enabled() && t.requires_grad() {
             Self::var_from_op(Op::Unary(t.clone(), op))
-        } else {
-            Self::val()
-        }
-    }
-
-    fn on_pow_op(t: &Tensor<T>, e: T) -> Self {
-        if crate::is_grad_enabled() && t.requires_grad() {
-            Self::var_from_op(Op::Pow(t.clone(), e))
         } else {
             Self::val()
         }
@@ -266,6 +259,11 @@ pub struct NoAutograd;
 #[allow(unused)]
 impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
     #[inline]
+    fn requires_grad(&self) -> bool {
+        false
+    }
+
+    #[inline]
     fn on_binary_op(_: &Tensor<T>, _: &Tensor<T>, _: BinaryOp) -> Self {
         NoAutograd
     }
@@ -287,11 +285,6 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
 
     #[inline]
     fn on_broadcast_op(_: &Tensor<T>) -> Self {
-        NoAutograd
-    }
-
-    #[inline]
-    fn on_pow_op(t: &Tensor<T>, e: T) -> Self {
         NoAutograd
     }
 

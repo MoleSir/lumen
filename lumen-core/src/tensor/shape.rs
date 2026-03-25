@@ -178,16 +178,8 @@ impl<T: WithDType> Tensor<T> {
     /// let c = a.reshape((1, 6)).unwrap();
     /// assert_eq!(c.shape().dims(), &[1, 6]);
     /// ```
-    pub fn reshape<S: Into<Shape>>(&self, shape: S) -> Result<Self> {
-        let shape = shape.into();
-        if shape.element_count() != self.element_count() {
-            return Err(Error::ShapeMismatchBinaryOp {
-                lhs: self.shape().clone(),
-                rhs: shape,
-                op: "reshape",
-            })?;
-        }
-
+    pub fn reshape<S: ShapeWithHolder>(&self, shape: S) -> Result<Self> {
+        let shape = shape.into_shape(self.shape())?;
         let meta = T::AutogradMeta::on_reshape_op(self);
         if self.is_contiguous() {
             let layout = Layout::contiguous_with_offset(shape, self.layout().start_offset());
@@ -326,8 +318,7 @@ impl<T: WithDType> Tensor<T> {
             // Take sub Tensor 
             let sub_res_arr = res_arr.narrow(cat_dim, dim_offsets[arr_index], arr.as_ref().dims()[cat_dim])?;
             assert_eq!(sub_res_arr.shape(), arr.as_ref().shape());
-            // MARK: copy_from is no grad
-            sub_res_arr.copy_from(arr.as_ref())?;
+            sub_res_arr.impl_copy_(arr.as_ref())?;
         }
 
         Ok(res_arr)
@@ -526,6 +517,141 @@ impl<T: WithDType> Tensor<T> {
                 Ok(self.clone())
             }
         }
+    }
+}
+
+pub trait ShapeWithHolder {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape>;
+}
+
+impl<S: Into<Shape>> ShapeWithHolder for S {
+    fn into_shape(self, origin_shape: &Shape) -> crate::Result<Shape> {
+        let shape = self.into();
+        if shape.element_count() != origin_shape.element_count() {
+            return Err(Error::ElementCountMismatchInReshape {
+                origin: origin_shape.clone(),
+                target: shape,
+            })?;
+        }
+        Ok(shape)
+    }
+}
+
+fn hole_size(shape: &Shape, prod_d: usize, s: &dyn std::fmt::Debug) -> Result<usize> {
+    let el_count = shape.element_count();
+    if prod_d == 0 {
+        crate::bail!("cannot reshape tensor of {el_count} elements to {s:?}")
+    }
+    if el_count % prod_d != 0 {
+        crate::bail!("cannot reshape tensor with {el_count} elements to {s:?}")
+    }
+    Ok(el_count / prod_d)
+}
+
+impl ShapeWithHolder for ((), usize) {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape> {
+        let ((), d1) = self;
+        Ok((hole_size(shape, d1, &self)?, d1).into())
+    }
+}
+
+impl ShapeWithHolder for (usize, ()) {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape> {
+        let (d1, ()) = self;
+        Ok((d1, hole_size(shape, d1, &self)?).into())
+    }
+}
+
+impl ShapeWithHolder for ((), usize, usize) {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape> {
+        let ((), d1, d2) = self;
+        Ok((hole_size(shape, d1 * d2, &self)?, d1, d2).into())
+    }
+}
+
+impl ShapeWithHolder for (usize, (), usize) {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape> {
+        let (d1, (), d2) = self;
+        Ok((d1, hole_size(shape, d1 * d2, &self)?, d2).into())
+    }
+}
+
+impl ShapeWithHolder for (usize, usize, ()) {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape> {
+        let (d1, d2, ()) = self;
+        Ok((d1, d2, hole_size(shape, d1 * d2, &self)?).into())
+    }
+}
+
+impl ShapeWithHolder for ((), usize, usize, usize) {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape> {
+        let ((), d1, d2, d3) = self;
+        let d = hole_size(shape, d1 * d2 * d3, &self)?;
+        Ok((d, d1, d2, d3).into())
+    }
+}
+
+impl ShapeWithHolder for (usize, (), usize, usize) {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape> {
+        let (d1, (), d2, d3) = self;
+        let d = hole_size(shape, d1 * d2 * d3, &self)?;
+        Ok((d1, d, d2, d3).into())
+    }
+}
+
+impl ShapeWithHolder for (usize, usize, (), usize) {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape> {
+        let (d1, d2, (), d3) = self;
+        let d = hole_size(shape, d1 * d2 * d3, &self)?;
+        Ok((d1, d2, d, d3).into())
+    }
+}
+
+impl ShapeWithHolder for (usize, usize, usize, ()) {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape> {
+        let (d1, d2, d3, ()) = self;
+        let d = hole_size(shape, d1 * d2 * d3, &self)?;
+        Ok((d1, d2, d3, d).into())
+    }
+}
+
+impl ShapeWithHolder for ((), usize, usize, usize, usize) {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape> {
+        let ((), d1, d2, d3, d4) = self;
+        let d = hole_size(shape, d1 * d2 * d3 * d4, &self)?;
+        Ok((d, d1, d2, d3, d4).into())
+    }
+}
+
+impl ShapeWithHolder for (usize, (), usize, usize, usize) {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape> {
+        let (d1, (), d2, d3, d4) = self;
+        let d = hole_size(shape, d1 * d2 * d3 * d4, &self)?;
+        Ok((d1, d, d2, d3, d4).into())
+    }
+}
+
+impl ShapeWithHolder for (usize, usize, (), usize, usize) {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape> {
+        let (d1, d2, (), d3, d4) = self;
+        let d = hole_size(shape, d1 * d2 * d3 * d4, &self)?;
+        Ok((d1, d2, d, d3, d4).into())
+    }
+}
+
+impl ShapeWithHolder for (usize, usize, usize, (), usize) {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape> {
+        let (d1, d2, d3, (), d4) = self;
+        let d = hole_size(shape, d1 * d2 * d3 * d4, &self)?;
+        Ok((d1, d2, d3, d, d4).into())
+    }
+}
+
+impl ShapeWithHolder for (usize, usize, usize, usize, ()) {
+    fn into_shape(self, shape: &Shape) -> crate::Result<Shape> {
+        let (d1, d2, d3, d4, ()) = self;
+        let d = hole_size(shape, d1 * d2 * d3 * d4, &self)?;
+        Ok((d1, d2, d3, d4, d).into())
     }
 }
 
@@ -839,6 +965,18 @@ mod test {
         let b = a.repeat(3)?; // repeat each dimension 3 times
         assert_eq!(b.dims(), [3 * 3]); // shape: [9]
         assert_eq!(b.to_vec().unwrap(), [1, 2, 3, 1, 2, 3, 1, 2, 3]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_reshape_with_holder() -> Result<()> {
+        let a = Tensor::<f32>::zeros((3, 3, 3))?;
+        let b = a.reshape(((), 3))?;
+        assert_eq!(b.dims2()?, (9, 3));
+
+        let a = Tensor::<f32>::zeros((9, 12, 3))?;
+        let b = a.reshape((1, 1, ()))?;
+        assert_eq!(b.dims3()?, (1, 1, 9 * 12 * 3));
         Ok(())
     }
 

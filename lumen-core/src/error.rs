@@ -42,6 +42,12 @@ pub enum Error {
         op: &'static str,
     },
 
+    #[error("{op}: dim size out of range in size {size}")]
+    DimSizeOutOfRange {
+        size: usize,
+        op: &'static str,
+    },
+
     #[error("{op}: duplicate dim index {dims:?} for shape {shape:?}")]
     DuplicateDimIndex {
         shape: Shape,
@@ -56,6 +62,12 @@ pub enum Error {
     },
 
     // === Shape Errors ===
+    #[error("element count mismatch in reshape, try reshape {origin} to {target}")]
+    ElementCountMismatchInReshape {
+        origin: Shape,
+        target: Shape,
+    },
+
     #[error("unexpected element size in {op}, expected: {expected}, got: {got}")]
     ElementSizeMismatch {
         expected: usize,
@@ -186,6 +198,9 @@ pub enum Error {
         index: usize,
         position: &'static str,
     },
+
+    #[error("inplace op in a requires_grad Tensor!")]
+    InplaceOpInWhenRequiresGrad,
 
     #[error("backward not support '{0}'")]
     BackwardNotSupported(&'static str),

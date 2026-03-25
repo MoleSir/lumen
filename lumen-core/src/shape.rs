@@ -322,12 +322,24 @@ impl_from_tuple!((usize, usize, usize, usize), 0, 1, 2, 3);
 impl_from_tuple!((usize, usize, usize, usize, usize), 0, 1, 2, 3, 4);
 impl_from_tuple!((usize, usize, usize, usize, usize, usize), 0, 1, 2, 3, 4, 5);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum D {
     Minus1,
     Minus2,
     Minus(usize),
     Index(usize),
+}
+
+impl D {
+    pub fn to_real_index(&self, size: usize, op: &'static str) -> Result<usize> {
+        match self {
+            Self::Minus1 if size >= 1 => Ok(size - 1),
+            Self::Minus2 if size >= 2 => Ok(size - 2),
+            Self::Minus(u) if *u > 0 && size >= *u => Ok(size - *u),
+            Self::Index(u) if *u < size => Ok(*u),
+            _ => Err(crate::Error::DimSizeOutOfRange { size, op })?,
+        }
+    }
 }
 
 impl Display for D {
@@ -453,6 +465,7 @@ impl Dim for D {
     fn to_index(&self, shape: &Shape, op: &'static str) -> Result<usize> {
         let rank = shape.rank();
         match self {
+            // TODO: overfl
             Self::Minus1 if rank >= 1 => Ok(rank - 1),
             Self::Minus2 if rank >= 2 => Ok(rank - 2),
             Self::Minus(u) if *u > 0 && rank >= *u => Ok(rank - *u),
