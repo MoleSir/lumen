@@ -7,7 +7,7 @@ use paste::paste;
 //////////////////////////////////////////////////////////////////////////////
 
 impl<T: WithDType> Tensor<T> {
-    fn same_shape_binary_op(&self, rhs: &Self, op: &'static str) -> crate::Result<&Shape> {
+    pub(crate) fn same_shape_binary_op(&self, rhs: &Self, op: &'static str) -> crate::Result<&Shape> {
         let lhs = self.shape();
         let rhs = rhs.shape();
         if lhs != rhs {
@@ -31,12 +31,21 @@ impl<T: WithDType> Tensor<T> {
         let shape = lhs.shape();
         let lhs_storage = lhs.storage_read()?;
         let lhs_layout = lhs.layout();
-
         let lhs = lhs_storage.data();
-        
-        let output: Vec<_> = lhs_layout.storage_indices()
-            .map(|lhs_index| f(lhs[lhs_index], rhs))
-            .collect();
+
+        let output: Vec<_> = match lhs_layout.storage_indices() {
+            StorageIndices::Contiguous(index) => {
+                let lhs = &lhs[index.begin_index..index.end_index];
+                lhs.iter()
+                    .map(|&v| f(v, rhs))
+                    .collect()
+            }
+            StorageIndices::Uncontiguous(index) => {
+                index
+                    .map(|lhs_index| f(lhs[lhs_index], rhs))
+                    .collect()
+            }
+        };
         
         let storage = Storage::<U>::new(output);
         Ok((storage, shape.clone()))
@@ -50,12 +59,21 @@ impl<T: WithDType> Tensor<T> {
         let shape = rhs.shape();
         let rhs_storage = rhs.storage_read()?;
         let rhs_layout = rhs.layout();
-
         let rhs = rhs_storage.data();
-        
-        let output: Vec<_> = rhs_layout.storage_indices()
-            .map(|index| f(lhs, rhs[index]))
-            .collect();
+
+        let output: Vec<_> = match rhs_layout.storage_indices() {
+            StorageIndices::Contiguous(index) => {
+                let rhs = &rhs[index.begin_index..index.end_index];
+                rhs.iter()
+                    .map(|&v| f(lhs, v))
+                    .collect()
+            }
+            StorageIndices::Uncontiguous(index) => {
+                index
+                    .map(|index| f(lhs, rhs[index]))
+                    .collect()
+            }
+        };
         
         let storage = Storage::<U>::new(output);
         Ok((storage, shape.clone()))
@@ -78,16 +96,26 @@ impl<T: WithDType> Tensor<T> {
         let rhs = rhs_storage.data();
         
         let output: Vec<_> = match (lhs_layout.storage_indices(), rhs_layout.storage_indices()) {
-            (StorageIndices::ContiguousStorageIndices(lhs_index), StorageIndices::ContiguousStorageIndices(rhs_index)) => {
-                let lhs = &lhs[lhs_index.init_storage_index..lhs_index.end_index];
-                let rhs = &rhs[rhs_index.init_storage_index..rhs_index.end_index];
-
-                lhs.iter()
-                    .zip(rhs.iter())
+            (StorageIndices::Contiguous(lhs_index), StorageIndices::Contiguous(rhs_index)) => {
+                let lhs = &lhs[lhs_index.begin_index..lhs_index.end_index];
+                let rhs = &rhs[rhs_index.begin_index..rhs_index.end_index];
+                lhs.iter().zip(rhs.iter())
                     .map(|(&l, &r)| f(l, r))
                     .collect()
             }
-            (lhs_index, rhs_index) => {
+            (StorageIndices::Contiguous(lhs_index), StorageIndices::Uncontiguous(rhs_index)) => {
+                let lhs = &lhs[lhs_index.begin_index..lhs_index.end_index];
+                lhs.iter().zip(rhs_index)
+                    .map(|(&l, r_index)| f(l, rhs[r_index]))
+                    .collect()
+            }
+            (StorageIndices::Uncontiguous(lhs_index), StorageIndices::Contiguous(rhs_index)) => {
+                let rhs = &rhs[rhs_index.begin_index..rhs_index.end_index];
+                lhs_index.zip(rhs.iter())
+                    .map(|(l_index, &r)| f(lhs[l_index], r))
+                    .collect()
+            }
+            (StorageIndices::Uncontiguous(lhs_index), StorageIndices::Uncontiguous(rhs_index)) => {
                 lhs_index.zip(rhs_index)
                     .map(|(lhs_index, rhs_index)| f(lhs[lhs_index], rhs[rhs_index]))
                     .collect()
@@ -168,7 +196,7 @@ impl<T: NumDType> Tensor<T> {
 }
 
 impl<T: NumDType> Tensor<T> {
-    fn binary_op_inplace<F>(lhs: &Tensor<T>, rhs: &Tensor<T>, f: F, op_name: &'static str) -> crate::Result<()> 
+    fn binary_inplace_op<F>(lhs: &Tensor<T>, rhs: &Tensor<T>, f: F, op_name: &'static str) -> crate::Result<()> 
     where 
         F: Fn(T, T) -> T
     {
@@ -184,8 +212,28 @@ impl<T: NumDType> Tensor<T> {
         let lhs = lhs_storage.data_mut();
         let rhs = rhs_storage.data();
         
-        lhs_layout.storage_indices().zip(rhs_layout.storage_indices())
-            .for_each(|(lhs_index, rhs_index)| lhs[lhs_index] = f(lhs[lhs_index], rhs[rhs_index]));
+        match (lhs_layout.storage_indices(), rhs_layout.storage_indices()) {
+            (StorageIndices::Contiguous(lhs_index), StorageIndices::Contiguous(rhs_index)) => {
+                let lhs = &mut lhs[lhs_index.begin_index..lhs_index.end_index];
+                let rhs = &rhs[rhs_index.begin_index..rhs_index.end_index];
+                lhs.iter_mut().zip(rhs.iter())
+                    .for_each(|(l, &r)| *l = f(*l, r));
+            }
+            (StorageIndices::Contiguous(lhs_index), StorageIndices::Uncontiguous(rhs_index)) => {
+                let lhs = &mut lhs[lhs_index.begin_index..lhs_index.end_index];
+                lhs.iter_mut().zip(rhs_index)
+                    .for_each(|(l, rhs_index)| *l = f(*l, rhs[rhs_index]));
+            }
+            (StorageIndices::Uncontiguous(lhs_index), StorageIndices::Contiguous(rhs_index)) => {
+                let rhs = &rhs[rhs_index.begin_index..rhs_index.end_index];
+                lhs_index.zip(rhs.iter())
+                    .for_each(|(lhs_index, &r)| lhs[lhs_index] = f(lhs[lhs_index], r));
+            }
+            (StorageIndices::Uncontiguous(lhs_index), StorageIndices::Uncontiguous(rhs_index)) => {
+                lhs_index.zip(rhs_index)
+                    .for_each(|(lhs_index, rhs_index)| lhs[lhs_index] = f(lhs[lhs_index], rhs[rhs_index]));
+            }
+        }
         
         Ok(())
     }
@@ -196,12 +244,17 @@ impl<T: NumDType> Tensor<T> {
     {
         let mut lhs_storage = lhs.storage_write()?;
         let lhs_layout = lhs.layout();
-
-
         let lhs = lhs_storage.data_mut();
-        
-        lhs_layout.storage_indices()
-            .for_each(|lhs_index| lhs[lhs_index] = f(lhs[lhs_index], rhs));
+    
+        match lhs_layout.storage_indices() {
+            StorageIndices::Contiguous(index) => {
+                let lhs = &mut lhs[index.begin_index..index.end_index];
+                lhs.iter_mut().for_each(|l| *l = f(*l, rhs));
+            }
+            StorageIndices::Uncontiguous(index) => {
+                index.for_each(|lhs_index| lhs[lhs_index] = f(lhs[lhs_index], rhs));
+            }
+        }
         
         Ok(())
     }
@@ -226,7 +279,7 @@ macro_rules! binary_inplace_op_impl {
                 let rhs = rhs.into();
                 match rhs {
                     TensorOrScalar::Scalar(rhs) => Self::binary_op_scalar_inplace(self, rhs, T::$fn_name, stringify!([< $fn_name _scalar_ >]))?,
-                    TensorOrScalar::Tensor(rhs) => Self::binary_op_inplace(self, &rhs, T::$fn_name, stringify!([< $fn_name _scalar >]))?,
+                    TensorOrScalar::Tensor(rhs) => Self::binary_inplace_op(self, &rhs, T::$fn_name, stringify!([< $fn_name _scalar >]))?,
                 }
                 Ok(self.clone())
             }
@@ -350,16 +403,12 @@ impl<T: WithDType> Tensor<T> {
         let vec = storage.data();
 
         let output: Vec<_> = match self.storage_indices() {
-            StorageIndices::ContiguousStorageIndices(index) => {
-                let data = &vec[index.init_storage_index..index.end_index];
-                data.iter()
-                    .map(|&v| f(v))
-                    .collect()
+            StorageIndices::Contiguous(index) => {
+                let data = &vec[index.begin_index..index.end_index];
+                data.iter().map(|&v| f(v)).collect()
             }
-            index => {
-                index.into_iter()
-                    .map(|i| f(vec[i]))
-                    .collect()
+            StorageIndices::Uncontiguous(index) => {
+                index.map(|i| f(vec[i])).collect()
             }
         };
         
@@ -385,9 +434,18 @@ impl<T: WithDType> Tensor<T> {
 
         let mut storage = self.storage_write()?;
         let vec = storage.data_mut();
-        for index in self.layout().storage_indices() {
-            vec[index] = f(vec[index]);
+        match self.layout().storage_indices() {
+            StorageIndices::Contiguous(index) => {
+                let vec = &mut vec[index.begin_index..index.end_index];
+                vec.iter_mut().for_each(|v| *v = f(*v));
+            }
+            StorageIndices::Uncontiguous(index) => {
+                for index in index {
+                    vec[index] = f(vec[index]);
+                }
+            }
         }
+ 
         Ok(())
     }
 }

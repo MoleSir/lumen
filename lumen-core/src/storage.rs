@@ -467,12 +467,12 @@ impl<T: WithDType> StorageArc<T> {
 
     #[inline]
     pub fn read(&self) -> std::sync::RwLockReadGuard<'_, Storage<T>> {
-        self.0.read().unwrap()
+        self.0.read().expect("read in storage arc")
     }
 
     #[inline]
     pub fn write(&self) -> std::sync::RwLockWriteGuard<'_, Storage<T>> {
-        self.0.write().unwrap()
+        self.0.write().expect("write in storage arc")
     }
 
     #[inline]
@@ -501,113 +501,9 @@ impl<T: WithDType> StorageArc<T> {
     }
 
     #[inline]
-    pub fn get_ref(&self, start_offset: usize) -> StorageRef<'_, T> {
-        StorageRef::Guard(std::sync::RwLockReadGuard::map(self.0.read().unwrap(), |s| &s.data()[start_offset..]))
-    }
-
-    #[inline]
-    pub fn get_mut(&self, start_offset: usize) -> StorageMut<'_, T> {
-        StorageMut::Guard(std::sync::RwLockWriteGuard::map(self.0.write().unwrap(), |s| &mut s.data_mut()[start_offset..]))
-    }
-
-    #[inline]
     pub fn get_ptr(&self, start_offset: usize) -> *mut T {
         let mut s = self.0.write().unwrap();
         let data = &mut s.data_mut()[start_offset..];
         data.as_mut_ptr()
-    }
-}
-
-pub enum StorageRef<'a, T> {
-    Guard(std::sync::MappedRwLockReadGuard<'a, [T]>),
-    Slice(&'a [T]),
-}
-
-// pub struct StorageMut<'a, T>(std::sync::MappedRwLockWriteGuard<'a, [T]>);
-
-pub enum StorageMut<'a, T> {
-    Guard(std::sync::MappedRwLockWriteGuard<'a, [T]>),
-    Slice(&'a mut[T]),
-}
-
-impl<'a, T: WithDType> StorageRef<'a, T> {
-    pub fn clone(&'a self) -> Self {
-        Self::Slice(&self.data())
-    }
-
-    pub fn slice(&'a self, index: usize) -> Self {
-        Self::Slice(&self.data()[index..])
-    }
-
-    #[inline]
-    pub fn get(&self, index: usize) -> Option<T> {
-        self.data().get(index).copied()
-    }
-
-    #[inline]
-    pub fn get_unchecked(&self, index: usize) -> T {
-        self.data()[index]
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.data().len()
-    }
-
-    pub fn data(&self) -> &[T] {
-        match self {
-            Self::Guard(gurad) => &gurad,
-            Self::Slice(s) => s,
-        }
-    }
-}
-
-impl<'a, T: WithDType> StorageMut<'a, T> {
-    pub fn clone(&'a self) -> StorageRef<'a, T> {
-        StorageRef::Slice(self.data())
-    }
-
-    #[inline]
-    pub fn get(&self, index: usize) -> Option<T> {
-        self.data().get(index).copied()
-    }
-
-    #[inline]
-    pub fn get_unchecked(&self, index: usize) -> T {
-        self.data()[index]
-    }
-
-    #[inline]
-    pub fn set(&mut self, index: usize, val: T) -> Option<()> {
-        if index >= self.len() {
-            None
-        } else {
-            self.set_unchecked(index, val);
-            Some(())
-        }
-    }
-
-    #[inline]
-    pub fn set_unchecked(&mut self, index: usize, val: T) {
-        self.data_mut()[index] = val;
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.data().len()
-    }
-
-    pub fn data(&self) -> &[T] {
-        match self {
-            Self::Guard(gurad) => &gurad,
-            Self::Slice(s) => s,
-        }
-    }
-
-    pub fn data_mut(&mut self) -> &mut [T] {
-        match self {
-            Self::Guard(gurad) => &mut gurad[0..],
-            Self::Slice(s) => &mut s[0..],
-        }
     }
 }

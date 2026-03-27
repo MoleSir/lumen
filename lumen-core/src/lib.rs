@@ -1,6 +1,3 @@
-#![feature(mapped_lock_guards)]
-#![feature(float_erf)]
-#![feature(f16)]
 mod shape;
 mod layout;
 mod dtype;
@@ -25,3 +22,15 @@ pub use scalar::*;
 pub use dynamic::*;
 
 pub use half::bf16;
+
+#[macro_export]
+macro_rules! inplace_warning_doc {
+    () => {
+        "> **⚠️ WARNING: Bypasses Autograd**\n\
+         > \n\
+         > This is an unsafe operation that bypasses the autograd engine.\n\
+         > It does NOT track computation history and cannot compute gradients.\n\
+         > Attempting to call this method on a tensor with `requires_grad=True`\n\
+         > will raise an Error."
+    };
+}

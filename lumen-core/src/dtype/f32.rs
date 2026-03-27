@@ -103,7 +103,7 @@ impl FloatDType for f32 {
     /// 0.5 * x * (1 + erf(x / sqrt(2)))
     fn gelu_erf(self) -> Self {
         const FRAC_1_SQRT_2: f32 = std::f32::consts::FRAC_1_SQRT_2; // 0.70710678
-        0.5 * self * (1.0 + (self * FRAC_1_SQRT_2).erf())
+        0.5 * self * (1.0 + libm::erff(self * FRAC_1_SQRT_2))
     }
 
     #[inline]

@@ -1,10 +1,10 @@
-use crate::{StorageIndices, StorageRef, WithDType};
+use crate::{Storage, StorageIndices, WithDType};
 
 use super::Tensor;
 
 pub struct TensorIter<'a, T> {
     indexes: StorageIndices<'a>,
-    storage: StorageRef<'a, T>,
+    storage: std::sync::RwLockReadGuard<'a, Storage<T>>,
 }
 
 impl<'a, T: WithDType> Iterator for TensorIter<'a, T> {
@@ -20,7 +20,7 @@ impl<T: WithDType> Tensor<T> {
     pub fn iter(&self) -> crate::Result<TensorIter<T>> {
         Ok(TensorIter {
             indexes: self.0.layout.storage_indices(),
-            storage: self.storage_ref(0)?,
+            storage: self.storage_read()?,
         })
     }
 }

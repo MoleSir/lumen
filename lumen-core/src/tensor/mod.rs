@@ -9,12 +9,13 @@ mod reduce;
 mod broadcast;
 mod convert;
 mod boolean;
+mod fused;
 
 pub use construct::ToTensor;
 use std::{borrow::Borrow, hash::Hash, sync::Arc};
 pub use indexer::{Slice, IndexOp};
 use crate::{AutogradInfo, AutogradMetaT, Error, FloatDType, Op, Storage};
-use super::{DType, Dim, DimCoordinates, DimNCoordinates, Layout, NumDType, Shape, StorageArc, StorageIndices, StorageMut, StorageRef, WithDType};
+use super::{DType, Dim, DimCoordinates, DimNCoordinates, Layout, NumDType, Shape, StorageArc, StorageIndices, WithDType};
 pub use iter::*;
 pub use indexer::*;
 
@@ -87,19 +88,7 @@ impl<T: WithDType> Tensor<T> {
         self.storage_write()?.set_unchecked(self.layout().start_offset(), val);
         Ok(())
     }
-
-    pub fn storage_ref<'a>(&'a self, start_offset: usize) -> crate::Result<StorageRef<'a, T>> {
-        self.0.storage.as_ref()
-            .ok_or(crate::Error::MetaTensor)
-            .map(|s| s.get_ref(start_offset))
-    }
-
-    pub fn storage_mut<'a>(&'a self, start_offset: usize) -> crate::Result<StorageMut<'a, T>> {
-        self.0.storage.as_ref()
-            .ok_or(crate::Error::MetaTensor)
-            .map(|s| s.get_mut(start_offset))
-    }
-
+    
     pub fn storage_ptr(&self, start_offset: usize) -> crate::Result<*mut T> {
         self.0.storage.as_ref()
             .ok_or(crate::Error::MetaTensor)

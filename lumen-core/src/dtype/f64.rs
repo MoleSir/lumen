@@ -100,7 +100,7 @@ impl FloatDType for f64 {
     /// 0.5 * x * (1 + erf(x / sqrt(2)))
     fn gelu_erf(self) -> Self {
         const FRAC_1_SQRT_2: f64 = std::f64::consts::FRAC_1_SQRT_2; // 0.70710678
-        0.5 * self * (1.0 + (self * FRAC_1_SQRT_2).erf())
+        0.5 * self * (1.0 + libm::erf(self * FRAC_1_SQRT_2))
     }
 
     #[inline]

@@ -1,6 +1,6 @@
 use std::ops::Deref;
 use num_traits::Zero;
-use crate::{AutogradMetaT, Error, Layout, NumDType, Result, Shape, Storage};
+use crate::{AutogradMetaT, Error, Layout, NumDType, Result, Shape, Storage, StorageIndices};
 use super::Tensor;
 
 impl<T: NumDType> Tensor<T> {
@@ -69,150 +69,98 @@ impl<T: NumDType> Tensor<T> {
         let rhs_rank = rhs_layout.shape().rank();
         let (bs, ms, ns, ks) = bmnk;
         let mns = ms * ns;
-        
         let mut dst = vec![T::zero(); bs * mns];
-    
-        #[cfg(not(feature = "operator_opt"))]
-        {
-            let l_stride_m = lhs_layout.stride()[lhs_rank - 2];
-            let l_stride_k = lhs_layout.stride()[lhs_rank - 1];
-            let r_stride_k = rhs_layout.stride()[rhs_rank - 2];
-            let r_stride_n = rhs_layout.stride()[rhs_rank - 1];
 
-            let lhs_data = lhs.data();
-            let rhs_data = rhs.data();
+        use std::any::TypeId;
 
-            // 获取用于 Batch 迭代的维度和步幅（排除最后两个维度）]
-            let batch_dims = &lhs_layout.dims()[..lhs_rank - 2];
-            let l_batch_strides = &lhs_layout.stride()[..lhs_rank - 2];
-            let r_batch_strides = &rhs_layout.stride()[..rhs_rank - 2];
+        let l_stride_m = lhs_layout.stride()[lhs_rank - 2] as isize;
+        let l_stride_k = lhs_layout.stride()[lhs_rank - 1] as isize;
+        let r_stride_k = rhs_layout.stride()[rhs_rank - 2] as isize;
+        let r_stride_n = rhs_layout.stride()[rhs_rank - 1] as isize;
 
+        let type_id = TypeId::of::<T>();
+
+        if type_id == TypeId::of::<f32>() {
             for b in 0..bs {
-                // 计算当前 batch 在 lhs 和 rhs 中的起始偏移量
-                // 这里我们需要将平面的索引 b 还原为多维索引
-                let mut l_batch_offset = lhs_layout.start_offset();
-                let mut r_batch_offset = rhs_layout.start_offset();
-                let mut temp_b = b;
-                
-                // 逆向计算每个 batch 维度的索引并乘以该维度的 stride
-                for i in (0..batch_dims.len()).rev() {
-                    let idx = temp_b % batch_dims[i];
-                    l_batch_offset += idx * l_batch_strides[i];
-                    r_batch_offset += idx * r_batch_strides[i];
-                    temp_b /= batch_dims[i];
-                }
-        
-                let dst_batch_offset = b * ms * ns;
-        
-                for m in 0..ms {
-                    for n in 0..ns {
-                        let mut v = T::zero();
-                        for k in 0..ks {
-                            // 使用真实的 stride 进行寻址，无论是否转置都能正确工作
-                            let l_idx = l_batch_offset + m * l_stride_m + k * l_stride_k;
-                            let r_idx = r_batch_offset + k * r_stride_k + n * r_stride_n;
-                            
-                            v = v + lhs_data[l_idx] * rhs_data[r_idx];
-                        }
-                        dst[dst_batch_offset + m * ns + n] = v;
-                    }
+                let start_index = b*mns;
+                let dst_slice = &mut dst[start_index..start_index+mns];
+                let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
+                let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);
+
+                unsafe {
+                    let lhs_ptr = lhs.data().as_ptr().add(l_batch_offset) as *const f32;
+                    let rhs_ptr = rhs.data().as_ptr().add(r_batch_offset) as *const f32;
+                    let dst_ptr = dst_slice.as_mut_ptr() as *mut f32;
+
+                    matrixmultiply::sgemm(
+                        ms, ks, ns, 
+                        1.0, 
+                        lhs_ptr, l_stride_m, l_stride_k, 
+                        rhs_ptr, r_stride_k, r_stride_n, 
+                        0.0, 
+                        dst_ptr, ns as isize, 1
+                    );
                 }
             }
         }
+        else if type_id == TypeId::of::<f64>() {
+            for b in 0..bs {
+                let start_index = b*mns;
+                let dst_slice = &mut dst[start_index..start_index+mns];
+                let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
+                let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);
 
-        #[cfg(feature = "operator_opt")]
-        {
-            use rayon::prelude::*;
-            use std::any::TypeId;
-
-            let l_stride_m = lhs_layout.stride()[lhs_rank - 2] as isize;
-            let l_stride_k = lhs_layout.stride()[lhs_rank - 1] as isize;
-            let r_stride_k = rhs_layout.stride()[rhs_rank - 2] as isize;
-            let r_stride_n = rhs_layout.stride()[rhs_rank - 1] as isize;
-
-            let type_id = TypeId::of::<T>();
-
-            if type_id == TypeId::of::<f32>() {
-                for b in 0..bs {
-                    let start_index = b*mns;
-                    let dst_slice = &mut dst[start_index..start_index+mns];
-                    let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
-                    let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);
-
-                    unsafe {
-                        let lhs_ptr = lhs.data().as_ptr().add(l_batch_offset) as *const f32;
-                        let rhs_ptr = rhs.data().as_ptr().add(r_batch_offset) as *const f32;
-                        let dst_ptr = dst_slice.as_mut_ptr() as *mut f32;
-
-                        matrixmultiply::sgemm(
-                            ms, ks, ns, 
-                            1.0, 
-                            lhs_ptr, l_stride_m, l_stride_k, 
-                            rhs_ptr, r_stride_k, r_stride_n, 
-                            0.0, 
-                            dst_ptr, ns as isize, 1
-                        );
-                    }
+                unsafe {
+                    let lhs_ptr = lhs.data().as_ptr().add(l_batch_offset) as *const f64;
+                    let rhs_ptr = rhs.data().as_ptr().add(r_batch_offset) as *const f64;
+                    let dst_ptr = dst_slice.as_mut_ptr() as *mut f64;
+                    
+                    matrixmultiply::dgemm(
+                        ms, ks, ns, 
+                        1.0, 
+                        lhs_ptr, l_stride_m, l_stride_k, 
+                        rhs_ptr, r_stride_k, r_stride_n, 
+                        0.0, 
+                        dst_ptr, ns as isize, 1
+                    );
                 }
             }
-            else if type_id == TypeId::of::<f64>() {
-                for b in 0..bs {
-                    let start_index = b*mns;
-                    let dst_slice = &mut dst[start_index..start_index+mns];
-                    let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
-                    let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);
+        }
+        else {
+            let lhs_data = lhs.data();
+            let rhs_data = rhs.data();
 
-                    unsafe {
-                        let lhs_ptr = lhs.data().as_ptr().add(l_batch_offset) as *const f64;
-                        let rhs_ptr = rhs.data().as_ptr().add(r_batch_offset) as *const f64;
-                        let dst_ptr = dst_slice.as_mut_ptr() as *mut f64;
+            // dst.par_chunks_mut(ms * ns).enumerate().for_each(|(b, dst_slice)| {
+            (0..bs).for_each(|b| {
+                let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
+                let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);
+                let dst_slice = &mut dst[b*mns..b*mns+mns];
+
+                for m in 0..ms {
+                    for k in 0..ks {
+                        let l_idx = l_batch_offset + (m as isize * l_stride_m + k as isize * l_stride_k) as usize;
+                        let l_val = unsafe { *lhs_data.get_unchecked(l_idx) };
                         
-                        matrixmultiply::dgemm(
-                            ms, ks, ns, 
-                            1.0, 
-                            lhs_ptr, l_stride_m, l_stride_k, 
-                            rhs_ptr, r_stride_k, r_stride_n, 
-                            0.0, 
-                            dst_ptr, ns as isize, 1
-                        );
-                    }
-                }
-            }
-            else {
-                let lhs_data = lhs.data();
-                let rhs_data = rhs.data();
+                        let r_base = r_batch_offset + (k as isize * r_stride_k) as usize;
+                        let dst_base = m * ns;
 
-                dst.par_chunks_mut(ms * ns).enumerate().for_each(|(b, dst_slice)| {
-                    let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
-                    let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);
-
-                    for m in 0..ms {
-                        for k in 0..ks {
-                            let l_idx = l_batch_offset + (m as isize * l_stride_m + k as isize * l_stride_k) as usize;
-                            let l_val = unsafe { *lhs_data.get_unchecked(l_idx) };
-                            
-                            let r_base = r_batch_offset + (k as isize * r_stride_k) as usize;
-                            let dst_base = m * ns;
-
-                            for n in 0..ns {
-                                unsafe {
-                                    let r_idx = r_base + (n as isize * r_stride_n) as usize;
-                                    let r_val = *rhs_data.get_unchecked(r_idx);
-                                    
-                                    let dst_ptr = dst_slice.get_unchecked_mut(dst_base + n);
-                                    *dst_ptr = *dst_ptr + l_val * r_val;
-                                }
+                        for n in 0..ns {
+                            unsafe {
+                                let r_idx = r_base + (n as isize * r_stride_n) as usize;
+                                let r_val = *rhs_data.get_unchecked(r_idx);
+                                
+                                let dst_ptr = dst_slice.get_unchecked_mut(dst_base + n);
+                                *dst_ptr = *dst_ptr + l_val * r_val;
                             }
                         }
                     }
-                });
-            }
+                }
+            });
         }
         
         Storage::new(dst)
     }
 
-    #[cfg(feature = "operator_opt")]
     fn compute_batch_offset(b: usize, layout: &Layout) -> usize {
         let rank = layout.shape().rank();
         let batch_dims = &layout.dims()[..rank - 2];
@@ -230,6 +178,205 @@ impl<T: NumDType> Tensor<T> {
     }
 }
 
+impl<T: NumDType> Tensor<T> {
+    /// In-place version of matrix multiplication: self += lhs @ rhs
+    pub fn add_matmul_(&self, lhs: &Self, rhs: &Self) -> Result<()> {
+        self.check_implace_op()?;
+
+        let a_dims = lhs.shape().dims();
+        let b_dims = rhs.shape().dims();
+        let c_dims = self.shape().dims();
+
+        let dim = a_dims.len();
+
+        // 1. 基础维度检查
+        if dim < 2 || b_dims.len() != dim || c_dims.len() != dim {
+            return Err(Error::ShapeMismatchBinaryOp {
+                lhs: lhs.shape().clone(),
+                rhs: rhs.shape().clone(),
+                op: "add_matmul_ (rank mismatch)",
+            });
+        }
+
+        let m = a_dims[dim - 2];
+        let k = a_dims[dim - 1];
+        let k2 = b_dims[dim - 2];
+        let n = b_dims[dim - 1];
+        
+        let self_m = c_dims[dim - 2];
+        let self_n = c_dims[dim - 1];
+
+        // 2. 矩阵乘法规则检查 (M,K) @ (K,N) -> (M,N)
+        if k != k2 || m != self_m || n != self_n {
+            return Err(Error::ShapeMismatchBinaryOp {
+                lhs: lhs.shape().clone(),
+                rhs: rhs.shape().clone(),
+                op: "add_matmul_ (dimension mismatch)",
+            });
+        }
+
+        // 3. Batch 检查
+        let batching_lhs: usize = a_dims[..dim - 2].iter().product();
+        let batching_rhs: usize = b_dims[..dim - 2].iter().product();
+        let batching_self: usize = c_dims[..dim - 2].iter().product();
+
+        if batching_lhs != batching_rhs || batching_lhs != batching_self {
+            return Err(Error::ShapeMismatchBinaryOp {
+                lhs: lhs.shape().clone(),
+                rhs: rhs.shape().clone(),
+                op: "add_matmul_ (batch mismatch)",
+            });
+        }
+
+        if m == 0 || n == 0 || k == 0 {
+            return Ok(());
+        }
+
+        // 4. 执行计算
+        self.do_add_matmul_(
+            &mut *self.storage_write()?, self.layout(),
+            lhs.storage_read()?.deref(), lhs.layout(),
+            rhs.storage_read()?.deref(), rhs.layout(),
+            (batching_lhs, m, n, k),
+        );
+        
+        Ok(())
+    }
+
+    fn do_add_matmul_(
+        &self,
+        dst_storage: &mut Storage<T>, dst_layout: &Layout,
+        lhs: &Storage<T>, lhs_layout: &Layout,
+        rhs: &Storage<T>, rhs_layout: &Layout,
+        bmnk: (usize, usize, usize, usize)
+    ) {
+        let (bs, ms, ns, ks) = bmnk;
+        
+        let lhs_rank = lhs_layout.shape().rank();
+        let rhs_rank = rhs_layout.shape().rank();
+        let dst_rank = dst_layout.shape().rank();
+
+
+        use std::any::TypeId;
+
+        let l_stride_m = lhs_layout.stride()[lhs_rank - 2] as isize;
+        let l_stride_k = lhs_layout.stride()[lhs_rank - 1] as isize;
+        let r_stride_k = rhs_layout.stride()[rhs_rank - 2] as isize;
+        let r_stride_n = rhs_layout.stride()[rhs_rank - 1] as isize;
+        let d_stride_m = dst_layout.stride()[dst_rank - 2] as isize;
+        let d_stride_n = dst_layout.stride()[dst_rank - 1] as isize;
+
+        let type_id = TypeId::of::<T>();
+
+        if type_id == TypeId::of::<f32>() {
+            for b in 0..bs {
+                let l_offset = Self::compute_batch_offset(b, lhs_layout);
+                let r_offset = Self::compute_batch_offset(b, rhs_layout);
+                let d_offset = Self::compute_batch_offset(b, dst_layout);
+
+                unsafe {
+                    let lhs_ptr = lhs.data().as_ptr().add(l_offset) as *const f32;
+                    let rhs_ptr = rhs.data().as_ptr().add(r_offset) as *const f32;
+                    let dst_ptr = dst_storage.data_mut().as_mut_ptr().add(d_offset) as *mut f32;
+
+                    matrixmultiply::sgemm(
+                        ms, ks, ns,
+                        1.0, // alpha
+                        lhs_ptr, l_stride_m, l_stride_k,
+                        rhs_ptr, r_stride_k, r_stride_n,
+                        1.0, // beta = 1.0 表示 self = 1.0 * (lhs*rhs) + 1.0 * self
+                        dst_ptr, d_stride_m, d_stride_n,
+                    );
+                }
+            }
+        } else if type_id == TypeId::of::<f64>() {
+            for b in 0..bs {
+                let l_offset = Self::compute_batch_offset(b, lhs_layout);
+                let r_offset = Self::compute_batch_offset(b, rhs_layout);
+                let d_offset = Self::compute_batch_offset(b, dst_layout);
+
+                unsafe {
+                    let lhs_ptr = lhs.data().as_ptr().add(l_offset) as *const f64;
+                    let rhs_ptr = rhs.data().as_ptr().add(r_offset) as *const f64;
+                    let dst_ptr = dst_storage.data_mut().as_mut_ptr().add(d_offset) as *mut f64;
+
+                    matrixmultiply::dgemm(
+                        ms, ks, ns,
+                        1.0,
+                        lhs_ptr, l_stride_m, l_stride_k,
+                        rhs_ptr, r_stride_k, r_stride_n,
+                        1.0,
+                        dst_ptr, d_stride_m, d_stride_n,
+                    );
+                }
+            }
+        } else {
+            let lhs_data = lhs.data();
+            let rhs_data = rhs.data();
+            
+            match dst_layout.storage_indices() {
+                StorageIndices::Contiguous(index) => {
+                    let dst = &mut dst_storage.data_mut()[index.begin_index..index.end_index];
+                    let mns = ms * ns;
+
+                    (0..bs).for_each(|b| {
+                        let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
+                        let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);
+                        let dst_slice = &mut dst[b*mns..b*mns+mns];
+        
+                        for m in 0..ms {
+                            for k in 0..ks {
+                                let l_idx = l_batch_offset + (m as isize * l_stride_m + k as isize * l_stride_k) as usize;
+                                let l_val = unsafe { *lhs_data.get_unchecked(l_idx) };
+                                
+                                let r_base = r_batch_offset + (k as isize * r_stride_k) as usize;
+                                let dst_base = m * ns;
+        
+                                for n in 0..ns {
+                                    unsafe {
+                                        let r_idx = r_base + (n as isize * r_stride_n) as usize;
+                                        let r_val = *rhs_data.get_unchecked(r_idx);
+                                        
+                                        let dst_ptr = dst_slice.get_unchecked_mut(dst_base + n);
+                                        *dst_ptr = *dst_ptr + l_val * r_val;
+                                    }
+                                }
+                            }
+                        }
+                    });
+                },
+                StorageIndices::Uncontiguous(_) => {
+                    (0..bs).for_each(|b| {
+                        let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
+                        let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);
+                        let d_batch_offset = Self::compute_batch_offset(b, dst_layout);
+        
+                        for m in 0..ms {
+                            let d_m_base = d_batch_offset + (m as isize * d_stride_m) as usize;
+                            for k in 0..ks {
+                                let l_idx = l_batch_offset + (m as isize * l_stride_m + k as isize * l_stride_k) as usize;
+                                let l_val = unsafe { *lhs_data.get_unchecked(l_idx) };
+                                
+                                let r_k_base = r_batch_offset + (k as isize * r_stride_k) as usize;
+        
+                                for n in 0..ns {
+                                    unsafe {
+                                        let r_idx = r_k_base + (n as isize * r_stride_n) as usize;
+                                        let r_val = *rhs_data.get_unchecked(r_idx);
+                                        
+                                        let d_idx = d_m_base + (n as isize * d_stride_n) as usize;
+                                        let dst_ptr = dst_storage.data_mut();
+                                        dst_ptr[d_idx] += l_val * r_val;
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 #[allow(unused)]
@@ -249,6 +396,23 @@ mod tests {
             [0*0 + 1*2 + 2*4, 0*1 + 1*3 + 2*5], // [10, 13]
             [3*0 + 4*2 + 5*4, 3*1 + 4*3 + 5*5], // [28, 40]
         ]).unwrap();
+
+        assert!(c.allclose(&expected, 1e-5, 1e-8).unwrap());
+    }
+
+    #[test]
+    fn test_add_matmul_2d() {
+        // A: (2, 3), B: (3, 2)
+        let a = Tensor::arange(0.0, 6.0).unwrap().reshape((2, 3)).unwrap(); // [[0,1,2],[3,4,5]]
+        let b = Tensor::arange(0.0, 6.0).unwrap().reshape((3, 2)).unwrap(); // [[0,1],[2,3],[4,5]]
+        // let c = a.matmul(&b).unwrap();
+        let c = Tensor::zeros((2, 2)).unwrap(); // (2, 2)
+        c.add_matmul_(&a, &b).unwrap();
+
+        let expected = Tensor::new(&[
+            [0*0 + 1*2 + 2*4, 0*1 + 1*3 + 2*5], // [10, 13]
+            [3*0 + 4*2 + 5*4, 3*1 + 4*3 + 5*5], // [28, 40]
+        ]).unwrap().cast::<f64>().unwrap();
 
         assert!(c.allclose(&expected, 1e-5, 1e-8).unwrap());
     }

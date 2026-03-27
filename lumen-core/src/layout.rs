@@ -206,30 +206,30 @@ impl Layout {
 
 #[derive(Debug, Clone)]
 pub enum StorageIndices<'a> {
-    UncontiguousStorageIndices(UncontiguousStorageIndices<'a>),
-    ContiguousStorageIndices(ContiguousStorageIndices),
+    Uncontiguous(UncontiguousStorageIndices<'a>),
+    Contiguous(ContiguousStorageIndices),
 }
 
 impl<'a> StorageIndices<'a> {
     pub fn from_layout(l: &'a Layout) -> Self {
         if l.is_contiguous() {
-            Self::ContiguousStorageIndices(ContiguousStorageIndices::from_layout(l))
+            Self::Contiguous(ContiguousStorageIndices::from_layout(l))
         } else {
-            Self::UncontiguousStorageIndices(UncontiguousStorageIndices::from_layout(l))
+            Self::Uncontiguous(UncontiguousStorageIndices::from_layout(l))
         }
     }
 
     pub fn reset(&mut self) {
         match self {
-            Self::UncontiguousStorageIndices(index) => index.reset(),
-            Self::ContiguousStorageIndices(index) => index.reset(),
+            Self::Uncontiguous(index) => index.reset(),
+            Self::Contiguous(index) => index.reset(),
         }
     }
 
     pub fn len(&self) -> usize {
         match self {
-            Self::UncontiguousStorageIndices(index) => index.len(),
-            Self::ContiguousStorageIndices(index) => index.len(),
+            Self::Uncontiguous(index) => index.len(),
+            Self::Contiguous(index) => index.len(),
         }
     }
 }
@@ -239,34 +239,35 @@ impl<'a> Iterator for StorageIndices<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::ContiguousStorageIndices(i) => i.next(),
-            Self::UncontiguousStorageIndices(i) => i.next(),
+            Self::Contiguous(i) => i.next(),
+            Self::Uncontiguous(i) => i.next(),
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct ContiguousStorageIndices {
-    pub init_storage_index: usize,
     pub storage_index: usize,
+    
+    pub begin_index: usize,
     pub end_index: usize, 
 }
 
 impl ContiguousStorageIndices {
     fn from_layout(l: &Layout) -> Self {
         Self {
-            init_storage_index: l.start_offset(),
+            begin_index: l.start_offset(),
             storage_index: l.start_offset(),
             end_index: l.start_offset() + l.element_count(),
         }
     }
 
     fn reset(&mut self) {
-        self.storage_index = self.init_storage_index;
+        self.storage_index = self.begin_index;
     }
 
     fn len(&self) -> usize {
-        self.end_index - self.init_storage_index
+        self.end_index - self.begin_index
     }
 }
 
@@ -292,7 +293,7 @@ impl<S: Into<Shape>> From<S> for Layout {
 
 #[derive(Debug, Clone)]
 pub struct UncontiguousStorageIndices<'a> {
-    init_storage_index: Option<usize>, /// For reset
+    begin_index: Option<usize>, /// For reset
     next_storage_index: Option<usize>,
     multi_index: Vec<usize>,
     dims: &'a [usize],
@@ -310,7 +311,7 @@ impl<'a> UncontiguousStorageIndices<'a> {
             Some(start_offset)
         };
         UncontiguousStorageIndices {
-            init_storage_index: next_storage_index,
+            begin_index: next_storage_index,
             next_storage_index,
             multi_index: vec![0; dims.len()],
             dims,
@@ -324,7 +325,7 @@ impl<'a> UncontiguousStorageIndices<'a> {
     }
 
     pub fn reset(&mut self) {
-        self.next_storage_index = self.init_storage_index;
+        self.next_storage_index = self.begin_index;
     }
 
     pub fn len(&self) -> usize {
