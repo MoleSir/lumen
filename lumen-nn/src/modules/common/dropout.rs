@@ -26,7 +26,7 @@ impl<T: FloatDType> Dropout<T> {
     }
 
     pub fn forward(&self, xs: &Tensor<T>) -> NnResult<Tensor<T>> {
-        if self.train {
+        if self.train && self.drop_p != T::ZERO {
             F::dropout(xs, self.drop_p)
         } else {
             Ok(xs.clone())
