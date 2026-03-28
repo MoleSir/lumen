@@ -120,7 +120,7 @@ impl Tensor<bool> {
 }
 
 impl<T: WithDType> Tensor<T> {
-    fn reduce_op<'a, R, Op, D>(&'a self, reduce_dim: D, op: Op, keepdim: bool, meta: R::AutogradMeta) -> Result<Tensor<R>> 
+    pub(crate) fn reduce_op<'a, R, Op, D>(&'a self, reduce_dim: D, op: Op, keepdim: bool, meta: R::AutogradMeta) -> Result<Tensor<R>> 
     where 
         R: WithDType,
         D: Dim,
@@ -130,7 +130,7 @@ impl<T: WithDType> Tensor<T> {
         Ok(Tensor::<R>::from_storage(storage, shape, meta))
     }
 
-    fn compute_reduce_op<'a, R, Op, D>(&'a self, reduce_dim: D, _: Op, keepdim: bool) -> Result<(Storage<R>, Vec<usize>)> 
+    pub(crate) fn compute_reduce_op<'a, R, Op, D>(&'a self, reduce_dim: D, _: Op, keepdim: bool) -> Result<(Storage<R>, Vec<usize>)> 
     where 
         R: WithDType,
         D: Dim,
@@ -399,9 +399,9 @@ impl<D: NumDType> ReduceOp<D> for ReduceArgMax {
 
 #[derive(Clone)]
 pub struct DimArray<'a, T> {
-    src: &'a [T],
-    size: usize,
-    stride: usize
+    pub(crate) src: &'a [T],
+    pub(crate) size: usize,
+    pub(crate) stride: usize
 }
 
 impl<'a, T: WithDType> DimArray<'a, T> {

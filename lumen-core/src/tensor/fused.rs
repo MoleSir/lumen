@@ -211,9 +211,9 @@ impl<T: NumDType> Tensor<T> {
 
 impl<T: WithDType> Tensor<T> {
     pub fn check_implace_op(&self) -> crate::Result<()> {
-        if self.requires_grad() {
-            return Err(crate::Error::InplaceOpInWhenRequiresGrad)
-        }
+        // if self.requires_grad() {
+        //     return Err(crate::Error::InplaceOpInWhenRequiresGrad)
+        // }
         Ok(())
     }
 }

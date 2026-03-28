@@ -199,8 +199,8 @@ pub enum Error {
         position: &'static str,
     },
 
-    #[error("inplace op in a requires_grad Tensor!")]
-    InplaceOpInWhenRequiresGrad,
+    // #[error("inplace op in a requires_grad Tensor!")]
+    // InplaceOpInWhenRequiresGrad,
 
     #[error("backward not support '{0}'")]
     BackwardNotSupported(&'static str),

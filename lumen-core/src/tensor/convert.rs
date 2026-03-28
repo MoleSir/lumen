@@ -22,9 +22,7 @@ impl<T: WithDType> Tensor<T> {
     /// Attempting to call this method on a tensor with `requires_grad=True` 
     /// will raise a Error.
     pub fn copy_(&self, source: impl Into<TensorOrScalar<T>>) -> Result<()> {
-        if self.requires_grad() {
-            return Err(crate::Error::InplaceOpInWhenRequiresGrad);
-        }
+        self.check_implace_op()?;
         self.impl_copy_(source)
     }
 

@@ -21,6 +21,7 @@ pub enum Op<T: FloatDType> {
     Cat(Vec<Tensor<T>>, usize),
     IfElse(Tensor<bool>, Option<Tensor<T>>, Option<Tensor<T>>),
     Copy(Tensor<T>),
+    RmsNorm(Tensor<T>, Tensor<T>, T),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

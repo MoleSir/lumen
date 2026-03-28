@@ -10,6 +10,7 @@ mod broadcast;
 mod convert;
 mod boolean;
 mod fused;
+mod nn;
 
 pub use construct::ToTensor;
 use std::{borrow::Borrow, hash::Hash, sync::Arc};

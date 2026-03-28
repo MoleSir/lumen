@@ -24,6 +24,7 @@ pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_index_add_op(init: &Tensor<T>, indexes: &IntTensor, src: &Tensor<T>, dim: usize) -> Self;
     fn on_scatter_add_op(init: &Tensor<T>, indexes: &IntTensor, src: &Tensor<T>, dim: usize) -> Self;
     fn on_gather_op(src: &Tensor<T>, indexes: &IntTensor, dim: usize) -> Self;
+    fn on_rms_norm_op(input: &Tensor<T>, weight: &Tensor<T>, eps: T) -> Self;
 }
 
 pub struct AutogradInfo<T: FloatDType> {
@@ -251,6 +252,14 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
             Self::val()
         }
     }
+
+    fn on_rms_norm_op(input: &Tensor<T>, weight: &Tensor<T>, eps: T) -> Self {
+        if crate::is_grad_enabled() && (input.requires_grad() || weight.requires_grad()) {
+            Self::var_from_op(Op::RmsNorm(input.clone(), weight.clone(), eps))
+        } else {
+            Self::val()
+        }
+    }
 }
 
 #[derive(Default)]
@@ -355,6 +364,11 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
 
     #[inline]
     fn on_gather_op(src: &Tensor<T>, indexes: &IntTensor, dim: usize) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_rms_norm_op(input: &Tensor<T>, weight: &Tensor<T>, eps: T) -> Self {
         NoAutograd
     }
 }

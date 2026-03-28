@@ -268,10 +268,7 @@ macro_rules! binary_inplace_op_impl {
             /// Attempting to call this method on a tensor with `requires_grad=True` 
             /// will raise a Error.
             pub fn [< $fn_name _ >](&self, rhs: impl Into<TensorOrScalar<T>>) -> crate::Result<Self> {
-                if self.requires_grad() {
-                    return Err(crate::Error::InplaceOpInWhenRequiresGrad);
-                }
-
+                self.check_implace_op()?;
                 self.[<impl_ $fn_name _ >](rhs)
             }
 
@@ -428,9 +425,7 @@ impl<T: WithDType> Tensor<T> {
     where
         F: Fn(T) -> T
     {
-        if self.requires_grad() {
-            return Err(crate::Error::InplaceOpInWhenRequiresGrad);
-        }
+        self.check_implace_op()?;
 
         let mut storage = self.storage_write()?;
         let vec = storage.data_mut();

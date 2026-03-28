@@ -587,6 +587,15 @@ impl<T: FloatDType> Tensor<T> {
                             let arg_grad = grads.or_insert(arg)?;
                             *arg_grad = arg_grad.scatter_add(indexes.clone(), &grad, *dim)?;
                         }
+
+                        //=========================================================================================//
+                        //           Nn
+                        //=========================================================================================//
+                        Op::RmsNorm(input, weight, eps) => {
+                            let input_grad = grads.or_insert(input)?.clone();
+                            let weight_grad = grads.or_insert(weight)?;
+                            Tensor::rms_norm_backward_fused(&grad, input, weight, &input_grad, &weight_grad, *eps)?;
+                        }
                     }
                 }
             }
@@ -659,6 +668,14 @@ impl<T: FloatDType> Tensor<T> {
                         track_grad |= tg;
                         nodes
                     }),
+
+                    | Op::RmsNorm(input, weight, _) => {
+                        let (tg, nodes) = walk(input, nodes, already_seen);
+                        track_grad |= tg;
+                        let (tg, nodes) = walk(weight, nodes, already_seen);
+                        track_grad |= tg;
+                        nodes
+                    }
                 }
             } else {
                 nodes
