@@ -141,33 +141,47 @@ impl<T: WithDType> Tensor<T> {
         let reduce_dim_stride = self.layout().stride()[reduce_dim];
         let reduce_dim_size = self.layout().dims()[reduce_dim];
    
-        let dst_len = self.layout().element_count() / reduce_dim_size;
-        let mut dst: Vec<R> = Vec::with_capacity(dst_len);
-        let dst_to_set = dst.spare_capacity_mut();
+        let dst_storage = self.storage_read()?;
+        let dst_data = dst_storage.data();
 
-        let storage = self.storage_read()?;
-        let storage_slice = storage.data();
+        let dst = if self.is_contiguous() && reduce_dim_stride == 1 {
+            let dst_data = &dst_data[self.layout().start_offset..];
+            (0..self.layout().element_count() / reduce_dim_size).into_iter()
+                .map(|i| {
+                    let chunk = &dst_data[i*reduce_dim_size..i*reduce_dim_size + reduce_dim_size];
+                    let v = Op::op(chunk.iter().copied());
+                    v
+                }).collect()
+        } else {
+            let dst_len = self.layout().element_count() / reduce_dim_size;
+            let mut dst: Vec<R> = Vec::with_capacity(dst_len);
+            unsafe { dst.set_len(dst_len) };
+            // let dst_to_set = dst.spare_capacity_mut();
 
-        let layout = self.layout().narrow(reduce_dim, 0, 1)?;
-        for (dst_index, src_index) in layout.storage_indices().enumerate() {
+            let layout = self.layout().narrow(reduce_dim, 0, 1)?;
             if reduce_dim_stride == 1 {
-                let end_index = src_index + reduce_dim_size;
-                let chunk = &storage_slice[src_index..end_index];
-                let v = Op::op(chunk.iter().copied());
-                dst_to_set[dst_index].write(v);
+                for (dst_index, src_index) in layout.storage_indices().enumerate() {
+                    let end_index = src_index + reduce_dim_size;
+                    let chunk = &dst_data[src_index..end_index];
+                    let v = Op::op(chunk.iter().copied());
+                    dst[dst_index] = v;
+                }
             } else {
-                let arr: DimArray<'_, T> = DimArray {
-                    src: &storage_slice[src_index..],
-                    size: reduce_dim_size,
-                    stride: reduce_dim_stride
-                };
-                let iter: DimArrayIter<'_, T> = arr.into_iter();
-                let v = Op::op(iter);
-                dst_to_set[dst_index].write(v);
-            }  
-        }
-        unsafe { dst.set_len(dst_len) };
+                for (dst_index, src_index) in layout.storage_indices().enumerate() {
+                    let arr: DimArray<'_, T> = DimArray {
+                        src: &dst_data[src_index..],
+                        size: reduce_dim_size,
+                        stride: reduce_dim_stride
+                    };
+                    let iter: DimArrayIter<'_, T> = arr.into_iter();
+                    let v = Op::op(iter);
+                    dst[dst_index] = v;
+                }
+            }
 
+            dst
+        };
+    
         let storage = Storage::new(dst);
         let mut shape = self.dims().to_vec();
 
@@ -460,7 +474,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_sum_matrix_axis0() {
+    fn test_sum_matrix_axis0() -> crate::Result<()> {
         // [[1, 2, 3],
         //  [3, 4, 5]]
         // sum_all(axis=0) -> [4, 6, 8]
@@ -468,10 +482,16 @@ mod tests {
         let s = arr.sum(0).unwrap();
         let expected = Tensor::new(&[4, 6, 8]).unwrap();
         assert!(s.allclose(&expected, 1e-5, 1e-8).unwrap());
+
+        let arr = arr.transpose_last()?.copy()?.transpose_last()?;
+        let s = arr.sum(0).unwrap();
+        assert!(s.allclose(&expected, 1e-5, 1e-8).unwrap());
+        
+        Ok(())
     }
 
     #[test]
-    fn test_sum_matrix_axis1() {
+    fn test_sum_matrix_axis1() -> crate::Result<()> {
         // [[1, 2, 3],
         //  [3, 4, 5]]
         // sum_all(axis=1) -> [6, 12]
@@ -479,6 +499,12 @@ mod tests {
         let s = arr.sum(1).unwrap();
         let expected = Tensor::new(&[6, 12]).unwrap();
         assert!(s.allclose(&expected, 1e-5, 1e-8).unwrap());
+
+        let arr = arr.transpose_last()?.copy()?.transpose_last()?;
+        let s = arr.sum(1).unwrap();
+        assert!(s.allclose(&expected, 1e-5, 1e-8).unwrap());
+
+        Ok(())
     }
 
     #[test]

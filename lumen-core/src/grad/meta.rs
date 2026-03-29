@@ -25,6 +25,7 @@ pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_scatter_add_op(init: &Tensor<T>, indexes: &IntTensor, src: &Tensor<T>, dim: usize) -> Self;
     fn on_gather_op(src: &Tensor<T>, indexes: &IntTensor, dim: usize) -> Self;
     fn on_rms_norm_op(input: &Tensor<T>, weight: &Tensor<T>, eps: T) -> Self;
+    fn on_softmax_op(input: &Tensor<T>, dim: usize) -> Self;
 }
 
 pub struct AutogradInfo<T: FloatDType> {
@@ -260,6 +261,14 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
             Self::val()
         }
     }
+
+    fn on_softmax_op(input: &Tensor<T>, dim: usize) -> Self {
+        if crate::is_grad_enabled() && input.requires_grad() {
+            Self::var_from_op(Op::Softmax(input.clone(), dim))
+        } else {
+            Self::val()
+        }
+    }
 }
 
 #[derive(Default)]
@@ -369,6 +378,11 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
 
     #[inline]
     fn on_rms_norm_op(input: &Tensor<T>, weight: &Tensor<T>, eps: T) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_softmax_op(input: &Tensor<T>, dim: usize) -> Self {
         NoAutograd
     }
 }

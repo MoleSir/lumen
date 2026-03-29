@@ -21,7 +21,9 @@ pub enum Op<T: FloatDType> {
     Cat(Vec<Tensor<T>>, usize),
     IfElse(Tensor<bool>, Option<Tensor<T>>, Option<Tensor<T>>),
     Copy(Tensor<T>),
+    
     RmsNorm(Tensor<T>, Tensor<T>, T),
+    Softmax(Tensor<T>, usize),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

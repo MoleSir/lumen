@@ -596,6 +596,11 @@ impl<T: FloatDType> Tensor<T> {
                             let weight_grad = grads.or_insert(weight)?;
                             Tensor::rms_norm_backward_fused(&grad, input, weight, &input_grad, &weight_grad, *eps)?;
                         }
+
+                        Op::Softmax(input, dim) => {
+                            let input_grad = grads.or_insert(input)?.clone();
+                            Tensor::softmax_backward_fused(&grad, &node, &input_grad, *dim)?;
+                        }
                     }
                 }
             }
@@ -673,6 +678,12 @@ impl<T: FloatDType> Tensor<T> {
                         let (tg, nodes) = walk(input, nodes, already_seen);
                         track_grad |= tg;
                         let (tg, nodes) = walk(weight, nodes, already_seen);
+                        track_grad |= tg;
+                        nodes
+                    }
+
+                    | Op::Softmax(input, _) => {
+                        let (tg, nodes) = walk(input, nodes, already_seen);
                         track_grad |= tg;
                         nodes
                     }
