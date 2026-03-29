@@ -1,6 +1,7 @@
-use std::ops::Deref;
+use std::{any::TypeId, ops::Deref};
+use gemm::Parallelism;
 use num_traits::Zero;
-use crate::{AutogradMetaT, Error, Layout, NumDType, Result, Shape, Storage, StorageIndices};
+use crate::{utils, AutogradMetaT, Error, Layout, NumDType, Result, Shape, Storage, StorageIndices};
 use super::Tensor;
 
 impl<T: NumDType> Tensor<T> {
@@ -71,62 +72,50 @@ impl<T: NumDType> Tensor<T> {
         let mns = ms * ns;
         let mut dst = vec![T::zero(); bs * mns];
 
-        use std::any::TypeId;
-
         let l_stride_m = lhs_layout.stride()[lhs_rank - 2] as isize;
         let l_stride_k = lhs_layout.stride()[lhs_rank - 1] as isize;
         let r_stride_k = rhs_layout.stride()[rhs_rank - 2] as isize;
         let r_stride_n = rhs_layout.stride()[rhs_rank - 1] as isize;
 
-        let type_id = TypeId::of::<T>();
-
-        if type_id == TypeId::of::<f32>() {
+        let id = TypeId::of::<T>();
+        if id == TypeId::of::<f32>() || id == TypeId::of::<f64>() {
             for b in 0..bs {
                 let start_index = b*mns;
                 let dst_slice = &mut dst[start_index..start_index+mns];
                 let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
                 let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);
-
+    
+                let parallelism = Parallelism::Rayon(utils::get_num_threads());
+    
                 unsafe {
-                    let lhs_ptr = lhs.data().as_ptr().add(l_batch_offset) as *const f32;
-                    let rhs_ptr = rhs.data().as_ptr().add(r_batch_offset) as *const f32;
-                    let dst_ptr = dst_slice.as_mut_ptr() as *mut f32;
-
-                    matrixmultiply::sgemm(
-                        ms, ks, ns, 
-                        1.0, 
-                        lhs_ptr, l_stride_m, l_stride_k, 
-                        rhs_ptr, r_stride_k, r_stride_n, 
-                        0.0, 
-                        dst_ptr, ns as isize, 1
-                    );
+                    let lhs_ptr = lhs.data().as_ptr().add(l_batch_offset);
+                    let rhs_ptr = rhs.data().as_ptr().add(r_batch_offset);
+                    let dst_ptr = dst_slice.as_mut_ptr();
+    
+                    gemm::gemm(
+                        /* m: usize = */ ms,
+                        /* n: usize = */ ns,
+                        /* k: usize = */ ks,
+                        /* dst: *mut T = */ dst_ptr,
+                        /* dst_cs: isize = */ 1,
+                        /* dst_rs: isize = */ ns as isize,
+                        /* read_dst: bool = */ false,
+                        /* lhs: *const T = */ lhs_ptr,
+                        /* lhs_cs: isize = */ l_stride_k as isize,
+                        /* lhs_rs: isize = */ l_stride_m as isize,
+                        /* rhs: *const T = */ rhs_ptr,
+                        /* rhs_cs: isize = */ r_stride_n as isize,
+                        /* rhs_rs: isize = */ r_stride_k as isize,
+                        /* alpha: T = */ T::ZERO,
+                        /* beta: T = */ T::ONE,
+                        /* conj_dst: bool = */ false,
+                        /* conj_lhs: bool = */ false,
+                        /* conj_rhs: bool = */ false,
+                        parallelism,
+                    )
                 }
             }
-        }
-        else if type_id == TypeId::of::<f64>() {
-            for b in 0..bs {
-                let start_index = b*mns;
-                let dst_slice = &mut dst[start_index..start_index+mns];
-                let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
-                let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);
-
-                unsafe {
-                    let lhs_ptr = lhs.data().as_ptr().add(l_batch_offset) as *const f64;
-                    let rhs_ptr = rhs.data().as_ptr().add(r_batch_offset) as *const f64;
-                    let dst_ptr = dst_slice.as_mut_ptr() as *mut f64;
-                    
-                    matrixmultiply::dgemm(
-                        ms, ks, ns, 
-                        1.0, 
-                        lhs_ptr, l_stride_m, l_stride_k, 
-                        rhs_ptr, r_stride_k, r_stride_n, 
-                        0.0, 
-                        dst_ptr, ns as isize, 1
-                    );
-                }
-            }
-        }
-        else {
+        } else {
             let lhs_data = lhs.data();
             let rhs_data = rhs.data();
 
@@ -254,63 +243,50 @@ impl<T: NumDType> Tensor<T> {
         
         let lhs_rank = lhs_layout.shape().rank();
         let rhs_rank = rhs_layout.shape().rank();
-        let dst_rank = dst_layout.shape().rank();
-
-
-        use std::any::TypeId;
 
         let l_stride_m = lhs_layout.stride()[lhs_rank - 2] as isize;
         let l_stride_k = lhs_layout.stride()[lhs_rank - 1] as isize;
         let r_stride_k = rhs_layout.stride()[rhs_rank - 2] as isize;
         let r_stride_n = rhs_layout.stride()[rhs_rank - 1] as isize;
-        let d_stride_m = dst_layout.stride()[dst_rank - 2] as isize;
-        let d_stride_n = dst_layout.stride()[dst_rank - 1] as isize;
 
-        let type_id = TypeId::of::<T>();
-
-        if type_id == TypeId::of::<f32>() {
+        let id = TypeId::of::<T>();
+        if id == TypeId::of::<f32>() || id == TypeId::of::<f64>() {
             for b in 0..bs {
                 let l_offset = Self::compute_batch_offset(b, lhs_layout);
                 let r_offset = Self::compute_batch_offset(b, rhs_layout);
                 let d_offset = Self::compute_batch_offset(b, dst_layout);
 
                 unsafe {
-                    let lhs_ptr = lhs.data().as_ptr().add(l_offset) as *const f32;
-                    let rhs_ptr = rhs.data().as_ptr().add(r_offset) as *const f32;
-                    let dst_ptr = dst_storage.data_mut().as_mut_ptr().add(d_offset) as *mut f32;
+                    let lhs_ptr = lhs.data().as_ptr().add(l_offset);
+                    let rhs_ptr = rhs.data().as_ptr().add(r_offset);
+                    let dst_ptr = dst_storage.data_mut().as_mut_ptr().add(d_offset);
+                    let parallelism = Parallelism::Rayon(utils::get_num_threads());
 
-                    matrixmultiply::sgemm(
-                        ms, ks, ns,
-                        1.0, // alpha
-                        lhs_ptr, l_stride_m, l_stride_k,
-                        rhs_ptr, r_stride_k, r_stride_n,
-                        1.0, // beta = 1.0 表示 self = 1.0 * (lhs*rhs) + 1.0 * self
-                        dst_ptr, d_stride_m, d_stride_n,
-                    );
-                }
-            }
-        } else if type_id == TypeId::of::<f64>() {
-            for b in 0..bs {
-                let l_offset = Self::compute_batch_offset(b, lhs_layout);
-                let r_offset = Self::compute_batch_offset(b, rhs_layout);
-                let d_offset = Self::compute_batch_offset(b, dst_layout);
-
-                unsafe {
-                    let lhs_ptr = lhs.data().as_ptr().add(l_offset) as *const f64;
-                    let rhs_ptr = rhs.data().as_ptr().add(r_offset) as *const f64;
-                    let dst_ptr = dst_storage.data_mut().as_mut_ptr().add(d_offset) as *mut f64;
-
-                    matrixmultiply::dgemm(
-                        ms, ks, ns,
-                        1.0,
-                        lhs_ptr, l_stride_m, l_stride_k,
-                        rhs_ptr, r_stride_k, r_stride_n,
-                        1.0,
-                        dst_ptr, d_stride_m, d_stride_n,
+                    gemm::gemm(
+                        /* m: usize = */ ms,
+                        /* n: usize = */ ns,
+                        /* k: usize = */ ks,
+                        /* dst: *mut T = */ dst_ptr,
+                        /* dst_cs: isize = */ 1,
+                        /* dst_rs: isize = */ ns as isize,
+                        /* read_dst: bool = */ false,
+                        /* lhs: *const T = */ lhs_ptr,
+                        /* lhs_cs: isize = */ l_stride_k as isize,
+                        /* lhs_rs: isize = */ l_stride_m as isize,
+                        /* rhs: *const T = */ rhs_ptr,
+                        /* rhs_cs: isize = */ r_stride_n as isize,
+                        /* rhs_rs: isize = */ r_stride_k as isize,
+                        /* alpha: T = */ T::ONE,
+                        /* beta: T = */ T::ONE,
+                        /* conj_dst: bool = */ false,
+                        /* conj_lhs: bool = */ false,
+                        /* conj_rhs: bool = */ false,
+                        parallelism,
                     );
                 }
             }
         } else {
+            
             let lhs_data = lhs.data();
             let rhs_data = rhs.data();
             
@@ -346,6 +322,10 @@ impl<T: NumDType> Tensor<T> {
                     });
                 },
                 StorageIndices::Uncontiguous(_) => {
+                    let dst_rank = dst_layout.shape().rank();
+                    let d_stride_m = dst_layout.stride()[dst_rank - 2] as isize;
+                    let d_stride_n = dst_layout.stride()[dst_rank - 1] as isize;
+
                     (0..bs).for_each(|b| {
                         let l_batch_offset = Self::compute_batch_offset(b, lhs_layout);
                         let r_batch_offset = Self::compute_batch_offset(b, rhs_layout);

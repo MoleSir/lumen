@@ -18,4 +18,5 @@ thiserrorctx = { workspace = true }
 thiserror = { workspace = true }
 bytemuck = { workspace = true }
 half = { workspace = true, features = ["bytemuck", "num-traits", "rand_distr"] }
-matrixmultiply = { workspace = true }
+gemm = { workspace = true }
+num_cpus = { workspace = true }
