@@ -14,5 +14,6 @@ members = [
     "fl_dtree",
     "fl_dtree_tcp",
     "minimind",
-    "hands-on-rl"
+    "hands-on-rl",
+    "d2l",
 ]

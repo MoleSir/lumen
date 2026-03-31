@@ -30,7 +30,7 @@ path = "./chapters/ch10_actor_critic.rs"
 
 
 [dependencies]
-lumen-core = { path = "../../lumen-core", features = ["operator_opt"] }
+lumen-core = { path = "../../lumen-core" }
 lumen-nn = { path = "../../lumen-nn" }
 rand = "0.10"
 plotters = "0.3"

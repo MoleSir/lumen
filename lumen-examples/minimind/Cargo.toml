@@ -15,7 +15,7 @@ path = "./src/trainer/ppo.rs"
 
 
 [dependencies]
-lumen-core = { path = "../../lumen-core", features = ["operator_opt"] }
+lumen-core = { path = "../../lumen-core"  }
 lumen-dataset = { path = "../../lumen-dataset" }
 lumen-nn = { path = "../../lumen-nn" }
 lumen-transformer = { path = "../../lumen-transformer" }
