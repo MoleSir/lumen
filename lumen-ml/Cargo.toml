@@ -1,0 +1,12 @@
+[package]
+name = "lumen-ml"
+version = { workspace = true }
+edition = { workspace = true }
+repository = { workspace = true }
+description = { workspace = true }
+keywords = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+lumen-core = { path = "../lumen-core" }
+rand = "0.9"

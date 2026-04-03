@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 use rand::rng;
 use rand_distr::{Distribution, Uniform};
 use crate::{Error, IntDType, Result};
-use super::{DType, FloatDType, Layout, NumDType, Shape, WithDType};
+use crate::{DType, FloatDType, Layout, NumDType, Shape, WithDType};
 
 #[derive(Clone)]
 pub struct Storage<T>(Vec<T>);

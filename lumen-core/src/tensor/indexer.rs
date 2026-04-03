@@ -388,6 +388,14 @@ impl From<std::ops::RangeFrom<usize>> for Indexer {
     }
 }
 
+impl From<std::ops::RangeTo<usize>> for Indexer {
+    fn from(value: std::ops::RangeTo<usize>) -> Self {
+        let range = Slice::new(0, Some(value.end as isize), 1);
+        range.into()
+    }
+}
+
+
 impl From<std::ops::RangeFull> for Indexer {
     fn from(_: std::ops::RangeFull) -> Self {
         let range = Slice::new(0, None, 1);

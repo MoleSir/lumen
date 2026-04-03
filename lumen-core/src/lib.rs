@@ -1,7 +1,5 @@
-mod shape;
-mod layout;
+mod base;
 mod dtype;
-mod storage;
 mod tensor;
 mod error;
 mod grad;
@@ -9,11 +7,8 @@ mod variable;
 mod scalar;
 mod dynamic;
 pub mod utils;
-
-pub use shape::*;
-pub use layout::*;
+pub use base::*;
 pub use dtype::*;
-pub use storage::*;
 pub use tensor::*;
 pub use error::*;
 pub use grad::*;
