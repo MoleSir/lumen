@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use crate::{AutogradInfo, Error, FloatDType, Layout, NumDType, Result, Shape, Storage, StorageArc, WithDType};
-use super::{Tensor, TensorId, TensorImpl};
+use crate::{Tensor, TensorId, TensorImpl};
 
 impl<T: WithDType> Tensor<T> {
     /// Creates a new `Tensor` from any supported Rust array or slice.

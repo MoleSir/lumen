@@ -9,4 +9,7 @@ license = { workspace = true }
 
 [dependencies]
 lumen-core = { path = "../lumen-core" }
-rand = "0.9"
+rand = { workspace = true }
+thiserror = { workspace = true }
+thiserrorctx = { workspace = true }
+paste = { workspace = true }

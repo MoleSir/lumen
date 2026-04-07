@@ -2,7 +2,7 @@ use std::{any::TypeId, ops::Deref};
 use gemm::Parallelism;
 use num_traits::Zero;
 use crate::{utils, AutogradMetaT, Error, Layout, NumDType, Result, Shape, Storage, StorageIndices};
-use super::Tensor;
+use crate::Tensor;
 
 impl<T: NumDType> Tensor<T> {
     /// Returns the matrix-multiplication of the input tensor with the other provided tensor.

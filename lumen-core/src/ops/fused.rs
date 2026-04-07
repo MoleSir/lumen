@@ -1,5 +1,5 @@
 use crate::{NumDType, StorageIndices, WithDType};
-use super::Tensor;
+use crate::Tensor;
 use paste::paste;
 
 macro_rules! fused_2arg_inplace_op_impl {

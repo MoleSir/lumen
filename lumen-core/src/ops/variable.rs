@@ -1,5 +1,5 @@
 use std::marker::PhantomData;
-use crate::tensor::ToTensor;
+use crate::ops::ToTensor;
 use crate::{FloatDType, Result, Shape, Tensor};
 
 pub struct Var<T: FloatDType> {

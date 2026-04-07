@@ -1,5 +1,5 @@
-use crate::{AutogradMetaT, Dim, FloatDType, Layout, Storage, StorageIndices, D};
-use super::{reduce::DimArray, Tensor};
+use crate::{Tensor, AutogradMetaT, Dim, FloatDType, Layout, Storage, StorageIndices, D};
+use super::reduce::DimArray;
 
 // ==============================================================================================//
 //                             RMS Norm

@@ -1,6 +1,6 @@
 use crate::{Storage, StorageIndices, WithDType};
 
-use super::Tensor;
+use crate::Tensor;
 
 pub struct TensorIter<'a, T> {
     indexes: StorageIndices<'a>,

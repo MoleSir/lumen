@@ -1,5 +1,5 @@
 use crate::{AutogradMetaT, DTypeConvert, Error, Result, TensorOrScalar, WithDType};
-use super::Tensor;
+use crate::Tensor;
 
 impl<T: WithDType> Tensor<T> {
     pub fn contiguous(&self) -> crate::Result<Tensor<T>> {

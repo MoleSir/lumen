@@ -1,6 +1,6 @@
 use std::{fmt::Display, ops::Deref};
 use crate::{AutogradMetaT, Dim, Error, IntTensor, NumDType, Result, WithDType, D};
-use super::Tensor;
+use crate::Tensor;
 
 impl<T: WithDType> Tensor<T> {
     pub fn indexes(&self, indexers: &[Indexer]) -> Result<Self> {

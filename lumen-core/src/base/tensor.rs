@@ -1,36 +1,18 @@
-mod construct;
-mod indexer;
-mod iter;
-pub mod display;
-mod shape;
-mod arith;
-mod matmul;
-mod reduce;
-mod broadcast;
-mod convert;
-mod boolean;
-mod fused;
-mod nn;
-
-pub use construct::ToTensor;
 use std::{borrow::Borrow, hash::Hash, sync::Arc};
-pub use indexer::{Slice, IndexOp};
-use crate::{AutogradInfo, AutogradMetaT, Error, FloatDType, Op, Storage};
-use super::{DType, Dim, DimCoordinates, DimNCoordinates, Layout, NumDType, Shape, StorageArc, StorageIndices, WithDType};
-pub use iter::*;
-pub use indexer::*;
+use crate::{AutogradInfo, AutogradMetaT, DType, FloatDType, NumDType, Op, WithDType};
+use super::{Dim, DimCoordinates, DimNCoordinates, Layout, Shape, Storage, StorageArc, StorageIndices};
 
 #[derive(Clone)]
-pub struct Tensor<T: WithDType>(Arc<TensorImpl<T>>);
+pub struct Tensor<T: WithDType>(pub(crate) Arc<TensorImpl<T>>);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TensorId(usize);
 
-struct TensorImpl<T: WithDType> {
-    id: TensorId,
-    storage: Option<StorageArc<T>>,
-    layout: Layout,
-    meta: T::AutogradMeta,
+pub(crate) struct TensorImpl<T: WithDType> {
+    pub(crate) id: TensorId,
+    pub(crate) storage: Option<StorageArc<T>>,
+    pub(crate) layout: Layout,
+    pub(crate) meta: T::AutogradMeta,
 }
 
 impl TensorId {
@@ -72,7 +54,7 @@ impl<T: WithDType> Tensor<T> {
 
     pub fn check_scalar(&self) -> crate::Result<()> {
         if !self.is_scalar() {
-            Err(Error::NotScalar)?
+            Err(crate::Error::NotScalar)?
         } else {
             Ok(())
         }
@@ -98,6 +80,13 @@ impl<T: WithDType> Tensor<T> {
 
     pub fn is_meta(&self) -> bool {
         self.0.storage.is_none()
+    }
+
+    #[allow(unused)]
+    pub(crate) fn storage_clone(&self) -> crate::Result<StorageArc<T>> {
+        self.0.storage.as_ref()
+            .ok_or(crate::Error::MetaTensor)
+            .cloned()
     }
 }
 

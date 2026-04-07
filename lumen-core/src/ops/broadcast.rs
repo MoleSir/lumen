@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use crate::{AutogradMetaT, NumDType, Result, Shape, WithDType};
-use super::{Tensor, TensorId, TensorImpl};
+use crate::{Tensor, TensorId, TensorImpl};
 
 impl<T: WithDType> Tensor<T> {
     /// Broadcast the input tensor to the target shape. This returns an error if the input shape is

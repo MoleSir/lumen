@@ -1,7 +1,11 @@
 mod shape;
 mod layout;
 mod storage;
-
+mod tensor;
+mod scalar;
+mod view;
 pub use shape::*;
 pub use layout::*;
 pub use storage::*;
+pub use tensor::*;
+pub use scalar::*;

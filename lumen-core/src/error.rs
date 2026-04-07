@@ -199,6 +199,22 @@ pub enum Error {
         position: &'static str,
     },
 
+    #[error("matrix shape not match expect {shape:?}, but got {len}")]
+    MatrixShapeUnmatch {
+        shape: (usize, usize),
+        len: usize,
+    },
+
+    #[error("vec mul matrix shape with {len:?} and {shape:?}")]
+    VecMulMatShapeMismatch { 
+        len: usize, shape: (usize, usize),
+    },
+
+    #[error("vector len mismatch with {len1} and {len2} in {op}")]
+    VectorLenMismatch {
+        len1: usize, len2: usize, op: &'static str,
+    },
+
     // #[error("inplace op in a requires_grad Tensor!")]
     // InplaceOpInWhenRequiresGrad,
 

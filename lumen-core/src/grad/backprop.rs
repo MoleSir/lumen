@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use crate::{FloatDType, Tensor, TensorId};
-
-use super::{BinaryOp, GradStore, Op, ReduceOp, UnaryOp};
+use crate::{FloatDType, Tensor, TensorId,};
+use crate::{BinaryOp, ReduceOp, UnaryOp, Op};
+use super::GradStore;
 
 impl<T: FloatDType> Tensor<T> {
 

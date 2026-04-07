@@ -1,7 +1,7 @@
 use std::sync::RwLock;
 
 use crate::{FloatDType, IntTensor, Tensor, WithDType};
-use crate::grad::{BinaryOp, Op, ReduceOp, UnaryOp};
+use crate::ops::{BinaryOp, Op, ReduceOp, UnaryOp};
 
 pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn requires_grad(&self) -> bool;

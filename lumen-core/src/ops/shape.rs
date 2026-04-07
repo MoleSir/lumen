@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use crate::{AutogradMetaT, Dim, Dims, Error, Layout, Result, Shape, Storage, WithDType, D};
-use super::{Tensor, TensorId, TensorImpl, Slice};
+use crate::{Tensor, TensorId, TensorImpl, Slice};
 
 impl<T: WithDType> Tensor<T> {
     /// Creates a new tensor with the specified dimension removed if its size was one.

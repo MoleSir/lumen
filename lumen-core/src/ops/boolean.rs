@@ -1,5 +1,5 @@
 use crate::{AutogradMetaT, Error, Layout, Result, Storage, TensorOrScalar, WithDType};
-use super::Tensor;
+use crate::Tensor;
 
 impl Tensor<bool> {
     pub fn if_else<T: WithDType>(&self, true_val: impl Into<TensorOrScalar<T>>, false_val: impl Into<TensorOrScalar<T>>) -> Result<Tensor<T>> {
