@@ -55,6 +55,30 @@ impl<T: FloatDType> Optimizer<T> for Adam<T> {
     fn step(&mut self, grads: &GradStore<T>) -> Result<(), Self::Error> {
         let _guard = lumen_core::NoGradGuard::new();
 
+        /*
+                               1
+            scale_m =  ------------------
+                          1 - beta1^t
+
+                               1
+            scale_v =  ------------------
+                          1 - beta2^t
+
+            m = beta1 * m + (1 - beta1) * g
+            v = beta2 * m + (1 - beta2) * g^2
+
+            m_hat = scale_m * m
+            m_hat = scale_v * v
+
+                              m_hat
+            grad = --------------------------------
+                         v_hat^0.5  +  eps
+
+
+            scale 解决“冷启动”问题。因为训练开始的时候，因为 m v 都是 0，导致 g 只被使用了很少一部分（ m = 0.9 * m + 0.1 * g）
+            所以一开始 scale 比较大，之后 t 增大，scale 不断接近 1，此时修正项几乎不再起作用，算法平滑地过渡到标准的指数移动平均。
+        */
+
         self.step_t += 1;
         let lr = self.config.lr;
         let beta1 = self.config.beta1;

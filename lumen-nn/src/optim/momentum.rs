@@ -37,16 +37,16 @@ pub struct Momentum<T: FloatDType> {
 impl<T: FloatDType> Momentum<T> {
     pub fn new(params: impl Into<Vec<Tensor<T>>>, config: MomentumConfig<T>) -> lumen_core::Result<Self> {
         let params: Vec<_> = params.into();
-        let mut sgd_params = vec![];
+        let mut m_params = vec![];
         for param in params.into_iter() {
             let velocity = Tensor::zeros_like(&param)?; 
-            sgd_params.push(MomentumParam {
+            m_params.push(MomentumParam {
                 param,
                 velocity,
             });
         }
 
-        Ok(Self { params: sgd_params, config })
+        Ok(Self { params: m_params, config })
     }
 }
 
@@ -69,18 +69,22 @@ impl<T: FloatDType> Optimizer<T> for Momentum<T> {
             if let Some(g) = grads.get(&param.param) {
                 let mut d_p = g.clone();
                 
+                // 权重衰减
+                // 在梯度上直接加上 L2 正则化的导数。
                 if weight_decay != zero {
                     d_p.add_(weight_decay * &param.param)?; 
                 }
-
+                
+                // momentum: 保留多少历史 v
+                // dampening: 保留多少当前梯度
                 // v = v * momentum + d_p * (1 - dampening)                
                 if momentum != zero {
                     if dampening != zero {
                         let scale = one - dampening;
-                        // d_p = d_p * (1 - dampening)
                         d_p.mul_(scale)?; 
                     }
-                    
+
+                    // 融合历史速度 + 当前梯度更新新的 v
                     // v = v * momentum + d_p
                     param.velocity.mul_(momentum)?;
                     param.velocity.add_(&d_p)?;

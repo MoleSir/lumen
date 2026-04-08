@@ -7,6 +7,7 @@ mod geometric;
 mod param;
 mod buffer;
 mod loss;
+mod pos_embed;
 
 pub use common::*;
 pub use activation::*;
@@ -17,6 +18,7 @@ pub use param::*;
 pub use buffer::*;
 pub use geometric::*;
 pub use loss::*;
+pub use pos_embed::*;
 
 use std::fmt;
 use std::marker::PhantomData;

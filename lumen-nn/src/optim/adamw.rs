@@ -77,6 +77,7 @@ impl<T: FloatDType> Optimizer<T> for AdamW<T> {
                 let v_hat =  scale_v * v;
 
                 let adjusted_grad = m_hat / (v_hat.sqrt()? + self.config.eps);
+                // 引入 l2 正则
                 param.param.mul_(T::one() - lr_lambda)?;
                 param.param.sub_(lr * adjusted_grad)?;
             }

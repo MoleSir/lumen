@@ -1,28 +1,26 @@
 mod error;
 pub use error::*;
-use crate::{components::*, split::Split, token::{AddedToken, Token}};
+use crate::{components::*, Split, AddedToken, Token};
 
-pub struct Tokenizer<
-    N: Normalize, 
-    PT: PreTokenize, 
-    M: Model, 
-    PP: PostProcessor,
->  {
+pub struct Tokenizer<N: Normalize, PT: PreTokenize, M: Model, PP: PostProcess, D: Decode> {
     pub normalizer: N,
     pub pre_tokenizer: PT,
     pub model: M,
     pub post_processor: PP,
+    pub decode: D,
     pub added_tokens: Vec<AddedToken>,
 }
 
-impl<N, PT, M, PP> Tokenizer<N, PT, M, PP> 
+impl<N, PT, M, PP, D> Tokenizer<N, PT, M, PP, D> 
 where 
     M: Model, 
     N: Normalize, 
     PT: PreTokenize, 
-    PP: PostProcessor,
+    PP: PostProcess,
+    D: Decode
 {
     pub fn encode(&self, input: &str) -> TokenizeResult<Vec<Token>> {
+        let input = self.run_normalize(input)?;
         let splits = self.extract_added_tokens(input)?;
         let splits = self.run_pre_tokenize(splits)?;
         let tokens = self.run_model(splits)?;
@@ -31,9 +29,40 @@ where
         Ok(tokens)
     }
 
+    pub fn decode(&self, ids: Vec<u32>, skip_special_tokens: bool) -> Result<String, TokenizeError> {
+        let mut token_strings = Vec::new();
+
+        for &id in &ids {
+            // 1. 优先处理 AddedTokens
+            if let Some(at) = self.added_tokens.iter().find(|t| t.id == id) {
+                if !skip_special_tokens {
+                    token_strings.push(at.content.clone());
+                }
+            } else {
+                // 2. 从 Model 获取原始片段
+                if let Some(val) = self.model.id_to_token(id) {
+                    token_strings.push(val);
+                }
+            }
+        }
+
+        // 3. 调用 Decoder 组件进行最终清理和合并
+        let decoded = self.decode
+            .decode(token_strings)
+            .map_err(|e| TokenizeError::Decode(Box::new(e)))?;
+
+        Ok(decoded)
+    }
+
+    fn run_normalize(&self, input: &str) -> TokenizeResult<String> {
+        self.normalizer
+            .normalize(input.to_string())
+            .map_err(|e| TokenizeError::Normalize(Box::new(e)))
+    }
+
     /// 遍历 input，寻找其中为 AddedToken 的部分，提取转为 Split::AddedToken。并且当场转为 Token
     /// 对其他部分，被 AddedToken 切分，每个子部分封装为 Split::Origin
-    fn extract_added_tokens(&self, input: &str) -> TokenizeResult<Vec<Split>> {
+    fn extract_added_tokens(&self, input: String) -> TokenizeResult<Vec<Split>> {
         let mut splits = vec![];
         let mut cursor = 0;
 

@@ -6,3 +6,7 @@ pub mod datasets;
 pub mod model_selection;
 pub mod metrics;
 pub mod ensemble;
+pub mod naive_bayes;
+pub mod preprocessing;
+
+mod error;
