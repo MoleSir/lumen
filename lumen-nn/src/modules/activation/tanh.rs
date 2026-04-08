@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
-use crate::{NnResult, NnCtxError, ModuleForward};
+use crate::{NnResult, NnError, ModuleForward};
 
 #[derive(Module, Clone)]
 pub struct Tanh;
@@ -16,7 +16,7 @@ impl Tanh {
 }
 
 impl<T: FloatDType> ModuleForward<T> for Tanh {
-    type Error = NnCtxError;
+    type Error = NnError;
     type Input = Tensor<T>;
     type Output = Tensor<T>;
 

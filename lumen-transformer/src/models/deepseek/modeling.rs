@@ -5,7 +5,7 @@ use lumen_nn::{init::Init, Embedding, Linear, ModuleInit, Parameter};
 use thiserrorctx::Context;
 use crate::ForCausalLM;
 
-use super::{DeepSeekConfig, DeepSeekCtxError, DeepSeekError, DeepSeekResult};
+use super::{DeepSeekConfig, DeepSeekError, DeepSeekResult};
 
 // ========================================================================= //
 //                For Causal LM
@@ -22,7 +22,7 @@ pub struct DeepSeekForCausalLM<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for DeepSeekForCausalLM<T> {
     type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+    type Error = DeepSeekError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let model = DeepSeekModel::init(config, init).context("init llama model")?;
@@ -36,7 +36,7 @@ impl<T: FloatDType> ModuleInit<T> for DeepSeekForCausalLM<T> {
 
 impl<T: FloatDType> ForCausalLM<T> for DeepSeekForCausalLM<T> {
     type Cache = DeepSeekCache<T>;
-    type Error = DeepSeekCtxError;
+    type Error = DeepSeekError;
 
     fn new_cache(&self) -> Result<Self::Cache, Self::Error> {
         DeepSeekCache::new(true, &self.config)
@@ -66,7 +66,7 @@ pub struct DeepSeekModel<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for DeepSeekModel<T> {
     type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+    type Error = DeepSeekError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let embed_init = init.unwrap_or_else(default_init_linear);
@@ -119,7 +119,7 @@ pub struct DeepSeekLayer<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for DeepSeekLayer<T> {
     type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+    type Error = DeepSeekError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let self_attn = DeepSeekAttention::init(config, init).context("init attention")?;
@@ -168,7 +168,7 @@ pub struct DeepSeekMoE<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for DeepSeekMoE<T> {
     type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+    type Error = DeepSeekError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let gate_init = init.unwrap_or_else(default_init_linear);
@@ -339,7 +339,7 @@ pub struct DeepSeekAttention<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for DeepSeekAttention<T> {
     type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+    type Error = DeepSeekError;
 
     fn init(config: &DeepSeekConfig, init: Option<Init<T>>) -> DeepSeekResult<Self> {
         // TODO: check 
@@ -556,7 +556,7 @@ pub struct DeepSeekRMSNorm<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for DeepSeekRMSNorm<T> {
     type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+    type Error = DeepSeekError;
 
     fn init(config: &DeepSeekConfig, init: Option<Init<T>>) -> DeepSeekResult<Self> {
         let init = init.unwrap_or(Init::ones());

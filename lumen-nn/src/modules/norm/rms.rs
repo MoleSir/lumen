@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
-use crate::{init::Init, ModuleInit, NnCtxError, NnResult, Parameter};
+use crate::{init::Init, ModuleInit, NnError, NnResult, Parameter};
 use crate::functional as F;
 
 #[derive(Module)]
@@ -18,7 +18,7 @@ pub struct RMSNormConfig {
 
 impl<T: FloatDType> ModuleInit<T> for RMSNorm<T> {
     type Config = RMSNormConfig;
-    type Error = NnCtxError;
+    type Error = NnError;
 
     fn init(config: &RMSNormConfig, init: Option<Init<T>>) -> NnResult<Self> {
         let init = init.unwrap_or(Init::ones());

@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
-use crate::{functional as F, ModuleForward, NnCtxError, NnResult};
+use crate::{functional as F, ModuleForward, NnError, NnResult};
 
 /// Applies the Softmax function to an n-dimensional input Tensor
 /// rescaling them so that the elements of the n-dimensional output Tensor
@@ -29,7 +29,7 @@ impl Softmax {
 
 
 impl<T: FloatDType> ModuleForward<T> for Softmax {
-    type Error = NnCtxError;
+    type Error = NnError;
     type Input = Tensor<T>;
     type Output = Tensor<T>;
 

@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, Tensor, D};
 use lumen_macros::Module;
-use crate::{init::Init, Linear, ModuleInit, NnCtxError, NnError, NnResult};
+use crate::{init::Init, Linear, ModuleInit, NnError, NnResult};
 
 #[derive(Debug, derive_new::new)]
 pub struct GroupQueryAttentionConfig {
@@ -28,7 +28,7 @@ pub struct GroupQueryAttention<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for GroupQueryAttention<T> {
     type Config = GroupQueryAttentionConfig;
-    type Error = NnCtxError;
+    type Error = NnError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let hidden_size = config.hidden_size;

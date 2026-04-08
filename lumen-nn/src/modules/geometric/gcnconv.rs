@@ -1,7 +1,7 @@
 use lumen_core::{FloatDType, IndexOp, IntDType, IntTensor, Tensor};
 use lumen_macros::Module;
 use thiserrorctx::Context;
-use crate::{init::Init, Linear, ModuleInit, NnCtxError, NnResult};
+use crate::{init::Init, Linear, ModuleInit, NnError, NnResult};
 
 #[derive(Module)]
 pub struct GCNConv<T: FloatDType> {
@@ -20,7 +20,7 @@ pub struct GCNConvConfig {
 }
 
 impl<T: FloatDType> ModuleInit<T> for GCNConv<T> {
-    type Error = NnCtxError;
+    type Error = NnError;
     type Config = GCNConvConfig;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {

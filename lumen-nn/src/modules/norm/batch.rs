@@ -1,7 +1,7 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
 
-use crate::{init::Init, Buffer, ModuleInit, NnCtxError, NnError, NnResult, Parameter};
+use crate::{init::Init, Buffer, ModuleInit, NnError, NnResult, Parameter};
 
 /// Applies Batch Normalization over a 2D or 3D input.
 #[derive(Module)]
@@ -33,7 +33,7 @@ pub struct BatchNorm1dConfig {
 
 impl<T: FloatDType> ModuleInit<T> for BatchNorm1d<T> {
     type Config = BatchNorm1dConfig;
-    type Error = NnCtxError;
+    type Error = NnError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let gamma = init.unwrap_or(Init::ones()).init_param((1, config.num_features))?;

@@ -17,7 +17,7 @@ pub use sigmoid::*;
 pub use tanh::*;
 use std::str::FromStr;
 use paste::paste;
-use crate::{NnCtxError, NnError};
+use crate::NnError;
 use super::ModuleForward;
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
@@ -46,7 +46,7 @@ macro_rules! impl_activate {
             )*
 
             impl FromStr for Activate {
-                type Err = NnCtxError;
+                type Err = NnError;
             
                 fn from_str(s: &str) -> Result<Self, Self::Err> {
                     match s {
@@ -97,7 +97,7 @@ impl_activate!(
 );
 
 impl<T: FloatDType> ModuleForward<T> for Activate {
-    type Error = NnCtxError;
+    type Error = NnError;
     type Input = Tensor<T>;
     type Output = Tensor<T>;
     

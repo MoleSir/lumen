@@ -12,7 +12,7 @@ pub enum NnError {
     ShapeUnmatchWhenLoadParam(Shape, Shape),
 
     #[error(transparent)]
-    SafeTensors(#[from] lumen_io::safetensors::SafeTensorsCtxError),
+    SafeTensors(#[from] lumen_io::safetensors::SafeTensorsError),
 
     #[error("head_size {0} can't divde by num_head {1}")]
     HeadSizeCannotDivideByNumhead(usize, usize),

@@ -1,7 +1,7 @@
 #[thiserrorctx::context_error]
 pub enum Qwen2Error {
     #[error(transparent)]
-    SafeTensors(#[from] lumen_io::safetensors::SafeTensorsCtxError),
+    SafeTensors(#[from] lumen_io::safetensors::SafeTensorsError),
     
     #[error(transparent)]
     SerdeJson(#[from] serde_json::Error),
@@ -10,7 +10,7 @@ pub enum Qwen2Error {
     Core(#[from] lumen_core::Error),
 
     #[error(transparent)]
-    Nn(#[from] lumen_nn::NnCtxError),
+    Nn(#[from] lumen_nn::NnError),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),

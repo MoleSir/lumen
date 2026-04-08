@@ -5,7 +5,7 @@ use lumen_nn::{init::Init, Embedding, Linear, ModuleInit, Parameter};
 use thiserrorctx::Context;
 use crate::ForCausalLM;
 
-use super::{LlamaConfig, LlamaCtxError, LlamaError, LlamaResult};
+use super::{LlamaConfig, LlamaError, LlamaResult};
 
 // ========================================================================= //
 //                For Causal LM
@@ -21,7 +21,7 @@ pub struct LlamaForCausalLM<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for LlamaForCausalLM<T> {
     type Config = LlamaConfig;
-    type Error = LlamaCtxError;
+    type Error = LlamaError;
 
     fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
         let model = LlamaModel::init(config, init).context("init llama model")?;
@@ -36,7 +36,7 @@ impl<T: FloatDType> ModuleInit<T> for LlamaForCausalLM<T> {
 
 impl<T: FloatDType> ForCausalLM<T> for LlamaForCausalLM<T> {
     type Cache = LlamaCache<T>;
-    type Error = LlamaCtxError;
+    type Error = LlamaError;
 
     fn new_cache(&self) -> Result<Self::Cache, Self::Error> {
         LlamaCache::new(true, &self.config)
@@ -67,7 +67,7 @@ pub struct LlamaModel<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for LlamaModel<T> {
     type Config = LlamaConfig;
-    type Error = LlamaCtxError;
+    type Error = LlamaError;
 
     fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
         let embed_init = init.unwrap_or_else(default_init_linear);
@@ -120,7 +120,7 @@ pub struct LlamaLayer<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for LlamaLayer<T> {
     type Config = LlamaConfig;
-    type Error = LlamaCtxError;
+    type Error = LlamaError;
 
     fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
         let self_attn = LlamaAttention::init(config, init).context("init attention")?;
@@ -205,7 +205,7 @@ pub struct LlamaMlp<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for LlamaMlp<T> {
     type Config = LlamaConfig;
-    type Error = LlamaCtxError;
+    type Error = LlamaError;
 
     fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
         let init = init.unwrap_or_else(default_init_linear);
@@ -251,7 +251,7 @@ pub struct LlamaAttention<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for LlamaAttention<T> {
     type Config = LlamaConfig;
-    type Error = LlamaCtxError;
+    type Error = LlamaError;
 
     fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
         // TODO: check 
@@ -476,7 +476,7 @@ pub struct LlamaRMSNorm<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for LlamaRMSNorm<T> {
     type Config = LlamaConfig;
-    type Error = LlamaCtxError;
+    type Error = LlamaError;
 
     fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
         let init = init.unwrap_or(Init::ones());

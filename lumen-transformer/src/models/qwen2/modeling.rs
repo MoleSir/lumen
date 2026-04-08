@@ -4,7 +4,7 @@ use lumen_nn::{init::{Init, MetaInitGuard}, Embedding, Linear, Module, ModuleIni
 use thiserrorctx::Context;
 use crate::{ForCausalLM, PretrainedModel};
 
-use super::{Qwen2Config, Qwen2CtxError, Qwen2Error, Qwen2Result};
+use super::{Qwen2Config, Qwen2Error, Qwen2Result};
 
 // ========================================================================= //
 //                For Causal LM
@@ -21,7 +21,7 @@ pub struct Qwen2ForCausalLM<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Qwen2ForCausalLM<T> {
     type Config = Qwen2Config;
-    type Error = Qwen2CtxError;
+    type Error = Qwen2Error;
 
     fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
         let model = Qwen2Model::init(config, init).context("init Qwen2 model")?;
@@ -40,7 +40,7 @@ impl<T: FloatDType> ModuleInit<T> for Qwen2ForCausalLM<T> {
 
 impl<T: FloatDType> ForCausalLM<T> for Qwen2ForCausalLM<T> {
     type Cache = Qwen2Cache<T>;
-    type Error = Qwen2CtxError;
+    type Error = Qwen2Error;
 
     fn new_cache(&self) -> Result<Self::Cache, Self::Error> {
         Qwen2Cache::new(true, &self.config)
@@ -71,7 +71,7 @@ impl<T: FloatDType> ForCausalLM<T> for Qwen2ForCausalLM<T> {
 } 
 
 impl<T: FloatDType> PretrainedModel<T> for Qwen2ForCausalLM<T> {
-    type Error = Qwen2CtxError;
+    type Error = Qwen2Error;
 
     fn from_pretrained(path: impl Into<PathBuf>) -> Result<Self, Self::Error> {
         let path: PathBuf = path.into();
@@ -107,7 +107,7 @@ pub struct Qwen2Model<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Qwen2Model<T> {
     type Config = Qwen2Config;
-    type Error = Qwen2CtxError;
+    type Error = Qwen2Error;
 
     fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
         let embed_init = init.unwrap_or_else(default_init_linear);
@@ -160,7 +160,7 @@ pub struct Qwen2Layer<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Qwen2Layer<T> {
     type Config = Qwen2Config;
-    type Error = Qwen2CtxError;
+    type Error = Qwen2Error;
 
     fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
         let self_attn = Qwen2Attention::init(config, init).context("init attention")?;
@@ -245,7 +245,7 @@ pub struct Qwen2Mlp<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Qwen2Mlp<T> {
     type Config = Qwen2Config;
-    type Error = Qwen2CtxError;
+    type Error = Qwen2Error;
 
     fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
         let init = init.unwrap_or_else(default_init_linear);
@@ -291,7 +291,7 @@ pub struct Qwen2Attention<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Qwen2Attention<T> {
     type Config = Qwen2Config;
-    type Error = Qwen2CtxError;
+    type Error = Qwen2Error;
 
     fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
         // TODO: check 
@@ -517,7 +517,7 @@ pub struct Qwen2RMSNorm<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Qwen2RMSNorm<T> {
     type Config = Qwen2Config;
-    type Error = Qwen2CtxError;
+    type Error = Qwen2Error;
 
     fn init(config: &Qwen2Config, init: Option<Init<T>>) -> Qwen2Result<Self> {
         let init = init.unwrap_or(Init::ones());

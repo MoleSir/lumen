@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, Tensor, D};
 use lumen_macros::Module;
-use crate::{init::Init, Linear, ModuleInit, NnCtxError, NnResult};
+use crate::{init::Init, Linear, ModuleInit, NnError, NnResult};
 
 #[derive(Module)]
 pub struct SelfAttention<T: FloatDType> {
@@ -15,7 +15,7 @@ pub struct SelfAttention<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for SelfAttention<T> {
     type Config = usize;
-    type Error = NnCtxError;
+    type Error = NnError;
 
     fn init(hidden_size: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let hidden_size = *hidden_size;

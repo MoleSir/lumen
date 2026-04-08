@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
-use crate::{NnResult, NnCtxError, ModuleForward};
+use crate::{NnResult, NnError, ModuleForward};
 
 #[derive(Module)]
 #[module(display = "display")]
@@ -24,7 +24,7 @@ impl<T: FloatDType> LeakyRelu<T> {
 }
 
 impl<T: FloatDType> ModuleForward<T> for LeakyRelu<T> {
-    type Error = NnCtxError;
+    type Error = NnError;
     type Input = Tensor<T>;
     type Output = Tensor<T>;
 

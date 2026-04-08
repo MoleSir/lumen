@@ -5,5 +5,5 @@ pub enum DeepSeekError {
     Core(#[from] lumen_core::Error),
 
     #[error(transparent)]
-    Nn(#[from] lumen_nn::NnCtxError),
+    Nn(#[from] lumen_nn::NnError),
 }

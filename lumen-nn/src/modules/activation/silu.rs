@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
-use crate::{NnResult, NnCtxError, ModuleForward};
+use crate::{NnResult, NnError, ModuleForward};
 
 #[derive(Module, Clone)]
 pub struct Silu;
@@ -16,7 +16,7 @@ impl Silu {
 }
 
 impl<T: FloatDType> ModuleForward<T> for Silu {
-    type Error = NnCtxError;
+    type Error = NnError;
     type Input = Tensor<T>;
     type Output = Tensor<T>;
 

@@ -1,7 +1,7 @@
 use lumen_core::{FloatDType, IntTensor, Tensor};
 use lumen_macros::Module;
 use crate::{functional as F, ModuleForward};
-use crate::{init::Init, NnCtxError, NnResult};
+use crate::{init::Init, NnError, NnResult};
 use crate::{ModuleInit, Parameter};
 
 /// A simple lookup table that stores embeddings of a fixed dictionary and size.
@@ -23,7 +23,7 @@ pub struct EmbeddingConfig {
 
 impl<T: FloatDType> ModuleInit<T> for Embedding<T> {
     type Config = EmbeddingConfig;
-    type Error = NnCtxError;
+    type Error = NnError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let init = init.unwrap_or(Init::standard_normal());
@@ -33,7 +33,7 @@ impl<T: FloatDType> ModuleInit<T> for Embedding<T> {
 }
 
 impl<T: FloatDType> ModuleForward<T> for Embedding<T> {
-    type Error = NnCtxError;
+    type Error = NnError;
     type Input = IntTensor;
     type Output = Tensor<T>;
     

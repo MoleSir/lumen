@@ -4,7 +4,7 @@ use lumen_nn::{init::{Init, MetaInitGuard}, Embedding, Linear, Module, ModuleIni
 use thiserrorctx::Context;
 use crate::{ForCausalLM, PretrainedModel};
 
-use super::{Gpt2Config, Gpt2CtxError, Gpt2Error, Gpt2Result};
+use super::{Gpt2Config, Gpt2Error, Gpt2Result};
 
 // ========================================================================= //
 //                For Causal LM
@@ -20,7 +20,7 @@ pub struct Gpt2ForCausalLM<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Gpt2ForCausalLM<T> {
     type Config = Gpt2Config;
-    type Error = Gpt2CtxError;
+    type Error = Gpt2Error;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let transformer = Gpt2Model::init(config, init).context("init transformer")?;
@@ -30,7 +30,7 @@ impl<T: FloatDType> ModuleInit<T> for Gpt2ForCausalLM<T> {
 
 impl<T: FloatDType> ForCausalLM<T> for Gpt2ForCausalLM<T> {
     type Cache = Gpt2Cache<T>;
-    type Error = Gpt2CtxError;
+    type Error = Gpt2Error;
 
     fn new_cache(&self) -> Result<Self::Cache, Self::Error> {
         Ok(Gpt2Cache::new(true, &self.config))
@@ -47,7 +47,7 @@ impl<T: FloatDType> ForCausalLM<T> for Gpt2ForCausalLM<T> {
 }
 
 impl<T: FloatDType> PretrainedModel<T> for Gpt2ForCausalLM<T> {
-    type Error = Gpt2CtxError;
+    type Error = Gpt2Error;
     fn from_pretrained(path: impl Into<PathBuf>) -> Result<Self, Self::Error> {
         let path: PathBuf = path.into();
 
@@ -98,7 +98,7 @@ pub struct Gpt2Model<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Gpt2Model<T> {
     type Config = Gpt2Config;
-    type Error = Gpt2CtxError;
+    type Error = Gpt2Error;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let embed_init = init.unwrap_or_else(default_init_linear);
@@ -161,7 +161,7 @@ pub struct Gpt2Block<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Gpt2Block<T> {
     type Config = Gpt2Config;
-    type Error = Gpt2CtxError;
+    type Error = Gpt2Error;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let ln_1 = Gpt2LayerNorm::init(config, init).context("ln 1 init")?;
@@ -201,7 +201,7 @@ pub struct Gpt2MLP<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Gpt2MLP<T> {
     type Config = Gpt2Config;
-    type Error = Gpt2CtxError;
+    type Error = Gpt2Error;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let intermediate_size = 4 * config.n_embd;
@@ -240,7 +240,7 @@ pub struct Gpt2Attention<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Gpt2Attention<T> {
     type Config = Gpt2Config;
-    type Error = Gpt2CtxError;
+    type Error = Gpt2Error;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let head_dim = config.n_embd / config.n_head;
@@ -350,7 +350,7 @@ pub struct Gpt2LayerNorm<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Gpt2LayerNorm<T> {
     type Config = Gpt2Config;
-    type Error = Gpt2CtxError;
+    type Error = Gpt2Error;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let size = config.n_embd;

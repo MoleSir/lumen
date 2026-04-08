@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, IndexOp, NumDType, Tensor};
 use lumen_macros::Module;
-use crate::{init::Init, Linear, ModuleInit, NnCtxError, NnResult};
+use crate::{init::Init, Linear, ModuleInit, NnError, NnResult};
 
 #[derive(Module)]
 pub struct Lstm<T: FloatDType> {
@@ -29,7 +29,7 @@ pub struct LstmState<T: NumDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Lstm<T> {
     type Config = LstmConfig;
-    type Error = NnCtxError;
+    type Error = NnError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let input_size = config.input_size;
