@@ -70,6 +70,11 @@ impl NumDType for half::bf16 {
         }
         Ok(Storage::new(vec))
     }
+
+    #[inline]
+    fn sign(self) -> Self {
+        self.signum()
+    }
 }
 
 impl FloatDType for half::bf16 {

@@ -1,19 +1,30 @@
 use lumen_core::{IndexOp, Tensor};
+use crate::pipeline::{PredictFit, PredictModel};
 
-pub struct MultinomialNBTrainer {
+pub struct MultinomialNB {
     pub alpha: f64,
 }
 
-pub struct MultinomialNB {
+pub struct MultinomialNBModel {
     pub class_log_prior: Tensor<f64>,
     pub feature_log_prob: Tensor<f64>,
 }
 
-impl MultinomialNBTrainer {
+impl MultinomialNB {
+    pub fn new(alpha: f64) -> Self {
+        Self { alpha }
+    }
+}
+
+impl PredictFit for MultinomialNB {
+    type Input = Tensor<u32>;
+    type Output = Tensor<u32>;
+    type Model = MultinomialNBModel;
+
     /// ## Args
     /// - x: (n_samples, n_features): 每个样本在每个特征上出现的次数
     /// - y: (n_samples,)：每个样本的分类标签
-    pub fn fit(&self, x: &Tensor<u32>, y: &Tensor<u32>) -> lumen_core::Result<MultinomialNB> {
+    fn fit(&self, x: &Tensor<u32>, y: &Tensor<u32>) -> crate::error::MlResult<Self::Model> {
         let (n_samples, _) = x.dims2()?;
         let n_samples_y = y.dims1()?; 
         if n_samples != n_samples_y {
@@ -53,11 +64,27 @@ impl MultinomialNBTrainer {
         let feature_prob = feature_counts.broadcast_div(&feature_total_count)?; // (n_class, n_features)
         let feature_log_prob = feature_prob.ln()?; // (n_class, n_features)
 
-        Ok(MultinomialNB { class_log_prior, feature_log_prob })
+        Ok(MultinomialNBModel { class_log_prior, feature_log_prob })
     }
 }
 
-impl MultinomialNB {
+impl PredictModel for MultinomialNBModel {
+    type Input = Tensor<u32>;
+    type Output = Tensor<u32>;
+
+    /// ## Args
+    /// - x: (n_samples, n_features)
+    /// 
+    /// ## Returns
+    /// - y: (n_samples)
+    fn predict(&self, x: &Tensor<u32>) -> crate::error::MlResult<Tensor<u32>> {
+        let prob = self.predict_proba(x)?; // (n_samples, n_class)
+        let y = prob.argmax(1)?;
+        Ok(y)
+    }
+}
+
+impl MultinomialNBModel {
     /// ## Args
     /// - x: (n_samples, n_features)
     /// 
@@ -76,16 +103,60 @@ impl MultinomialNB {
         
         return Ok(prob);
     }
+}
 
-    /// ## Args
-    /// - x: (n_samples, n_features)
-    /// 
-    /// ## Returns
-    /// - y: (n_samples)
-    pub fn predict(&self, x: &Tensor<u32>) -> lumen_core::Result<Tensor<u32>> {
-        let prob = self.predict_proba(x)?; // (n_samples, n_class)
-        let y = prob.argmax(1)?;
-        Ok(y)
+#[cfg(test)]
+mod tests {
+    use crate::error::MlResult;
+
+    use super::*;
+    use lumen_core::Tensor;
+
+    #[test]
+    fn test_multinomial_nb_basic() -> MlResult<()> {
+        // 数据集：
+        // 特征 0: "apple" 出现的次数
+        // 特征 1: "macbook" 出现的次数
+        // 样本 1: [2, 0] -> 标签 0 (水果)
+        // 样本 2: [0, 2] -> 标签 1 (科技)
+        let x = Tensor::new(vec![
+            2u32, 0, 
+            0, 2
+        ])?.reshape((2, 2))?;
+        
+        let y = Tensor::new(vec![0u32, 1])?;
+
+        let nb = MultinomialNB::new(1.0); // alpha = 1.0 (拉普拉斯平滑)
+        let model = nb.fit(&x, &y)?;
+
+        // 测试推理
+        // 一个包含很多 "apple" 的新样本 [3, 0] 应该预测为 0
+        let test_x = Tensor::new(vec![3u32, 0])?.reshape((1, 2))?;
+        let prediction = model.predict(&test_x)?;
+        
+        assert_eq!(prediction.to_vec()?[0], 0);
+
+        // 一个包含很多 "macbook" 的新样本 [0, 5] 应该预测为 1
+        let test_x_2 = Tensor::new(vec![0u32, 5])?.reshape((1, 2))?;
+        let prediction_2 = model.predict(&test_x_2)?;
+        
+        assert_eq!(prediction_2.to_vec()?[0], 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_against_sklearn_values() -> crate::error::MlResult<()> {
+        let x = Tensor::new(vec![1u32, 2, 2, 1, 3, 4, 4, 3])?.reshape((4, 2))?;
+        let y = Tensor::new(vec![0u32, 0, 1, 1])?;
+    
+        let nb = MultinomialNB::new(1.0);
+        let model = nb.fit(&x, &y)?;
+    
+        println!("{}", model.class_log_prior);
+        println!("{}", model.feature_log_prob);
+    
+        Ok(())
     }
 }
 

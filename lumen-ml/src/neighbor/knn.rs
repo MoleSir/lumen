@@ -1,40 +1,17 @@
-use std::collections::HashMap;
-
+use std::{collections::HashMap, marker::PhantomData};
 use lumen_core::{FloatDType, IndexOp, NumDType, Tensor, WithDType};
+use crate::{error::{MlError, MlResult}, pipeline::{PredictFit, PredictModel}, utils};
 
 // =========================================================================================== //
 //              Knn Regression 
 // =========================================================================================== //
 
-pub struct KnnRegressionTrainer {
+pub struct KnnRegression<T: FloatDType> {
     pub n_neighbors: usize,
+    marker: PhantomData<T>,
 }
 
-impl KnnRegressionTrainer {
-    pub fn new(n_neighbors: usize) -> Self {
-        Self { n_neighbors }
-    }   
-}
-
-impl KnnRegressionTrainer {
-    /// ## Args 
-    /// - `x_train`: (n_samples, n_features)
-    /// - `y_train`: (n_samples,)
-    pub fn fit<T: NumDType>(&self, x: &Tensor<T>, y: &Tensor<T>) -> lumen_core::Result<KnnRegression<T>> {
-        let (n_samples, n_features) = x.dims2()?;
-        let n_samples_y = y.dims1()?; 
-        if n_samples != n_samples_y {
-            lumen_core::bail!("x samples {} != y samples {}", n_samples, n_samples_y);
-        }
-        if n_samples < self.n_neighbors {
-            lumen_core::bail!("not enough samples! < k {}", self.n_neighbors);
-        }
-
-        Ok(KnnRegression { n_neighbors: self.n_neighbors, n_features, x_train: x.clone(), y_train: y.clone() })
-    }
-}
-
-pub struct KnnRegression<T: NumDType> {
+pub struct KnnRegressionModel<T: NumDType> {
     pub n_neighbors: usize,
     pub n_features: usize,
     pub x_train: Tensor<T>,
@@ -42,17 +19,39 @@ pub struct KnnRegression<T: NumDType> {
 }
 
 impl<T: FloatDType> KnnRegression<T> {
+    pub fn new(n_neighbors: usize) -> Self {
+        Self { n_neighbors, marker: Default::default() }
+    }   
+}
+
+impl<T: FloatDType> PredictFit for KnnRegression<T> {
+    type Input = Tensor<T>;
+    type Output = Tensor<T>;
+    type Model = KnnRegressionModel<T>;
+
+    /// ## Args 
+    /// - `x_train`: (n_samples, n_features)
+    /// - `y_train`: (n_samples,)
+    fn fit(&self, x: &Tensor<T>, y: &Tensor<T>) -> crate::error::MlResult<Self::Model> {
+        let (n_samples, n_features) = utils::validate_xy_shapes(x, y)?;
+        if n_samples < self.n_neighbors {
+            thiserrorctx::bail!(MlError::Knn(format!("not enough samples! < k {}", self.n_neighbors)));
+        }
+
+        Ok(KnnRegressionModel { n_neighbors: self.n_neighbors, n_features, x_train: x.clone(), y_train: y.clone() })
+    }
+}
+
+impl<T: FloatDType> PredictModel for KnnRegressionModel<T> {
+    type Input = Tensor<T>;
+    type Output = Tensor<T>;
+
     /// ## Args
     /// - `x`: (n_test_samples, n_features)
     /// 
     /// ## Return
     /// - `prediction`: (n_test_samples,)
-    pub fn predict(&self, x: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
-        let (_, n_features) = x.dims2()?;
-        if self.n_features != n_features {
-            lumen_core::bail!("expect n_fetures {}, not got {}", self.n_features, n_features);
-        }
-
+    fn predict(&self, x: &Tensor<T>) -> crate::error::MlResult<Tensor<T>> {
         let neighbors = find_closed_n_neighbors(
             &self.x_train, &self.y_train, x, self.n_neighbors
         )?;
@@ -67,35 +66,12 @@ impl<T: FloatDType> KnnRegression<T> {
 //              Knn Classifier 
 // =========================================================================================== //
 
-pub struct KnnClassifierTrainer {
+pub struct KnnClassifier<T: FloatDType> {
     pub n_neighbors: usize,
+    markder: PhantomData<T>,
 }
 
-impl KnnClassifierTrainer {
-    pub fn new(n_neighbors: usize) -> Self {
-        Self { n_neighbors }
-    }   
-}
-
-impl KnnClassifierTrainer {
-    /// ## Args 
-    /// - `x_train`: (n_samples, n_features)
-    /// - `y_train`: (n_samples,)
-    pub fn fit<T: NumDType>(&self, x: &Tensor<T>, y: &Tensor<u32>) -> lumen_core::Result<KnnClassifier<T>> {
-        let (n_samples, n_features) = x.dims2()?;
-        let n_samples_y = y.dims1()?; 
-        if n_samples != n_samples_y {
-            lumen_core::bail!("x samples {} != y samples {}", n_samples, n_samples_y);
-        }
-        if n_samples < self.n_neighbors {
-            lumen_core::bail!("not enough samples! < k {}", self.n_neighbors);
-        }
-
-        Ok(KnnClassifier { n_neighbors: self.n_neighbors, n_features, x_train: x.clone(), y_train: y.clone() })
-    }
-}
-
-pub struct KnnClassifier<T: NumDType> {
+pub struct KnnClassifierModel<T: NumDType> {
     pub n_neighbors: usize,
     pub n_features: usize,
     pub x_train: Tensor<T>,
@@ -103,12 +79,40 @@ pub struct KnnClassifier<T: NumDType> {
 }
 
 impl<T: FloatDType> KnnClassifier<T> {
+    pub fn new(n_neighbors: usize) -> Self {
+        Self { n_neighbors, markder: Default::default() }
+    }   
+}
+
+impl<T: FloatDType> PredictFit for KnnClassifier<T> {
+    type Input = Tensor<T>;
+    type Output = Tensor<u32>;
+
+    type Model = KnnClassifierModel<T>;
+    
+    /// ## Args 
+    /// - `x_train`: (n_samples, n_features)
+    /// - `y_train`: (n_samples,)
+    fn fit(&self, x: &Tensor<T>, y: &Tensor<u32>) -> MlResult<Self::Model> {
+        let (n_samples, n_features) = utils::validate_xy_shapes(x, y)?;
+        if n_samples < self.n_neighbors {
+            thiserrorctx::bail!(MlError::Knn(format!("not enough samples! < k {}", self.n_neighbors)));
+        }
+
+        Ok(KnnClassifierModel { n_neighbors: self.n_neighbors, n_features, x_train: x.clone(), y_train: y.clone() })
+    }
+}
+
+impl<T: FloatDType> PredictModel for KnnClassifierModel<T> {
+    type Input = Tensor<T>;
+    type Output = Tensor<u32>;
+
     /// ## Args
     /// - `x`: (n_test_samples, n_features)
     /// 
     /// ## Return
     /// - `prediction`: (n_test_samples,)
-    pub fn predict(&self, x: &Tensor<T>) -> lumen_core::Result<Tensor<u32>> {
+    fn predict(&self, x: &Tensor<T>) -> MlResult<Tensor<u32>> {
         let (n_test_samples, n_features) = x.dims2()?;
         if self.n_features != n_features {
             lumen_core::bail!("expect n_fetures {}, not got {}", self.n_features, n_features);
@@ -167,7 +171,7 @@ fn find_closed_n_neighbors<T1: FloatDType, T2: WithDType>(
 mod tests {
     use lumen_core::Tensor;
 
-    use crate::{model_selection::train_test_split, neighbor::KnnRegressionTrainer};
+    use crate::{datasets::train_test_split, neighbor::KnnRegression, pipeline::{PredictFit, PredictModel}};
 
     #[test]
     fn test_knn_geression() {
@@ -178,7 +182,7 @@ mod tests {
 
         let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.3).unwrap();
 
-        let trainer = KnnRegressionTrainer::new(5);
+        let trainer = KnnRegression::new(5);
         let model = trainer.fit(&x_train, &y_train).unwrap();
 
         let y_pred = model.predict(&x_test).unwrap();

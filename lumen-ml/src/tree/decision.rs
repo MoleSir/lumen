@@ -1,5 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, marker::PhantomData};
 use lumen_core::{FloatDType, IndexOp, NumDType, Tensor, WithDType};
+
+use crate::{error::MlResult, pipeline::{PredictFit, PredictModel}};
 
 pub enum DecisionTree<V, T> {
     Leaf(V),
@@ -14,7 +16,7 @@ pub enum DecisionTree<V, T> {
 }
 
 impl<V: WithDType, T: WithDType> DecisionTree<V, T> {
-    pub fn predict(&self, x: &Tensor<T>) -> lumen_core::Result<Tensor<V>> {
+    pub fn predict(&self, x: &Tensor<T>) -> MlResult<Tensor<V>> {
         let mut results = vec![];
         let (n_samples, _) = x.dims2()?;
         for n in 0..n_samples {
@@ -38,7 +40,7 @@ impl<V: WithDType, T: WithDType> DecisionTree<V, T> {
         }
     }
 
-    fn predict_single(&self, x: &Tensor<T>) -> lumen_core::Result<V> {
+    fn predict_single(&self, x: &Tensor<T>) -> MlResult<V> {
         match self {
             Self::Leaf(v) => Ok(v.clone()),
             Self::Node { feature_id, threshold, left, right } => {
@@ -54,24 +56,33 @@ impl<V: WithDType, T: WithDType> DecisionTree<V, T> {
 }
 
 // ==================================================================================== //
-//                      DecisionTreeClassifier
+//                      DecisionTreeClassifierModel
 // ==================================================================================== //
 
-pub struct DecisionTreeClassifierTrainer {
+pub struct DecisionTreeClassifier<T: FloatDType> {
     pub max_depth: usize,
+    markder: PhantomData<T>,
 }
 
-impl DecisionTreeClassifierTrainer {
+pub struct DecisionTreeClassifierModel<T> {
+    pub root: Box<DecisionTree<u32, T>>,
+}
+
+impl<T: FloatDType> DecisionTreeClassifier<T> {
     pub fn new(max_depth: usize) -> Self {
-        Self { max_depth }
+        Self { max_depth, markder: Default::default() }
     }
 }
 
-impl DecisionTreeClassifierTrainer {
+impl<T: FloatDType> PredictFit for DecisionTreeClassifier<T> {
+    type Input = Tensor<T>;
+    type Output = Tensor<u32>;
+    type Model = DecisionTreeClassifierModel<T>;
+
     /// ## Args
     /// - `x`: (n_samples, n_features)
     /// - `y`: (n_samples)
-    pub fn fit<T: FloatDType>(&self, x: &Tensor<T>, y: &Tensor<u32>) -> lumen_core::Result<DecisionTreeClassifier<T>> {
+    fn fit(&self, x: &Tensor<T>, y: &Tensor<u32>) -> crate::error::MlResult<Self::Model> {
         let (n_samples, _) = x.dims2()?;
         let n_samples_y = y.dims1()?; 
         if n_samples != n_samples_y {
@@ -81,12 +92,23 @@ impl DecisionTreeClassifierTrainer {
         let n_class = y.max(0)?.to_scalar()? as usize + 1;
         let root = self.build_tree(0, x, y, n_class)?;
 
-        Ok(DecisionTreeClassifier { root})
+        Ok(DecisionTreeClassifierModel { root})
     }
+}
 
+impl<T: FloatDType> PredictModel for DecisionTreeClassifierModel<T> {
+    type Input = Tensor<T>;
+    type Output = Tensor<u32>;
+
+    fn predict(&self, x: &Tensor<T>) -> crate::error::MlResult<Tensor<u32>> {
+        self.root.predict(x)
+    }
+}
+
+impl<T: FloatDType> DecisionTreeClassifier<T> {
     /// - `x`: (n_samples, n_features)
     /// - `y`: (n_samples)
-    fn build_tree<T: FloatDType>(&self, depth: usize, x: &Tensor<T>, y: &Tensor<u32>, n_class: usize) -> lumen_core::Result<Box<DecisionTree<u32, T>>> {
+    fn build_tree(&self, depth: usize, x: &Tensor<T>, y: &Tensor<u32>, n_class: usize) -> lumen_core::Result<Box<DecisionTree<u32, T>>> {
         let (n_samples, n_features) = x.dims2()?;
         let mut counter = HashMap::new();
         for label in y.iter()? {
@@ -137,14 +159,14 @@ impl DecisionTreeClassifierTrainer {
         }))
     }
 
-    fn split_mask<T: FloatDType>(x: &Tensor<T>, feature_id: usize, threshold: T) -> lumen_core::Result<(Tensor<bool>, Tensor<bool>)> {
+    fn split_mask(x: &Tensor<T>, feature_id: usize, threshold: T) -> lumen_core::Result<(Tensor<bool>, Tensor<bool>)> {
         let left_mask = x.index((.., feature_id))?.le(threshold)?;
         let right_mask = left_mask.not()?;
 
         Ok((left_mask, right_mask))
     }
 
-    fn find_best_split_for_feature<T: FloatDType>(
+    fn find_best_split_for_feature(
         &self, 
         x_feature: &Tensor<T>, 
         y_labels: &Tensor<u32>,
@@ -218,37 +240,34 @@ impl DecisionTreeClassifierTrainer {
     }
 }
 
-pub struct DecisionTreeClassifier<T> {
-    pub root: Box<DecisionTree<u32, T>>,
-}
-
-impl<T: WithDType> DecisionTreeClassifier<T> {
-    pub fn predict(&self, x: &Tensor<T>) -> lumen_core::Result<Tensor<u32>> {
-        self.root.predict(x)
-    }
-
+impl<T: WithDType> DecisionTreeClassifierModel<T> {
     pub fn depth(&self) -> usize {
         self.root.depth()
     }
 }
 
 // ==================================================================================== //
-//                      DecisionTreeRegressor
+//                      DecisionTreeRegressorModel
 // ==================================================================================== //
 
-pub struct DecisionTreeRegressorTrainer {
+pub struct DecisionTreeRegressor<T> {
     pub max_depth: usize,
+    marker: PhantomData<T>,
 }
 
-impl DecisionTreeRegressorTrainer {
-    pub fn new(max_depth: usize) -> Self {
-        Self { max_depth }
-    }
+pub struct DecisionTreeRegressorModel<T> {
+    pub root: Box<DecisionTree<T, T>>,
+}
+
+impl<T: FloatDType> PredictFit for DecisionTreeRegressor<T> {
+    type Input = Tensor<T>;
+    type Output = Tensor<T>;
+    type Model = DecisionTreeRegressorModel<T>;
 
     /// ## Args
     /// - `x`: (n_samples, n_features)
     /// - `y`: (n_samples) 注意：回归树的 y 现在是连续的浮点数 Tensor<T>
-    pub fn fit<T: FloatDType>(&self, x: &Tensor<T>, y: &Tensor<T>) -> lumen_core::Result<DecisionTreeRegressor<T>> {
+    fn fit(&self, x: &Tensor<T>, y: &Tensor<T>) -> MlResult<Self::Model> {
         let (n_samples, _) = x.dims2()?;
         let n_samples_y = y.dims1()?; 
         if n_samples != n_samples_y {
@@ -257,11 +276,25 @@ impl DecisionTreeRegressorTrainer {
 
         let root = self.build_tree(0, x, y)?;
 
-        Ok(DecisionTreeRegressor { root })
+        Ok(DecisionTreeRegressorModel { root })
+    }
+}
+
+impl<T: FloatDType> PredictModel for DecisionTreeRegressorModel<T> {
+    type Input = Tensor<T>;
+    type Output = Tensor<T>;
+    fn predict(&self, x: &Tensor<T>) -> MlResult<Tensor<T>> {
+        self.root.predict(x)
+    }
+}
+
+impl<T: FloatDType> DecisionTreeRegressor<T> {
+    pub fn new(max_depth: usize) -> Self {
+        Self { max_depth, marker: Default::default() }
     }
 
     /// 构建回归树
-    fn build_tree<T: FloatDType>(&self, depth: usize, x: &Tensor<T>, y: &Tensor<T>) -> lumen_core::Result<Box<DecisionTree<T, T>>> {
+    fn build_tree(&self, depth: usize, x: &Tensor<T>, y: &Tensor<T>) -> lumen_core::Result<Box<DecisionTree<T, T>>> {
         let (n_samples, n_features) = x.dims2()?;
         
         // 1. 计算当前节点的平均值
@@ -327,14 +360,14 @@ impl DecisionTreeRegressorTrainer {
         }))
     }
 
-    fn split_mask<T: FloatDType>(x: &Tensor<T>, feature_id: usize, threshold: T) -> lumen_core::Result<(Tensor<bool>, Tensor<bool>)> {
+    fn split_mask(x: &Tensor<T>, feature_id: usize, threshold: T) -> lumen_core::Result<(Tensor<bool>, Tensor<bool>)> {
         let left_mask = x.index((.., feature_id))?.le(threshold)?;
         let right_mask = left_mask.not()?;
         Ok((left_mask, right_mask))
     }
 
     /// 为单个特征寻找最佳的 MSE (均方误差) 切分点
-    fn find_best_split_for_feature<T: FloatDType>(
+    fn find_best_split_for_feature(
         &self, 
         x_feature: &Tensor<T>, 
         y_targets: &Tensor<T>
@@ -409,15 +442,7 @@ impl DecisionTreeRegressorTrainer {
     }
 }
 
-pub struct DecisionTreeRegressor<T> {
-    pub root: Box<DecisionTree<T, T>>,
-}
-
-impl<T: WithDType> DecisionTreeRegressor<T> {
-    pub fn predict(&self, x: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
-        self.root.predict(x)
-    }
-
+impl<T: WithDType> DecisionTreeRegressorModel<T> {
     pub fn depth(&self) -> usize {
         self.root.depth()
     }
@@ -429,7 +454,7 @@ impl<T: WithDType> DecisionTreeRegressor<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{datasets::{load_diabetes, load_iris}, metrics::accuracy_score, model_selection::train_test_split, tree::{DecisionTreeClassifierTrainer, DecisionTreeRegressorTrainer}};
+    use crate::{datasets::{load_diabetes, load_iris, train_test_split}, metrics::accuracy_score, pipeline::{PredictFit, PredictModel}, tree::{DecisionTreeClassifier, DecisionTreeRegressor}};
 
     #[test]
     fn test_class_iris() {
@@ -438,7 +463,7 @@ mod tests {
         let y = iris.target;
         let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.3).unwrap();
 
-        let trainer = DecisionTreeClassifierTrainer::new(10);
+        let trainer = DecisionTreeClassifier::new(10);
         let model = trainer.fit(&x_train, &y_train).unwrap();
 
         let y_pred = model.predict(&x_test).unwrap();
@@ -454,7 +479,7 @@ mod tests {
         let y = diabetes.target;
         let (x_train, x_test, y_train, y_test) = train_test_split(&x, &y, 0.3).unwrap();
         
-        let trainer = DecisionTreeRegressorTrainer::new(5);
+        let trainer = DecisionTreeRegressor::new(5);
         let model = trainer.fit(&x_train, &y_train).unwrap();
         let y_pred = model.predict(&x_test).unwrap();
         println!("{}", y_test);

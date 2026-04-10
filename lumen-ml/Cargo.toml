@@ -9,4 +9,9 @@ license = { workspace = true }
 
 [dependencies]
 lumen-core = { path = "../lumen-core" }
-rand = "0.9"
+lumen-linalg = { path = "../lumen-linalg" }
+rand = { workspace = true }
+rand_distr = { workspace = true }
+thiserror = { workspace = true }
+thiserrorctx = { workspace = true }
+derive_builder = { workspace = true }

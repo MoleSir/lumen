@@ -1,17 +1,29 @@
 use lumen_core::{FloatDType, Tensor};
+use crate::{error::MlResult, pipeline::{PredictFit, PredictModel}, utils};
 
-pub struct LogisticRegressionTrainer {
+pub struct LogisticRegression<T> {
     pub n_iter: usize, 
-    pub learning_rate: f64,
+    pub learning_rate: T,
+    pub threshold: T,
 }
 
-impl Default for LogisticRegressionTrainer {
+pub struct LogisticRegressionModel<T: FloatDType> {
+    pub weights: Tensor<T>,
+    pub bias: T,
+    pub threshold: T,
+}
+
+impl<T: FloatDType> Default for LogisticRegression<T> {
     fn default() -> Self {
-        LogisticRegressionTrainer { n_iter: 1000, learning_rate: 0.1 } 
+        LogisticRegression { n_iter: 1000, learning_rate: T::from_f64(0.1), threshold: T::half(), } 
     }
 }
 
-impl LogisticRegressionTrainer {
+impl<T: FloatDType> PredictFit for LogisticRegression<T> {
+    type Input = Tensor<T>;
+    type Output = Tensor<bool>;
+    type Model = LogisticRegressionModel<T>;
+
     /// fit a logistic regression model (Binary Classification)
     /// $$
     /// z = w x + b
@@ -24,18 +36,14 @@ impl LogisticRegressionTrainer {
     /// 
     /// ## Return
     /// - logistic regression model
-    pub fn fit<T: FloatDType>(&self, x: &Tensor<T>, y: &Tensor<bool>) -> lumen_core::Result<LogisticRegression<T>> {
-        let (n_samples, n_features) = x.dims2()?;
-        let n_samples_y = y.dims1()?;
-        if n_samples != n_samples_y {
-            lumen_core::bail!("The number of samples in x and y must be equal");
-        }
+    fn fit(&self, x: &Tensor<T>, y: &Tensor<bool>) -> MlResult<Self::Model> {
+        let (n_samples, n_features) = utils::validate_xy_shapes(x, y)?;
 
         let y_float = y.cast::<T>()?.unsqueeze(1)?; 
         let weights = Tensor::<T>::zeros((n_features, 1))?; 
         let mut bias = T::ZERO;
 
-        let lr = T::from_f64(self.learning_rate);
+        let lr = self.learning_rate;
         let n_samples_t = T::from_usize(n_samples);
         let x_t = x.transpose_last()?; // (n_features, n_samples)
 
@@ -69,26 +77,35 @@ impl LogisticRegressionTrainer {
             bias -= b_grad;
         }
 
-        Ok(LogisticRegression { weights, bias })
+        Ok(LogisticRegressionModel { weights, bias, threshold: self.threshold })
     }
 }
 
-pub struct LogisticRegression<T: FloatDType> {
-    pub weights: Tensor<T>,
-    pub bias: T,
+impl<T: FloatDType> PredictModel for LogisticRegressionModel<T> {
+    type Input = Tensor<T>;
+    type Output = Tensor<bool>;
+
+    /// ## Args
+    /// - `x`: (n_samples, n_features) 
+    /// 
+    /// ## Return
+    /// - y: (n_samples,)
+    fn predict(&self, x: &Tensor<T>) -> MlResult<Tensor<bool>> {        
+        self.predict_threshold(x, self.threshold)
+    }
 }
 
-impl<T: FloatDType> LogisticRegression<T> {
-    pub fn predict_proba(&self, x: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+impl<T: FloatDType> LogisticRegressionModel<T> {
+    pub fn predict_proba(&self, x: &Tensor<T>) -> MlResult<Tensor<T>> {
         let z = x.matmul(&self.weights)?;
         z.add_(self.bias)?;
         z.sigmoid_()?;
         Ok(z.squeeze(1)?)
     }
 
-    pub fn predict(&self, x: &Tensor<T>, thre: T) -> lumen_core::Result<Tensor<bool>> {
+    pub fn predict_threshold(&self, x: &Tensor<T>, threshold: T) -> MlResult<Tensor<bool>> {
         let probs = self.predict_proba(x)?;        
-        let preds = probs.ge(thre)?; 
+        let preds = probs.ge(threshold)?; 
         
         Ok(preds)
     }
@@ -97,8 +114,8 @@ impl<T: FloatDType> LogisticRegression<T> {
 #[cfg(test)]
 mod tests {
     use lumen_core::IndexOp;
-    use crate::{datasets::load_iris, model_selection::train_test_split};
-    use super::LogisticRegressionTrainer;
+    use crate::{datasets::{load_iris, train_test_split}, pipeline::{PredictFit, PredictModel}};
+    use super::LogisticRegression;
 
     #[test]
     fn test_iris() {
@@ -113,10 +130,10 @@ mod tests {
         // println!("{}", y_train.shape());
         // println!("{}", y_test.shape());
 
-        let trainer = LogisticRegressionTrainer::default();
+        let trainer = LogisticRegression::default();
         let model = trainer.fit(&x_train, &y_train).unwrap();
 
-        let y_pred = model.predict(&x_test, 0.5).unwrap();
+        let y_pred = model.predict(&x_test).unwrap();
 
         let n_correct = y_pred.xor(y_test).unwrap().false_count().unwrap();
         println!("Correct count: {}", n_correct);

@@ -1,13 +1,14 @@
 use std::collections::HashSet;
-
 use lumen_core::{FloatDType, IndexOp, Tensor};
 use rand::Rng;
+use thiserrorctx::Context;
+use crate::{error::MlResult, pipeline::{TransformFit, TransformModel}};
 
-pub struct KMeans {
+pub struct KMeans<T> {
     pub k: usize,
     pub init_policy: KMeansInitPolicy,
     pub max_iters: usize,
-    pub epsilon: f64,
+    pub epsilon: T
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,40 +16,64 @@ pub enum KMeansInitPolicy {
     Random,
 }
 
-impl KMeans {
+pub struct KMeansModel<T: FloatDType> {
+    pub centers: Tensor<T>,
+}
+
+impl<T: FloatDType> TransformFit for KMeans<T> {
+    type Input = Tensor<T>;
+    type Output = Tensor<u32>;
+    type Model = KMeansModel<T>;
+
+    /// ## Args
+    /// - `x`: (n_samples, n_features)
+    fn fit(&self, x: &Tensor<T>) -> MlResult<Self::Model> {
+        let (centers, _) = self.do_fit(x)?;
+        Ok(KMeansModel { centers })
+    }
+
+    /// ## Args
+    /// - `x`: (n_samples, n_features)
+    /// 
+    /// ## Return
+    /// - `labels`: (n_samples,)
+    fn fit_transform(&self, x: &Tensor<T>) -> MlResult<Tensor<u32>> {
+        let (_, labels) = self.do_fit(x)?;
+        Ok(labels)
+    }
+}
+
+impl<T: FloatDType> TransformModel for KMeansModel<T> {
+    type Input = Tensor<T>;
+    type Output = Tensor<u32>;
+
+    /// ## Args
+    /// - `x`: (n_samples, n_features)
+    /// 
+    /// ## Return
+    /// - `labels`: (n_samples,)
+    fn transform(&self, x: &Tensor<T>) -> MlResult<Tensor<u32>> {
+        find_closest_center(x, &self.centers)
+    }
+}
+
+impl<T: FloatDType> KMeans<T> {
     /// fit a kmeans
     /// 
     /// ## Args
     /// - `x`: (n_samples, n_features)
-    pub fn fit<T: FloatDType>(&self, x: &Tensor<T>) -> lumen_core::Result<(Tensor<T>, Tensor<u32>)> {
-        let mut centers = self.init_centers(x)?; // (k, n_features)
+    pub fn do_fit(&self, x: &Tensor<T>) -> MlResult<(Tensor<T>, Tensor<u32>)> {
+        let mut centers = self.init_centers(x).context("init centers")?; // (k, n_features)
         let mut final_labels = None;
         if self.max_iters == 0 {
             lumen_core::bail!("no iter!");
         }
 
         for _ in 0..self.max_iters {
-            // 1. select closed center for each samples
-            // (n_samples, n_features) => (n_samples, 1)
-            let x_norm = x.sqr()?.sum_keepdim(1)?;
-            // (k, n_features) => (1, k)
-            let c_norm = centers.sqr()?.sum(1)?.unsqueeze(0)?;
-
-            // (n_samples, n_features) @ (n_features, k) => (n_samples, k)
-            let xc = x.matmul(&centers.transpose(0, 1)?)?;
-
-            // (n_samples, 1) + (1, k) => (n_samples, k) - 2 * xc
-            let distances = x_norm
-                .broadcast_add(&c_norm)?
-                .broadcast_sub(&(xc * T::from_f64(2.0)))?;
-
-            // // (n_samples, 1, n_features) - (1, k, n_features) => (n_samples, k, n_features) 
-            // let delta_features = x.unsqueeze(1)?.broadcast_sub(&centers.unsqueeze(0)?)?;
-            // // (n_samples, k, n_features) => (n_samples, k) 
-            // let distances = delta_features.pow(T::ONE+T::ONE)?.sum(2)?;
+            // get closest centers: (n_samples,)
+            let labels = find_closest_center(x, &centers)?;
 
             // (n_samples, k) => (n_samples,) 
-            let labels = distances.argmin(1)?;
             final_labels = Some(labels.clone());
 
             // 2. update centers
@@ -74,7 +99,7 @@ impl KMeans {
         
             // 3. fit over?
             let delta = (&new_centers - &centers).abs()?.mean_all()?.to_scalar()?;
-            if delta < T::from_f64(self.epsilon) {
+            if delta < self.epsilon {
                 break;
             }
 
@@ -84,7 +109,7 @@ impl KMeans {
         Ok((centers, final_labels.expect("must not None")))
     }
 
-    fn init_centers<T: FloatDType>(&self, x: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+    fn init_centers(&self, x: &Tensor<T>) -> MlResult<Tensor<T>> {
         match self.init_policy {
             KMeansInitPolicy::Random => {
                 let (n_samples, _) = x.dims2()?;
@@ -111,4 +136,30 @@ impl KMeans {
             }
         }
     }
+}
+
+/// # Args
+/// - `x`: (n_samples, n_features)
+/// - `centers`: (k, n_features)
+/// 
+/// ## Return
+/// - `labels`: (n_samples,)
+fn find_closest_center<T: FloatDType>(x: &Tensor<T>, centers: &Tensor<T>) -> MlResult<Tensor<u32>> {
+    // 1. select closed center for each samples
+    // (n_samples, n_features) => (n_samples, 1)
+    let x_norm = x.sqr()?.sum_keepdim(1)?;
+    // (k, n_features) => (1, k)
+    let c_norm = centers.sqr()?.sum(1)?.unsqueeze(0)?;
+
+    // (n_samples, n_features) @ (n_features, k) => (n_samples, k)
+    let xc = x.matmul(&centers.transpose(0, 1)?)?;
+
+    // (n_samples, 1) + (1, k) => (n_samples, k) - 2 * xc
+    let distances = x_norm
+        .broadcast_add(&c_norm)?
+        .broadcast_sub(&(xc * T::from_f64(2.0)))?;
+
+    let labels = distances.argmin(1)?;
+
+    Ok(labels)
 }

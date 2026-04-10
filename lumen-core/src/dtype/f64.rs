@@ -64,6 +64,11 @@ impl NumDType for f64 {
         }
         Ok(Storage::new(vec))
     }
+
+    #[inline]
+    fn sign(self) -> Self {
+        self.signum()
+    }
 }
 
 impl FloatDType for f64 {    

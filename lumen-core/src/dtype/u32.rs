@@ -56,6 +56,11 @@ impl NumDType for u32 {
         let vec: Vec<_> = (start..end).collect();
         Ok(Storage::new(vec))
     }
+
+    #[inline]
+    fn sign(self) -> Self {
+        1
+    }
 }
 
 impl IntDType for u32 {

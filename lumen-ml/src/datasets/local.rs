@@ -1,5 +1,8 @@
 use std::path::PathBuf;
 use lumen_core::{FloatDType, Tensor};
+use thiserrorctx::Context;
+
+use crate::error::MlResult;
 
 // ==================================================================================== //
 //                      IRIS
@@ -12,7 +15,7 @@ pub struct IrisDataset<T: FloatDType> {
 
 impl<T: FloatDType> IrisDataset<T> {
     #[inline]
-    pub fn new() -> lumen_core::Result<Self> {
+    pub fn new() -> MlResult<Self> {
         load_iris()
     }
 }
@@ -20,9 +23,9 @@ impl<T: FloatDType> IrisDataset<T> {
 pub const IRIS_N_FEATURES: usize = 4;
 pub const IRIS_N_SAMPLES: usize = 150;
 
-pub fn load_iris<T: FloatDType>() -> lumen_core::Result<IrisDataset<T>> {
+pub fn load_iris<T: FloatDType>() -> MlResult<IrisDataset<T>> {
     let file_path = dataset_file_path("iris.csv");
-    let content = std::fs::read_to_string(file_path)?;
+    let content = std::fs::read_to_string(file_path).context("read build in iris.csv")?;
 
     let mut x = vec![];
     let mut y = vec![];
@@ -72,7 +75,7 @@ pub struct DiabetesDataset<T: FloatDType> {
 
 impl<T: FloatDType> DiabetesDataset<T> {
     #[inline]
-    pub fn new() -> lumen_core::Result<Self> {
+    pub fn new() -> MlResult<Self> {
         load_diabetes()
     }
 }
@@ -80,9 +83,9 @@ impl<T: FloatDType> DiabetesDataset<T> {
 pub const DIABETES_N_FEATURES: usize = 10;
 pub const DIABETES_N_SAMPLES: usize = 442;
 
-pub fn load_diabetes<T: FloatDType>() -> lumen_core::Result<DiabetesDataset<T>> {
+pub fn load_diabetes<T: FloatDType>() -> MlResult<DiabetesDataset<T>> {
     let file_path = dataset_file_path("diabetes.csv");
-    let content = std::fs::read_to_string(file_path)?;
+    let content = std::fs::read_to_string(file_path).context("read build in diabetes.csv")?;
 
     let mut lines = content.lines();
     let headers = lines.next().expect("invalid diabetes: no headers!");

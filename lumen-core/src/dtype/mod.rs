@@ -112,6 +112,7 @@ pub trait NumDType:
     fn close(self, other: Self, rtol: f64, atol: f64) -> bool;
 
     fn to_range_storage(start: Self, end: Self) -> Result<Storage<Self>>;
+    fn sign(self) -> Self;
 }
 
 pub trait IntDType: 

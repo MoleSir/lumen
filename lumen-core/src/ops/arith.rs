@@ -2,7 +2,6 @@ use crate::{BinaryOp, AutogradMetaT, CmpOp, Error, FloatDType, NumDType, Shape, 
 use crate::Tensor;
 use paste::paste;
 
-
 //////////////////////////////////////////////////////////////////////////////
 ///        Binary(Assign) Op with Tensor and Tensor / scalar
 //////////////////////////////////////////////////////////////////////////////
@@ -464,6 +463,22 @@ macro_rules! float_unary_op_impl {
             }
         }
     };
+}
+
+impl<F: NumDType> Tensor<F> {
+    pub fn sign(&self) -> crate::Result<Self> {
+        let meta = F::AutogradMeta::on_unray_op(self, UnaryOp::Sign);
+        self.unary_op(F::sign, meta)
+    }
+
+    /// WARNING: This is an unsafe operation that bypasses the autograd engine. 
+    /// It does NOT track computation history and cannot compute gradients. 
+    /// Attempting to call this method on a tensor with `requires_grad=True` 
+    /// will raise a Error.
+    #[inline]
+    pub fn sign_(&self) -> crate::Result<()> {
+        self.unary_assign_op(F::sign)
+    }
 }
 
 impl<F: FloatDType> Tensor<F> {

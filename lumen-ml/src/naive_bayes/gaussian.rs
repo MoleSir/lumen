@@ -1,26 +1,31 @@
 use lumen_core::{FloatDType, IndexOp, Tensor};
+use crate::pipeline::{PredictFit, PredictModel};
 
-pub struct GaussianNBTrainer {
-    pub var_smoothing: f64, 
+pub struct GaussianNB<T: FloatDType> {
+    pub var_smoothing: T, 
 }
 
-impl Default for GaussianNBTrainer {
+impl<T: FloatDType> Default for GaussianNB<T> {
     fn default() -> Self {
-        Self { var_smoothing: 1e-9 }
+        Self { var_smoothing: T::epsilon() }
     }
 }
 
-pub struct GaussianNB<T: FloatDType> {
+pub struct GaussianNBModel<T: FloatDType> {
     pub class_log_prior: Tensor<T>, // (1, n_class)
     pub theta: Tensor<T>,           // 平均值 \mu: (n_class, n_features)
     pub var: Tensor<T>,             // 方差 \sigma^2: (n_class, n_features)
 }
 
-impl GaussianNBTrainer {
+impl<T: FloatDType> PredictFit for GaussianNB<T> {
+    type Input = Tensor<T>;
+    type Output = Tensor<u32>;
+    type Model = GaussianNBModel<T>;
+
     /// ## Args
     /// - x: (n_samples, n_features): 连续型特征矩阵
     /// - y: (n_samples,)：标签 (0, 1, 2...)
-    pub fn fit<T: FloatDType>(&self, x: &Tensor<T>, y: &Tensor<u32>) -> lumen_core::Result<GaussianNB<T>> {
+    fn fit(&self, x: &Tensor<T>, y: &Tensor<u32>) -> crate::error::MlResult<Self::Model> {
         let (n_samples, _) = x.dims2()?;
         let n_samples_y = y.dims1()?; 
         if n_samples != n_samples_y {
@@ -64,14 +69,25 @@ impl GaussianNBTrainer {
         let theta = Tensor::stack(&thetas, 0)?; // (n_class, n_features)
         
         let var = Tensor::stack(&vars, 0)?; // (n_class, n_features)
-        var.add_(T::from_f64(self.var_smoothing))?; // 防止方差为 0
+        var.add_(self.var_smoothing)?; // 防止方差为 0
 
-        Ok(GaussianNB { class_log_prior, theta, var })
+        Ok(GaussianNBModel { class_log_prior, theta, var })
     }
 }
 
-impl<T: FloatDType> GaussianNB<T> {
-    pub fn predict_log_proba(&self, x: &Tensor<T>) -> lumen_core::Result<Tensor<T>> {
+impl<T: FloatDType> PredictModel for GaussianNBModel<T> {
+    type Input = Tensor<T>;
+    type Output = Tensor<u32>;
+
+    fn predict(&self, x: &Tensor<T>) -> crate::error::MlResult<Tensor<u32>> {
+        let log_prob = self.predict_log_proba(x)?;
+        let y = log_prob.argmax(1)?;
+        Ok(y)
+    }
+}
+
+impl<T: FloatDType> GaussianNBModel<T> {
+    pub fn predict_log_proba(&self, x: &Tensor<T>) -> crate::error::MlResult<Tensor<T>> {
         // 实现公式: X.matmul(W1.T) - (X^2).matmul(W2.T) + Intercept
         
         // W1 = \mu / \sigma^2  (n_class, n_features)
@@ -105,11 +121,5 @@ impl<T: FloatDType> GaussianNB<T> {
         let log_prob = (term1 - term2).broadcast_add(&intercept)?; // (n_samples, n_class)
         
         Ok(log_prob)
-    }
-
-    pub fn predict(&self, x: &Tensor<T>) -> lumen_core::Result<Tensor<u32>> {
-        let log_prob = self.predict_log_proba(x)?;
-        let y = log_prob.argmax(1)?;
-        Ok(y)
     }
 }

@@ -4,12 +4,18 @@
 Models: 
 
 - LinearRegression
+- LassoRegression
+- RidgeRegression
 - LogisticRegression
+- MultinomialNB
+- GaussianNB
 - KNN
 - KMeans
-- DecisionTree
+- DBSCAN
+- DecisionTreeClassifier
+- DecisionTreeRegressor
+- PCA
 - RandomForest
-
 
 Datasets:
 
