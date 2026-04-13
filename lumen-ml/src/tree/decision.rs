@@ -1,7 +1,6 @@
 use std::{collections::HashMap, marker::PhantomData};
 use lumen_core::{FloatDType, IndexOp, NumDType, Tensor, WithDType};
-
-use crate::{error::MlResult, pipeline::{PredictFit, PredictModel}};
+use crate::{error::MlResult, core::{PredictFit, PredictModel}};
 
 pub enum DecisionTree<V, T> {
     Leaf(V),
@@ -454,7 +453,7 @@ impl<T: WithDType> DecisionTreeRegressorModel<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{datasets::{load_diabetes, load_iris, train_test_split}, metrics::accuracy_score, pipeline::{PredictFit, PredictModel}, tree::{DecisionTreeClassifier, DecisionTreeRegressor}};
+    use crate::{datasets::{load_diabetes, load_iris, train_test_split}, metrics::accuracy_score, core::{PredictFit, PredictModel}, tree::{DecisionTreeClassifier, DecisionTreeRegressor}};
 
     #[test]
     fn test_class_iris() {

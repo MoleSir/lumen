@@ -1,4 +1,4 @@
-use tokenizers::{Encoding, TruncationParams};
+use tokenizers::{Encoding, PaddingParams, TruncationParams};
 use super::Tokenizer;
 
 #[derive(Debug, Clone)]
@@ -23,29 +23,53 @@ impl Default for EncodeOptions {
 impl Tokenizer {
     pub fn encode(&self, input: &str, options: EncodeOptions) -> anyhow::Result<Encoding> {
         let mut tokenizer = self.tokenizer.lock().unwrap();
-
-        let save_trunc = if options.truncation {
+    
+        // ===== 保存旧状态 =====
+        let saved_trunc = tokenizer.get_truncation().cloned();
+        let saved_padding = tokenizer.get_padding().cloned();
+    
+        // ===== truncation =====
+        if options.truncation {
             let max_length = options.max_length.unwrap_or(
                 self.config.extra.get("model_max_length")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(2048) as usize
             );
-
-            let save_trunc = tokenizer.get_truncation().cloned();
-            tokenizer
-                .with_truncation(Some(TruncationParams { max_length, ..Default::default() }))
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-            
-            save_trunc
-        } else {
-            None
-        };
-
-        tokenizer.with_truncation(save_trunc).map_err(|e| anyhow::anyhow!(e.to_string()))?;
     
-        let res = tokenizer.encode(input, options.add_special_tokens)
+            tokenizer
+                .with_truncation(Some(TruncationParams {
+                    max_length,
+                    ..Default::default()
+                }))
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        }
+    
+        // ===== padding =====
+        if options.padding {
+            let max_length = options.max_length.unwrap_or(
+                self.config.extra.get("model_max_length")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(2048) as usize
+            );
+    
+            tokenizer
+                .with_padding(Some(PaddingParams {
+                    strategy: tokenizers::PaddingStrategy::Fixed(max_length),
+                    ..Default::default()
+                }));
+        }
+    
+        // ===== encode =====
+        let res = tokenizer
+            .encode(input, options.add_special_tokens)
             .map_err(|e| anyhow::anyhow!("Encode error: {}", e))?;
-
+    
+        // ===== 恢复状态 =====
+        tokenizer.with_truncation(saved_trunc)
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    
+        tokenizer.with_padding(saved_padding);
+    
         Ok(res)
     }
 }

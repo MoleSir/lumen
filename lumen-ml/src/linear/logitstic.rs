@@ -1,5 +1,5 @@
 use lumen_core::{FloatDType, Tensor};
-use crate::{error::MlResult, pipeline::{PredictFit, PredictModel}, utils};
+use crate::{error::MlResult, core::{PredictFit, PredictModel}, utils};
 
 pub struct LogisticRegression<T> {
     pub n_iter: usize, 
@@ -37,7 +37,7 @@ impl<T: FloatDType> PredictFit for LogisticRegression<T> {
     /// ## Return
     /// - logistic regression model
     fn fit(&self, x: &Tensor<T>, y: &Tensor<bool>) -> MlResult<Self::Model> {
-        let (n_samples, n_features) = utils::validate_xy_shapes(x, y)?;
+        let (n_samples, n_features) = utils::validate_xy_shapes(x, y, None)?;
 
         let y_float = y.cast::<T>()?.unsqueeze(1)?; 
         let weights = Tensor::<T>::zeros((n_features, 1))?; 
@@ -114,7 +114,7 @@ impl<T: FloatDType> LogisticRegressionModel<T> {
 #[cfg(test)]
 mod tests {
     use lumen_core::IndexOp;
-    use crate::{datasets::{load_iris, train_test_split}, pipeline::{PredictFit, PredictModel}};
+    use crate::{datasets::{load_iris, train_test_split}, core::{PredictFit, PredictModel}};
     use super::LogisticRegression;
 
     #[test]

@@ -1,5 +1,5 @@
 use lumen_core::{FloatDType, IndexOp, Tensor};
-use crate::pipeline::{PredictFit, PredictModel};
+use crate::core::{PredictFit, PredictModel};
 
 pub struct GaussianNB<T: FloatDType> {
     pub var_smoothing: T, 

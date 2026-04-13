@@ -1,5 +1,5 @@
 use lumen_core::{IndexOp, Tensor};
-use crate::pipeline::{PredictFit, PredictModel};
+use crate::core::{PredictFit, PredictModel};
 
 pub struct MultinomialNB {
     pub alpha: f64,

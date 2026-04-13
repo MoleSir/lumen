@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use lumen_core::{FloatDType, IndexOp, Tensor};
 use rand::Rng;
 use thiserrorctx::Context;
-use crate::{error::MlResult, pipeline::{TransformFit, TransformModel}};
+use crate::{error::MlResult, TransformFit, TransformModel};
 
 pub struct KMeans<T> {
     pub k: usize,

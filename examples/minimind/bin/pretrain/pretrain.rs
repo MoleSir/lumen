@@ -1,6 +1,6 @@
 use lumen_dataset::{DataLoader, TensorPairBatcher};
 use lumen_nn::{functional::LossReduction, optim::{AdamW, AdamWConfig, Optimizer}, Module, ModuleInit};
-use minimind::{dataset::{cross_entropy_with_ignore, PretrainDataset}, model::{MiniMindCache, MiniMindConfigBuilder, MiniMindForCausalLM}};
+use minimind::{dataset::PretrainDataset, model::{CrossEntropy, MiniMindCache, MiniMindConfigBuilder, MiniMindForCausalLM}};
 use tokenizers::Tokenizer;
 
 fn main() {
@@ -22,15 +22,15 @@ fn result_main() -> anyhow::Result<()> {
 
     let mut model = MiniMindForCausalLM::<f32>::init(&config, None)?;    
     let tokenzier = Tokenizer::from_file("./assets/tokenizer.json").map_err(|e| anyhow::anyhow!(e.to_string()))?;
-    
-    let dataset = PretrainDataset::new(
-        "./assets/cache/pretrain_hq.jsonl", tokenzier, 512
-    )?;
+    let ciriten = CrossEntropy::new(LossReduction::Mean);
+
+    let dataset = PretrainDataset::new("./assets/cache/pretrain_hq.jsonl", tokenzier, 512)?;
     let loader = DataLoader::new(dataset, TensorPairBatcher::default(), BATCH_SIZE, true);
 
     let mut ad_config = AdamWConfig::<f32>::default();
     ad_config.lr = LR;
     let mut optimizer = AdamW::new(model.params(), ad_config)?;
+
 
     let mut cache = MiniMindCache::new(false, &config)?;
 
@@ -57,7 +57,7 @@ fn result_main() -> anyhow::Result<()> {
             // (batch_size * seq_len, 1)
             let label = label.flatten_all()?.unsqueeze(1)?;
             println!("get loss");
-            let loss = cross_entropy_with_ignore(&output_ids, &label, LossReduction::Mean)?;
+            let loss = ciriten.forward(&output_ids, &label)?;
 
             println!("backward");
             let start = std::time::Instant::now();

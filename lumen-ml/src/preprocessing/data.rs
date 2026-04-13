@@ -1,5 +1,5 @@
 use lumen_core::{FloatDType, Tensor, D};
-use crate::pipeline::{TransformFit, TransformModel};
+use crate::core::{TransformFit, TransformModel};
 
 pub struct StandardScaler<T> {
     pub eps: T,

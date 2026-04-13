@@ -1,5 +1,5 @@
 use lumen_core::{FloatDType, NumDType, Tensor};
-use crate::{error::MlResult, pipeline::{PredictFit, PredictModel}, utils};
+use crate::{error::MlResult, core::{PredictFit, PredictModel}, utils};
 
 pub struct RidgeRegression<T: FloatDType> {
     pub n_iter: usize, 
@@ -36,7 +36,7 @@ impl<T: FloatDType> PredictFit for RidgeRegression<T> {
     /// ## Return
     /// - linear gression model
     fn fit(&self, x: &Tensor<T>, y: &Tensor<T>) -> MlResult<Self::Model> {
-        let (n_samples, n_features) = utils::validate_xy_shapes(x, y)?;
+        let (n_samples, n_features) = utils::validate_xy_shapes(x, y, None)?;
 
         let y = y.unsqueeze(1)?;
         let weights = Tensor::<T>::zeros((n_features, 1))?; 
@@ -96,7 +96,7 @@ impl<T: FloatDType> PredictModel for RidgeRegressionModel<T> {
 mod tests {
     use lumen_core::Tensor;
 
-    use crate::{linear::RidgeRegression, pipeline::PredictFit};
+    use crate::{linear::RidgeRegression, core::PredictFit};
 
     #[test]
     fn test_gd_1d() {

@@ -11,4 +11,7 @@ pub mod decomposition;
 pub mod utils;
 pub mod pipeline;
 
+mod core;
+pub use core::*;
 mod error;
+pub use error::*;

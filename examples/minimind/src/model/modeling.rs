@@ -38,6 +38,18 @@ impl<T: FloatDType> MiniMindForCausalLM<T> {
         
         Ok(logits) 
     }
+
+    pub fn forward_with_hidden(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut MiniMindCache<T>) -> anyhow::Result<(Tensor<T>, Tensor<T>)> {
+        // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
+        let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
+
+        let wte_weight = &self.model.embed_tokens.weight;
+        // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
+        let logits = lumen_nn::functional::linear(&hidden_states, &wte_weight, None)
+            .context("lm head forward")?;
+
+        Ok((hidden_states, logits))
+    }
 }
 
 impl<T: FloatDType> ForCausalLM<T> for MiniMindForCausalLM<T> {

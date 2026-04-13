@@ -6,12 +6,23 @@ edition = "2024"
 
 [[bin]]
 name = "pretrain"
-path = "./src/trainer/pretrain.rs"
+path = "./bin/pretrain/pretrain.rs"
 
 
 [[bin]]
-name = "ppo"
-path = "./src/trainer/ppo.rs"
+name = "ppo_per_seq"
+path = "./bin/rl/ppo_per_seq.rs"
+
+
+[[bin]]
+name = "ppo_per_token"
+path = "./bin/rl/ppo_per_token.rs"
+
+
+
+[[bin]]
+name = "dpo"
+path = "./bin/rl/dpo.rs"
 
 
 [dependencies]

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, marker::PhantomData};
 use lumen_core::{FloatDType, IndexOp, NumDType, Tensor, WithDType};
-use crate::{error::{MlError, MlResult}, pipeline::{PredictFit, PredictModel}, utils};
+use crate::{error::{MlError, MlResult}, core::{PredictFit, PredictModel}, utils};
 
 // =========================================================================================== //
 //              Knn Regression 
@@ -33,7 +33,7 @@ impl<T: FloatDType> PredictFit for KnnRegression<T> {
     /// - `x_train`: (n_samples, n_features)
     /// - `y_train`: (n_samples,)
     fn fit(&self, x: &Tensor<T>, y: &Tensor<T>) -> crate::error::MlResult<Self::Model> {
-        let (n_samples, n_features) = utils::validate_xy_shapes(x, y)?;
+        let (n_samples, n_features) = utils::validate_xy_shapes(x, y, None)?;
         if n_samples < self.n_neighbors {
             thiserrorctx::bail!(MlError::Knn(format!("not enough samples! < k {}", self.n_neighbors)));
         }
@@ -94,7 +94,7 @@ impl<T: FloatDType> PredictFit for KnnClassifier<T> {
     /// - `x_train`: (n_samples, n_features)
     /// - `y_train`: (n_samples,)
     fn fit(&self, x: &Tensor<T>, y: &Tensor<u32>) -> MlResult<Self::Model> {
-        let (n_samples, n_features) = utils::validate_xy_shapes(x, y)?;
+        let (n_samples, n_features) = utils::validate_xy_shapes(x, y, None)?;
         if n_samples < self.n_neighbors {
             thiserrorctx::bail!(MlError::Knn(format!("not enough samples! < k {}", self.n_neighbors)));
         }
@@ -171,7 +171,7 @@ fn find_closed_n_neighbors<T1: FloatDType, T2: WithDType>(
 mod tests {
     use lumen_core::Tensor;
 
-    use crate::{datasets::train_test_split, neighbor::KnnRegression, pipeline::{PredictFit, PredictModel}};
+    use crate::{datasets::train_test_split, neighbor::KnnRegression, core::{PredictFit, PredictModel}};
 
     #[test]
     fn test_knn_geression() {

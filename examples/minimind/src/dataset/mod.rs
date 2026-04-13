@@ -2,7 +2,9 @@ mod pretrain;
 pub use pretrain::*;
 mod sft;
 pub use sft::*;
-mod rlai;
-pub use rlai::*;
+mod ppo;
+pub use ppo::*;
+mod dpo;
+pub use dpo::*;
 
 pub mod types;

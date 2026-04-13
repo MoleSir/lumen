@@ -6,30 +6,19 @@ use serde::Deserialize;
 use crate::tokenizer::Tokenizer;
 use super::types::Message;
 
-pub struct RLAIDataset {
+pub struct PpoDataset {
     tokenizer: Arc<Tokenizer>,
-    jsonl_dataset: JsonlDataset<RLAIItem>,
+    jsonl_dataset: JsonlDataset<PpoItem>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct RLAIItem {
+pub struct PpoItem {
     pub conversations: Vec<Message>,
 }
 
-impl RLAIDataset {
+impl PpoDataset {
     pub fn new<P: AsRef<Path>>(data_path: P, tokenizer: Arc<Tokenizer>) -> anyhow::Result<Self> {
         let jsonl_dataset = JsonlDataset::new(data_path).context("new jsonl dataset")?;
-
-        // // assistant 回复的开始/结束序列：<bos>assistant\n"xxxxx"<eos>\n
-        // let assistant_bos_ids = tokenizer
-        //     .encode(&format!("{}assistant\n", tokenizer.bos_token()), EncodeOptions::default())?
-        //     .get_ids()
-        //     .to_vec();
-        // let assistant_eos_ids = tokenizer
-        //     .encode(&format!("{}\n", tokenizer.eos_token()), EncodeOptions::default())?
-        //     .get_ids()
-        //     .to_vec();
-
         Ok(Self {
             tokenizer,
             jsonl_dataset,
@@ -52,7 +41,7 @@ impl RLAIDataset {
 }
 
 
-impl Dataset for RLAIDataset {
+impl Dataset for PpoDataset {
     type Error = anyhow::Error;
     type Item = (String, String);
 

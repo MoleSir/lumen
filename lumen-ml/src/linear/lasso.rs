@@ -1,5 +1,5 @@
 use lumen_core::{FloatDType, NumDType, Tensor};
-use crate::{error::MlResult, pipeline::{PredictFit, PredictModel}, utils};
+use crate::{error::MlResult, core::{PredictFit, PredictModel}, utils};
 
 pub struct LassoRegression<T: FloatDType> {
     pub n_iter: usize, 
@@ -36,7 +36,7 @@ impl<T: FloatDType> PredictFit for LassoRegression<T> {
     /// ## Return
     /// - linear gression model
     fn fit(&self, x: &Tensor<T>, y: &Tensor<T>) -> MlResult<Self::Model> {
-        let (n_samples, n_features) = utils::validate_xy_shapes(x, y)?;
+        let (n_samples, n_features) = utils::validate_xy_shapes(x, y, None)?;
 
         let y = y.unsqueeze(1)?;
         let weights = Tensor::<T>::zeros((n_features, 1))?; 
@@ -94,8 +94,7 @@ impl<T: FloatDType> PredictModel for LassoRegressionModel<T> {
 #[cfg(test)]
 mod tests {
     use lumen_core::Tensor;
-
-    use crate::{linear::LassoRegression, pipeline::PredictFit};
+    use crate::{linear::LassoRegression, core::PredictFit};
 
     #[test]
     fn test_gd_1d() {

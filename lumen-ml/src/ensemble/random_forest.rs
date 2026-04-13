@@ -3,7 +3,7 @@ use lumen_core::{FloatDType, IndexOp, Tensor};
 use rand::Rng;
 use crate::{
     error::MlResult, 
-    pipeline::{PredictFit, PredictModel}, 
+    core::{PredictFit, PredictModel}, 
     tree::{DecisionTreeClassifier, DecisionTreeClassifierModel}
 };
 

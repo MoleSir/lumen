@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use lumen_core::{FloatDType, Tensor};
 use thiserrorctx::Context;
-use crate::{error::{MlError, MlResult}, pipeline::{TransformFit, TransformModel}};
+use crate::{error::{MlError, MlResult}, TransformFit, TransformModel};
 
 pub struct Pca<T> {
     pub n_components: usize,
