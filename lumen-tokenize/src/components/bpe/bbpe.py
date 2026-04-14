@@ -1,5 +1,3 @@
-# 注意：必须使用 regex 库，因为 Python 原生 re 不支持 \p{L} (Unicode 字母) 和 \p{N} (Unicode 数字)
-# 请先执行: pip install regex
 import regex as re
 import collections
 from typing import List, Dict, Tuple

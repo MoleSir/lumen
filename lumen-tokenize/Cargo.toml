@@ -8,6 +8,7 @@ keywords = { workspace = true }
 license = { workspace = true }
 
 [dependencies]
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 regex = { workspace = true }
+fancy-regex = "0.11"
