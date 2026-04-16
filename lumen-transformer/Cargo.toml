@@ -7,6 +7,7 @@ description = { workspace = true }
 keywords = { workspace = true }
 license = { workspace = true }
 
+
 [dependencies]
 lumen-core = { workspace = true }
 lumen-nn = { workspace = true }
@@ -19,6 +20,8 @@ thiserror = { workspace = true }
 rand = { workspace = true }
 futures-core = { workspace = true }
 async-stream = { workspace = true }
+tokenizers = { workspace = true }
+
 
 [dev-dependencies]
 anyhow = { workspace = true }

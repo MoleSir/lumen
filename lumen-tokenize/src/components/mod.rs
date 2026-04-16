@@ -1,4 +1,5 @@
 mod bpe;
+pub use bpe::*;
 use crate::Token;
 
 pub trait Normalize {

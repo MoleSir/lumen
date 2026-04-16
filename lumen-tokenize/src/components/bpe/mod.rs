@@ -74,7 +74,7 @@ impl ByteLevelBPE {
         let chunks = self.split_input_text_by_added_tokens(text);
 
         // 2. 对非特殊 token 的纯净文本进行预分词
-        let mut word_counts: HashMap<String, usize> = HashMap::new();
+        let mut word_counts: HashMap<&str, usize> = HashMap::new();
         for chunk in chunks {
             // 空字符或者特殊 token 绝对不计入统计！
             if chunk.is_empty() || self.added_tokens.iter().any(|t| t == chunk) {
@@ -84,7 +84,7 @@ impl ByteLevelBPE {
             // 使用 pat 对每个 chunk 进行切分
             for mat_res in self.pat.find_iter(chunk) {
                 if let Ok(mat) = mat_res {
-                    let word = mat.as_str().to_string();
+                    let word = mat.as_str();
                     // 计数更新
                     *word_counts.entry(word).or_insert(0) += 1;
                 }
@@ -107,7 +107,7 @@ impl ByteLevelBPE {
             }
 
             let best_pair = pairs.iter().max_by_key(|t| t.1).unwrap().0;
-            self.bpe_ranks.insert(best_pair.clone(), i as u32);
+            self.bpe_ranks.insert((best_pair.0.to_string(), best_pair.1.to_string()), i as u32);
 
             // 更新词表
             let new_token = format!("{}{}", best_pair.0, best_pair.1);
@@ -116,7 +116,7 @@ impl ByteLevelBPE {
             self.decoder.insert(new_id, new_token);
 
             // 合并语料中的 pair
-            bpe_vocab = Self::merge_vocab(best_pair, &bpe_vocab); 
+            bpe_vocab = Self::merge_vocab(*best_pair, &bpe_vocab); 
             
         }
 
@@ -198,11 +198,11 @@ impl ByteLevelBPE {
 
 impl ByteLevelBPE {
     /// 统计词表中所有相邻 token pair 的出现频次
-    fn get_stats(vocab: &HashMap<Vec<String>, usize>) -> HashMap<(String, String), usize> {
+    fn get_stats(vocab: &HashMap<Vec<String>, usize>) -> HashMap<(&str, &str), usize> {
         let mut pairs = HashMap::new();
         for (word, freq) in vocab {
             for i in 0..word.len().saturating_sub(1) {
-                let pair = (word[i].clone(), word[i+1].clone());
+                let pair = (word[i].as_str(), word[i+1].as_str());
                 *pairs.entry(pair).or_default() += freq;
             }
         }
@@ -210,7 +210,7 @@ impl ByteLevelBPE {
     }
 
     /// 将语料(v_in)中出现了 pair 的地方合并成一个新的 token
-    fn merge_vocab(pair: &(String, String), vocab_in: &HashMap<Vec<String>, usize>) -> HashMap<Vec<String>, usize> {
+    fn merge_vocab(pair: (&str, &str), vocab_in: &HashMap<Vec<String>, usize>) -> HashMap<Vec<String>, usize> {
         let mut vocab_out = HashMap::with_capacity(vocab_in.len());
         let (first, second) = pair;
         let replacement = format!("{}{}", first, second);
@@ -268,7 +268,7 @@ impl ByteLevelBPE {
 
             let best_pair = pairs.iter()
                 .map(|p| (p, self.bpe_ranks.get(p)))
-                .filter(|(p, r)| r.is_some())
+                .filter(|(_, r)| r.is_some())
                 .map(|(p, r)| (p, r.unwrap()))
                 .min_by_key(|pr| pr.1);
             

@@ -3,7 +3,8 @@ use std::sync::Arc;
 use lumen_core::{FloatDType, IndexOp, IntTensor, NoGradGuard, Tensor, D};
 use lumen_dataset::{DataLoader, PairBatcher};
 use lumen_nn::{functional::LossReduction, optim::{AdamW, Optimizer}, Linear, Module};
-use minimind::{dataset::PpoDataset, model::{MiniMindCache, MiniMindForCausalLM}, tokenizer::Tokenizer};
+use lumen_transformer::{Sampler, ForCausalLM};
+use minimind::{dataset::PpoDataset, model::{MiniMindCache, MiniMindForCausalLM}, tokenizer::{EncodeOptions, Tokenizer}};
 
 fn main() {
     if let Err(e) = result_main() {
@@ -49,7 +50,7 @@ fn result_main() -> anyhow::Result<()> {
             let (prompts, answers) = batch?;
             
             // 1. 给每个 prmot 生成一个回答
-            let gen_tokens = generate_prompts(&prompts, &actor_critor.actor, &tokenizer)?;
+            let gen_tokens = generate_prompts(&prompts, &actor_critor.actor, &tokenizer)?; // (batch, prompt_len)
 
             // 2. 给每个回答一个奖励：这里是每个句子一个奖励！
             let rewrods = calculate_rewards(&gen_tokens, &answers, &tokenizer)?; // (batch,)
@@ -137,9 +138,24 @@ fn load_model<T: FloatDType>() -> anyhow::Result<(MiniMindForCausalLM<T>, Arc<To
 /// 
 /// ## Returns
 /// - `tokens`: (batch, seq)
-#[allow(unused)]
 fn generate_prompts<T: FloatDType>(prompts: &[String], model: &MiniMindForCausalLM<T>, tokenizer: &Tokenizer) -> anyhow::Result<Tensor<u32>> {
-    todo!()
+    let _gurad = NoGradGuard::new();
+    let sample = Sampler::chat_default();
+
+    let mut options = EncodeOptions::default();
+    // TODO
+    options.max_length = Some(4096);
+
+    let mut result = vec![];
+    for prompt in prompts {
+        // TODO: 长度对齐、是否返回 input_ids 部分。。。
+        let input_ids = tokenizer.encode(&prompt, EncodeOptions::default())?.get_ids().to_vec();
+        let output = model.generate(&input_ids, 1024, Some(tokenizer.eos_token_id()), &sample)?;
+        result.push(Tensor::new(output)?);
+    }
+
+    let enc = Tensor::stack(&result, 0)?;
+    Ok(enc)
 }
 
 #[allow(unused)]
