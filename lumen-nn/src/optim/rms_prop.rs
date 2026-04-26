@@ -1,4 +1,8 @@
-use lumen_core::{FloatDType, GradStore, Tensor};
+use std::collections::HashMap;
+
+use lumen_core::{DynTensor, FloatDType, GradStore, NumDType, Tensor};
+use crate::{NnError, NnResult};
+
 use super::Optimizer;
 
 #[derive(Clone, Debug)]
@@ -45,10 +49,10 @@ impl<T: FloatDType> RMSProp<T> {
     }
 }
 
-impl<T: FloatDType> Optimizer<T> for RMSProp<T> {
-    type Error = lumen_core::Error;
+impl<T: FloatDType> Optimizer for RMSProp<T> {
+    type Scalar = T;
 
-    fn step(&mut self, grads: &GradStore<T>) -> Result<(), Self::Error> {
+    fn step(&mut self, grads: &GradStore<T>) -> NnResult<()> {
         let _guard = lumen_core::NoGradGuard::new();
 
         let lr = self.config.lr;
@@ -80,6 +84,32 @@ impl<T: FloatDType> Optimizer<T> for RMSProp<T> {
             }
         }
 
+        Ok(())
+    }
+
+    fn get_lr(&self) -> f64 {
+        <T as NumDType>::to_f64(self.config.lr)
+    }
+
+    fn set_lr(&mut self, lr: f64) {
+        self.config.lr = T::from_f64(lr);
+    }
+
+    fn named_states(&self) -> HashMap<String, Tensor<Self::Scalar>> {
+        self.params.iter()
+            .enumerate()
+            .map(|(i, param)| (format!("{}", i), param.square_avg.clone()))
+            .collect()
+    }
+
+    fn load_named_states(&mut self, states: &HashMap<String, DynTensor>) -> NnResult<()> {
+        for (i, param) in self.params.iter().enumerate() {
+            let square_avg = &param.square_avg;
+            let key: String = format!("{}", i);
+            let src = states.get(&key).ok_or_else(|| NnError::ParamNotFound(key.clone(), "load_named_states"))?;
+            let src = src.as_tensor::<T>()?;
+            square_avg.copy_(&src)?;
+        }
         Ok(())
     }
 }

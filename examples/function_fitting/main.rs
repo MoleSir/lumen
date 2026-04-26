@@ -90,7 +90,7 @@ impl Dataset for FunctionDataset {
     }
 }
 
-type FunctionDataLoader = DataLoader<FunctionDataset, TensorPairBatcher<f64>>;
+type FunctionDataLoader = DataLoader<FunctionDataset, TensorPairBatcher<f64, f64>>;
 
 pub fn get_dataloader(train_samples: usize, test_sample: usize, batch_size: usize) -> (FunctionDataLoader, FunctionDataLoader) {
     const MIN_FUNC_X: f64 = 0.;

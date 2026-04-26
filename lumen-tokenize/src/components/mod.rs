@@ -1,4 +1,6 @@
 mod bpe;
+use std::convert::Infallible;
+
 pub use bpe::*;
 use crate::Token;
 
@@ -26,4 +28,18 @@ pub trait PostProcess {
 pub trait Decode {
     type Error: std::error::Error + 'static;
     fn decode(&self, tokens: Vec<String>) -> Result<String, Self::Error>;
+}
+
+// ============================================================================= //
+//                      Common
+// ============================================================================= //
+
+#[derive(Debug, Clone, Copy)]
+pub struct NoNormalize;
+
+impl Normalize for NoNormalize {
+    type Error = Infallible;
+    fn normalize(&self, text: String) -> Result<String, Self::Error> {
+        Ok(text)
+    }
 }
