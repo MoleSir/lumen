@@ -88,6 +88,30 @@ impl IntTensor {
             Self::U32(t) => t.flatten_all().map(Self::U32),
         }
     }
+
+    pub fn eq(&self, value: i32) -> crate::Result<Tensor<bool>> {
+        match self {
+            Self::U8(t) => t.eq(value as u8),
+            Self::I32(t) => t.eq(value as i32),
+            Self::U32(t) => t.eq(value as u32),
+        }
+    }
+
+    pub fn ne(&self, value: i32) -> crate::Result<Tensor<bool>> {
+        match self {
+            Self::U8(t) => t.ne(value as u8),
+            Self::I32(t) => t.ne(value as i32),
+            Self::U32(t) => t.ne(value as u32),
+        }
+    }
+
+    pub fn masked_fill(&self, mask: &Tensor<bool>, value: i32) -> crate::Result<Self> {
+        match self {
+            Self::U8(t) => t.masked_fill(mask, value as u8).map(Self::U8),
+            Self::I32(t) => t.masked_fill(mask, value as i32).map(Self::I32),
+            Self::U32(t) => t.masked_fill(mask, value as u32).map(Self::U32),
+        }
+    } 
 }
 
 impl From<Tensor<u8>> for IntTensor {

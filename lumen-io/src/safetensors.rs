@@ -69,6 +69,7 @@ impl TryInto<DType> for SafeTensorsDType {
             Self::U8 => Ok(DType::U8),
             Self::I32 => Ok(DType::I32),
             Self::U32 => Ok(DType::U32),
+            Self::Bf16 => Ok(DType::Bf16),
             Self::F32 => Ok(DType::F32),
             Self::F64 => Ok(DType::F64),
             _ => Err(SafeTensorsError::UnsupportDType(self))
@@ -80,6 +81,7 @@ impl From<DType> for SafeTensorsDType {
     fn from(value: DType) -> Self {
         match value {
             DType::Bool => Self::Bool,
+            DType::Bf16 => Self::Bf16,
             DType::F32 => Self::F32,
             DType::F64 => Self::F64,
             DType::U8 => Self::U8,

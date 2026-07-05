@@ -1,0 +1,21 @@
+[workspace]
+members = [ 
+    "basic", 
+    "function_fitting", 
+    "iris", 
+    "karate_club",
+    "logic_gate", 
+    "lyrics_writing", 
+    "mnist",
+    "char_rnn_karpathy",
+    "rev_number",
+    "sort_number",
+    "ssl",
+    "fl_dtree",
+    "fl_dtree_tcp",
+    "minimind",
+    "hands-on-rl",
+    "d2l",
+    "attention_is_all_you_need",
+    "bert"
+]

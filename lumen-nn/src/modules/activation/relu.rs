@@ -1,8 +1,8 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
-use crate::{NnResult, NnCtxError, ModuleForward};
+use crate::{NnResult, NnError, ModuleForward};
 
-#[derive(Module)]
+#[derive(Module, Clone)]
 pub struct Relu;
 
 impl Relu {
@@ -16,7 +16,7 @@ impl Relu {
 }
 
 impl<T: FloatDType> ModuleForward<T> for Relu {
-    type Error = NnCtxError;
+    type Error = NnError;
     type Input = Tensor<T>;
     type Output = Tensor<T>;
 

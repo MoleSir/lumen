@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, Tensor};
 use lumen_macros::Module;
-use crate::{init::Init, Parameter, ModuleInit, NnCtxError, NnResult};
+use crate::{init::Init, Parameter, ModuleInit, NnError, NnResult};
 use crate::functional as F;
 
 #[derive(Module)]
@@ -22,7 +22,7 @@ pub struct LayerNormConfig {
 
 impl<T: FloatDType> ModuleInit<T> for LayerNorm<T> {
     type Config = LayerNormConfig;
-    type Error = NnCtxError;
+    type Error = NnError;
 
     fn init(config: &LayerNormConfig, init: Option<Init<T>>) -> NnResult<Self> {
         let weight = init.unwrap_or(Init::ones()).init((config.normalized_shape,))?;

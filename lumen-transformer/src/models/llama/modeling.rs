@@ -3,7 +3,9 @@ use lumen_core::{FloatDType, IntTensor, Tensor, D};
 use lumen_macros::Module;
 use lumen_nn::{init::Init, Embedding, Linear, ModuleInit, Parameter};
 use thiserrorctx::Context;
-use super::{LlamaConfig, LlamaCtxError, LlamaError, LlamaResult};
+use crate::ForCausalLM;
+
+use super::{LlamaConfig, LlamaError, LlamaResult};
 
 // ========================================================================= //
 //                For Causal LM
@@ -13,11 +15,13 @@ use super::{LlamaConfig, LlamaCtxError, LlamaError, LlamaResult};
 pub struct LlamaForCausalLM<T: FloatDType> {
     pub model: LlamaModel<T>,
     pub lm_head: Linear<T>, 
+    #[module(skip)]
+    pub config: LlamaConfig,
 }
 
 impl<T: FloatDType> ModuleInit<T> for LlamaForCausalLM<T> {
     type Config = LlamaConfig;
-    type Error = LlamaCtxError;
+    type Error = LlamaError;
 
     fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
         let model = LlamaModel::init(config, init).context("init llama model")?;
@@ -26,19 +30,26 @@ impl<T: FloatDType> ModuleInit<T> for LlamaForCausalLM<T> {
             .map_err(LlamaError::Nn)
             .context("init lm head")?;
         
-        Ok(Self { model, lm_head })
+        Ok(Self { model, lm_head, config: config.clone() })
     }
 }
 
-impl<T: FloatDType> LlamaForCausalLM<T> {
-    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut LlamaCache<T>) -> LlamaResult<Tensor<T>> {
+impl<T: FloatDType> ForCausalLM<T> for LlamaForCausalLM<T> {
+    type Cache = LlamaCache<T>;
+    type Error = LlamaError;
+
+    fn new_cache(&self) -> Result<Self::Cache, Self::Error> {
+        LlamaCache::new(true, &self.config)
+    }
+
+    fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Self::Cache) -> Result<Tensor<T>, Self::Error> {
         // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
         let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
         // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
         let hidden_states = self.lm_head.forward(&hidden_states)
             .map_err(LlamaError::Nn)
             .context("lm head forward")?;
-        Ok(hidden_states)
+        Ok(hidden_states) 
     }
 }
 
@@ -55,7 +66,7 @@ pub struct LlamaModel<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for LlamaModel<T> {
     type Config = LlamaConfig;
-    type Error = LlamaCtxError;
+    type Error = LlamaError;
 
     fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
         let embed_init = init.unwrap_or_else(default_init_linear);
@@ -108,7 +119,7 @@ pub struct LlamaLayer<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for LlamaLayer<T> {
     type Config = LlamaConfig;
-    type Error = LlamaCtxError;
+    type Error = LlamaError;
 
     fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
         let self_attn = LlamaAttention::init(config, init).context("init attention")?;
@@ -193,7 +204,7 @@ pub struct LlamaMlp<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for LlamaMlp<T> {
     type Config = LlamaConfig;
-    type Error = LlamaCtxError;
+    type Error = LlamaError;
 
     fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
         let init = init.unwrap_or_else(default_init_linear);
@@ -209,9 +220,9 @@ impl<T: FloatDType> ModuleInit<T> for LlamaMlp<T> {
 impl<T: FloatDType> LlamaMlp<T> {
     pub fn forward(&self, x: &Tensor<T>) -> LlamaResult<Tensor<T>> {
         let up = self.up_proj.forward(x)?;
-        let gate = self.gate_proj.forward(x)?;
-        let up_gate = (up * gate).silu()?;
-        let out = self.down_proj.forward(&up_gate)?;
+        let gate = self.gate_proj.forward(x)?.silu()?;
+        let hidden = up * gate;
+        let out = self.down_proj.forward(&hidden)?;
         Ok(out)
     }
 }
@@ -239,7 +250,7 @@ pub struct LlamaAttention<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for LlamaAttention<T> {
     type Config = LlamaConfig;
-    type Error = LlamaCtxError;
+    type Error = LlamaError;
 
     fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
         // TODO: check 
@@ -368,7 +379,7 @@ impl<T: FloatDType> LlamaAttention<T> {
 
             // (seq_len, total_seq_len) => (batch_size, num_attn_heads, seq_len, total_seq_len)
             let mask = mask.broadcast_as(attn_weight.shape())?;
-            mask.if_else(<T as FloatDType>::min_value(), attn_weight)?
+            mask.if_else(T::MIN_VALUE, attn_weight)?
         } else {
             attn_weight
         }; // (batch_size, num_attn_heads, seq_len, total_seq_len)
@@ -436,10 +447,18 @@ impl<T: FloatDType> LlamaAttention<T> {
     }
 
     fn repeat_kv(&self, k: &Tensor<T>, v: &Tensor<T>) -> LlamaResult<(Tensor<T>, Tensor<T>)> {
-        let repeat_times = self.num_attention_heads / self.num_kv_heads;
-        let k = k.repeat_dim(1, repeat_times)?;
-        let v = v.repeat_dim(1, repeat_times)?;
+        let k = self.repeat(k)?;
+        let v = self.repeat(v)?;
         Ok((k, v))
+    }
+
+    fn repeat(&self, k: &Tensor<T>) -> LlamaResult<Tensor<T>> {
+        let repeat_times = self.num_attention_heads / self.num_kv_heads;
+        let (batch_size, _num_kv_heads, seq_len, head_size) = k.dims4()?;
+        let k = k.unsqueeze(2)?; 
+        let k = k.repeat_dim(2, repeat_times)?;
+        let k = k.reshape((batch_size, self.num_attention_heads, seq_len, head_size))?;
+        Ok(k)
     }
 }
 
@@ -456,7 +475,7 @@ pub struct LlamaRMSNorm<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for LlamaRMSNorm<T> {
     type Config = LlamaConfig;
-    type Error = LlamaCtxError;
+    type Error = LlamaError;
 
     fn init(config: &LlamaConfig, init: Option<Init<T>>) -> LlamaResult<Self> {
         let init = init.unwrap_or(Init::ones());
@@ -554,7 +573,7 @@ fn calculate_default_inv_freq<T: FloatDType>(config: &LlamaConfig) -> Vec<T> {
 mod test {
     use lumen_core::Tensor;
     use lumen_nn::{init::Init, Module, ModuleInit};
-    use crate::llama::{LlamaConfig, LlamaResult};
+    use crate::{llama::{LlamaConfig, LlamaResult}, ForCausalLM};
     use super::{LlamaCache, LlamaForCausalLM};
 
     #[test]

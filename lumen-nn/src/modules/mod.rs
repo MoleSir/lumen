@@ -7,6 +7,7 @@ mod geometric;
 mod param;
 mod buffer;
 mod loss;
+mod pos_embed;
 
 pub use common::*;
 pub use activation::*;
@@ -17,6 +18,7 @@ pub use param::*;
 pub use buffer::*;
 pub use geometric::*;
 pub use loss::*;
+pub use pos_embed::*;
 
 use std::fmt;
 use std::marker::PhantomData;
@@ -25,7 +27,7 @@ use std::any::type_name;
 use lumen_core::{DynTensor, FloatDType, NumDType, Tensor};
 use thiserrorctx::Context;
 use crate::init::MetaInitGuard;
-use crate::{init::Init, NnCtxError, NnError, NnResult};
+use crate::{init::Init, NnError, NnResult};
 use paste::paste;
 
 macro_rules! impl_tensor_count {
@@ -260,7 +262,7 @@ pub trait Module<T: FloatDType> : Sized {
 }
 
 pub trait ModuleInit<T: FloatDType> : Module<T> {
-    type Error: From<NnCtxError>;
+    type Error: From<NnError>;
     type Config;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error>;
@@ -726,7 +728,7 @@ impl<T: FloatDType> InitTensorVisitor<T> {
 }
 
 impl<T: FloatDType> TensorVisitorMut<T> for InitTensorVisitor<T> {
-    type Error = NnCtxError;
+    type Error = NnError;
     fn visit_param_mut(&mut self, param: &mut Tensor<T>) -> Result<(), Self::Error> {
         let shape = param.shape();
         let new_param = self.init.init(shape)?;
@@ -765,7 +767,7 @@ impl<'a> LoadTensorsVisitor<'a> {
 }
 
 impl<'a, T: FloatDType> TensorVisitorMut<T> for LoadTensorsVisitor<'a> {
-    type Error = NnCtxError;
+    type Error = NnError;
 
     fn enter_submodule<M: Module<T>>(&mut self, name: &str, _module: &mut M) {
         self.path.push(name.to_string());

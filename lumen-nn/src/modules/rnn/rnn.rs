@@ -1,6 +1,6 @@
 use lumen_core::{FloatDType, IndexOp, Tensor};
 use lumen_macros::Module;
-use crate::{init::Init, Linear, ModuleInit, NnCtxError, NnResult, Parameter};
+use crate::{init::Init, Linear, ModuleInit, NnError, NnResult, Parameter};
 
 #[derive(Module)]
 pub struct Rnn<T: FloatDType> {
@@ -22,7 +22,7 @@ pub struct RnnConfig {
 
 impl<T: FloatDType> ModuleInit<T> for Rnn<T> {
     type Config = RnnConfig;
-    type Error = NnCtxError;
+    type Error = NnError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let input_size = config.input_size;

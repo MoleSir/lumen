@@ -1,4 +1,7 @@
-use lumen_core::{FloatDType, GradStore, Tensor};
+use std::collections::HashMap;
+use lumen_core::{DynTensor, FloatDType, GradStore, NumDType, Tensor};
+use crate::{NnError, NnResult};
+
 use super::Optimizer;
 
 #[derive(Clone, Debug)]
@@ -50,10 +53,35 @@ impl<T: FloatDType> Adam<T> {
     }
 }
 
-impl<T: FloatDType> Optimizer<T> for Adam<T> {
-    type Error = lumen_core::Error;
-    fn step(&mut self, grads: &GradStore<T>) -> Result<(), Self::Error> {
+impl<T: FloatDType> Optimizer for Adam<T> {
+    type Scalar = T;
+
+    fn step(&mut self, grads: &GradStore<T>) -> NnResult<()> {
         let _guard = lumen_core::NoGradGuard::new();
+
+        /*
+                               1
+            scale_m =  ------------------
+                          1 - beta1^t
+
+                               1
+            scale_v =  ------------------
+                          1 - beta2^t
+
+            m = beta1 * m + (1 - beta1) * g
+            v = beta2 * m + (1 - beta2) * g^2
+
+            m_hat = scale_m * m
+            m_hat = scale_v * v
+
+                              m_hat
+            grad = --------------------------------
+                         v_hat^0.5  +  eps
+
+
+            scale 解决“冷启动”问题。因为训练开始的时候，因为 m v 都是 0，导致 g 只被使用了很少一部分（ m = 0.9 * m + 0.1 * g）
+            所以一开始 scale 比较大，之后 t 增大，scale 不断接近 1，此时修正项几乎不再起作用，算法平滑地过渡到标准的指数移动平均。
+        */
 
         self.step_t += 1;
         let lr = self.config.lr;
@@ -79,4 +107,44 @@ impl<T: FloatDType> Optimizer<T> for Adam<T> {
 
         Ok(())
     }
+
+    fn get_lr(&self) -> f64 {
+        <T as NumDType>::to_f64(self.config.lr)
+    }
+
+    fn set_lr(&mut self, lr: f64) {
+        self.config.lr = T::from_f64(lr);
+    }
+
+    fn named_states(&self) -> HashMap<String, Tensor<Self::Scalar>> {
+        let mut tensors = HashMap::new();
+        for (i, param) in self.params.iter().enumerate() {
+            tensors.insert(first_moment_name(i), param.first_moment.clone());
+            tensors.insert(second_moment_name(i), param.second_moment.clone()); 
+        }
+        tensors
+    }
+
+    fn load_named_states(&mut self, states: &HashMap<String, DynTensor>) -> NnResult<()> {
+        for (i, param) in self.params.iter().enumerate() {
+            let first_name = first_moment_name(i);
+            let first_moment = states.get(&first_name).ok_or_else(|| NnError::ParamNotFound(first_name, "load_named_states"))?;
+            let first_moment = first_moment.as_tensor::<T>()?;
+            param.first_moment.copy_(&first_moment)?;
+
+            let second_name = second_moment_name(i);
+            let second_moment = states.get(&second_name).ok_or_else(|| NnError::ParamNotFound(second_name, "load_named_states"))?;
+            let second_moment = second_moment.as_tensor::<T>()?;
+            param.second_moment.copy_(&second_moment)?;
+        }
+        Ok(())
+    }
+}
+
+fn first_moment_name(i: usize) -> String {
+    format!("first_moment_{}", i)
+}
+
+fn second_moment_name(i: usize) -> String {
+    format!("second_moment_{}", i)
 }

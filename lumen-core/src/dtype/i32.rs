@@ -1,5 +1,5 @@
 use crate::{DynTensor, IntTensor, Result, Storage, Tensor};
-use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, SignedIntDType, WithDType};
+use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, WithDType};
 
 impl WithDType for i32 {
     const DTYPE: DType = DType::I32;
@@ -56,20 +56,15 @@ impl NumDType for i32 {
         let vec: Vec<_> = (start..end).collect();
         Ok(Storage::new(vec))
     }
+
+    #[inline]
+    fn sign(self) -> Self {
+        self.signum()
+    }
 }
 
 impl IntDType for i32 {
     fn to_inttensor(tensor: Tensor<Self>) -> IntTensor {
         IntTensor::I32(tensor)
-    }
-}
-
-impl SignedIntDType for i32 {
-    fn abs(self) -> i32 {
-        if self > 0 { self } else { -self }
-    }
-
-    fn neg(self) -> i32 {
-        -self
     }
 }

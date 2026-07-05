@@ -2,6 +2,7 @@ use lumen_core::{DType, DTypeConvert, DynTensor, Indexer, Shape, Slice, Tensor, 
 use pyo3::{exceptions::{PyRuntimeError, PyTypeError, PyValueError}, prelude::*, types::{PyList, PySlice, PyTuple}};
 use paste::paste;
 use super::{DynGradStore, PyGradStore};
+use half::bf16;
 
 #[pyclass(name = "Tensor", subclass)]
 #[derive(Clone)]
@@ -19,6 +20,7 @@ impl PyTensor {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PyDType {
     Bool,
+    BFloat16,
     Float32,
     Float64,
     Int32,
@@ -30,6 +32,7 @@ impl PyDType {
     fn to_dtype(&self) -> DType {
         match self {
             Self::Bool => DType::Bool,
+            Self::BFloat16 => DType::Bf16,
             Self::Float32 => DType::F32,
             Self::Float64 => DType::F64,
             Self::UInt32 => DType::U32,
@@ -51,6 +54,7 @@ macro_rules! impl_contruct {
         } else {
             return match target_dtype {
                 PyDType::Bool => Tensor::<bool>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
+                PyDType::BFloat16 => Tensor::<bf16>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
                 PyDType::Float32 => Tensor::<f32>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
                 PyDType::Float64 => Tensor::<f64>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
                 PyDType::UInt32 => Tensor::<u32>::$method($shape).map_err(to_value_error).map(Into::<PyTensor>::into),
@@ -66,6 +70,22 @@ macro_rules! impl_varient_method {
     ($self:ident, $t:ident, $expr:expr) => {
         match &$self.inner {
             DynTensor::Bool($t) => $expr,
+            DynTensor::Bf16($t) => $expr,
+            DynTensor::F32($t) => $expr,
+            DynTensor::F64($t) => $expr,
+            DynTensor::U32($t) => $expr,
+            DynTensor::I32($t) => $expr,
+            DynTensor::U8($t) => $expr,
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! impl_varient_method_but_bf16 {
+    ($self:ident, $t:ident, $expr:expr, $bfexpr:expr) => {
+        match &$self.inner {
+            DynTensor::Bool($t) => $expr,
+            DynTensor::Bf16($t) => $bfexpr,
             DynTensor::F32($t) => $expr,
             DynTensor::F64($t) => $expr,
             DynTensor::U32($t) => $expr,
@@ -80,6 +100,7 @@ macro_rules! impl_numdtype_varient_method {
     ($self:ident, $t:ident, $expr:expr, $msg:expr) => {
         match &$self.inner {
             DynTensor::Bool(_) => Err(PyValueError::new_err(format!("bool unsupport {}", $msg))),
+            DynTensor::Bf16($t) => $expr,
             DynTensor::F32($t) => $expr,
             DynTensor::F64($t) => $expr,
             DynTensor::U32($t) => $expr,
@@ -417,6 +438,7 @@ impl PyTensor {
     pub fn dtype(&self) -> PyDType {
         match &self.inner {
             DynTensor::Bool(_) => PyDType::Bool,
+            DynTensor::Bf16(_) => PyDType::BFloat16,
             DynTensor::F32(_) => PyDType::Float32,
             DynTensor::F64(_) => PyDType::Float64,
             DynTensor::U32(_) => PyDType::UInt32,
@@ -428,6 +450,7 @@ impl PyTensor {
     pub fn set_requires_grad(&self, mode: bool) -> PyResult<()> {
         match &self.inner {
             DynTensor::Bool(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
+            DynTensor::Bf16(t) => Ok(t.set_requires_grad(mode)),
             DynTensor::F32(t) => Ok(t.set_requires_grad(mode)),
             DynTensor::F64(t) => Ok(t.set_requires_grad(mode)),
             DynTensor::U32(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
@@ -439,6 +462,7 @@ impl PyTensor {
     pub fn requires_grad(&self) -> PyResult<bool> {
         match &self.inner {
             DynTensor::Bool(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
+            DynTensor::Bf16(t) => Ok(t.requires_grad()),
             DynTensor::F32(t) => Ok(t.requires_grad()),
             DynTensor::F64(t) => Ok(t.requires_grad()),
             DynTensor::U32(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
@@ -464,11 +488,18 @@ impl PyTensor {
     }
 
     fn item<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        impl_varient_method!(self, t, {
-            let val = t.to_scalar().map_err(to_value_error)?;
-            let val = val.into_pyobject(py)?.to_owned();
-            Ok(val.into_any())
-        })
+        impl_varient_method_but_bf16!(self, t, 
+            {
+                let val = t.to_scalar().map_err(to_value_error)?;
+                let val = val.into_pyobject(py)?.to_owned();
+                Ok(val.into_any())
+            },
+            {
+                let val = bf16::to_f64(t.to_scalar().map_err(to_value_error)?);
+                let val = val.into_pyobject(py)?.to_owned();
+                Ok(val.into_any())
+            }
+        )
     }
 
     fn __add__(&self, rhs: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -714,6 +745,7 @@ impl PyTensor {
 
     fn neg(&self) -> PyResult<Self> {
         match &self.inner {
+            DynTensor::Bf16(t) => t.neg().map_err(to_value_error).map(Into::into),
             DynTensor::F32(t) => t.neg().map_err(to_value_error).map(Into::into),
             DynTensor::F64(t) => t.neg().map_err(to_value_error).map(Into::into),
             DynTensor::I32(t) => t.neg().map_err(to_value_error).map(Into::into),
@@ -870,6 +902,7 @@ impl PyTensor {
             }
             (Ok(true_val), Err(_)) => {
                 match &true_val.inner {
+                    DynTensor::Bf16(true_val) => confition_val.if_else(true_val, bf16::from_f32(false_val.extract::<f32>()?)).map_err(to_value_error).map(Into::<PyTensor>::into),
                     DynTensor::F32(true_val) => confition_val.if_else(true_val, false_val.extract::<f32>()?).map_err(to_value_error).map(Into::<PyTensor>::into),
                     DynTensor::F64(true_val) => confition_val.if_else(true_val, false_val.extract::<f64>()?).map_err(to_value_error).map(Into::<PyTensor>::into),
                     DynTensor::U8(true_val) => confition_val.if_else(true_val, false_val.extract::<u8>()?).map_err(to_value_error).map(Into::<PyTensor>::into),
@@ -880,6 +913,7 @@ impl PyTensor {
             }
             (Err(_), Ok(false_val)) => {
                 match &false_val.inner {
+                    DynTensor::Bf16(false_val) => confition_val.if_else(bf16::from_f32(true_val.extract::<f32>()?), false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
                     DynTensor::F32(false_val) => confition_val.if_else(true_val.extract::<f32>()?, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
                     DynTensor::F64(false_val) => confition_val.if_else(true_val.extract::<f64>()?, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
                     DynTensor::U8(false_val) => confition_val.if_else(true_val.extract::<u8>()?, false_val).map_err(to_value_error).map(Into::<PyTensor>::into),
@@ -927,6 +961,10 @@ impl PyTensor {
     fn backward(&self) -> PyResult<PyGradStore> {
         match &self.inner {
             DynTensor::Bool(_) => Err(PyRuntimeError::new_err("bool tensor no grad!")),
+            DynTensor::Bf16(t) => {
+                let grads = t.backward().map_err(to_value_error)?;
+                Ok(PyGradStore { inner: DynGradStore::Bf16(grads) })
+            },
             DynTensor::F32(t) => {
                 let grads = t.backward().map_err(to_value_error)?;
                 Ok(PyGradStore { inner: DynGradStore::F32(grads) })
@@ -1026,6 +1064,7 @@ impl PyTensor {
     fn to_bool(&self) -> PyResult<Tensor<bool>> {
         match &self.inner {
             DynTensor::Bool(t) => Ok(t.clone()),
+            DynTensor::Bf16(t) => t.cast::<bool>().map_err(to_value_error).map(Into::into),
             DynTensor::F32(t) => t.cast::<bool>().map_err(to_value_error).map(Into::into),
             DynTensor::F64(t) => t.cast::<bool>().map_err(to_value_error).map(Into::into),
             DynTensor::U32(t) => t.cast::<bool>().map_err(to_value_error).map(Into::into),
@@ -1063,6 +1102,7 @@ fn to_dtype<T>(tensor: &Tensor<T>, dtype: PyDType) -> PyResult<PyTensor>
 where 
     T:  WithDType
       + DTypeConvert<bool>
+      + DTypeConvert<bf16>
       + DTypeConvert<f32>
       + DTypeConvert<f64>
       + DTypeConvert<u32>
@@ -1075,6 +1115,7 @@ where
     }
     match dtype {
         PyDType::Bool => tensor.cast::<bool>().map_err(to_value_error).map(Into::into),
+        PyDType::BFloat16 => tensor.cast::<bf16>().map_err(to_value_error).map(Into::into),
         PyDType::Float32 => tensor.cast::<f32>().map_err(to_value_error).map(Into::into),
         PyDType::Float64 => tensor.cast::<f64>().map_err(to_value_error).map(Into::into),
         PyDType::UInt32 => tensor.cast::<u32>().map_err(to_value_error).map(Into::into),

@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 use lumen_core::{FloatDType, IntTensor, Tensor, D};
-use lumen_macros::Module;
-use lumen_nn::{init::Init, Embedding, Linear, ModuleInit, Parameter};
+use lumen_nn::{init::{Init, MetaInitGuard}, Embedding, Linear, Module, ModuleInit, Parameter};
 use thiserrorctx::Context;
-use super::{Gpt2Config, Gpt2CtxError, Gpt2Error, Gpt2Result};
+use crate::{ForCausalLM, PretrainedModel};
+
+use super::{Gpt2Config, Gpt2Error, Gpt2Result};
 
 // ========================================================================= //
 //                For Causal LM
@@ -12,29 +13,74 @@ use super::{Gpt2Config, Gpt2CtxError, Gpt2Error, Gpt2Result};
 #[derive(Module)]
 pub struct Gpt2ForCausalLM<T: FloatDType> {
     pub transformer: Gpt2Model<T>,
-    pub lm_head: Linear<T>, 
+
+    #[module(skip)] 
+    pub config: Gpt2Config,
 }
 
 impl<T: FloatDType> ModuleInit<T> for Gpt2ForCausalLM<T> {
     type Config = Gpt2Config;
-    type Error = Gpt2CtxError;
+    type Error = Gpt2Error;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let transformer = Gpt2Model::init(config, init).context("init transformer")?;
-        let lm_head_init = init.unwrap_or_else(default_init_linear);
-        let lm_head = Linear::new(config.n_embd, config.vocab_size, false, Some(lm_head_init))?;
-        
-        Ok(Self { transformer, lm_head })
+        Ok(Self { transformer, config: config.clone() })
     }
 }
 
-impl<T: FloatDType> Gpt2ForCausalLM<T> {
-    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Gpt2Cache<T>) -> Gpt2Result<Tensor<T>> {
+impl<T: FloatDType> ForCausalLM<T> for Gpt2ForCausalLM<T> {
+    type Cache = Gpt2Cache<T>;
+    type Error = Gpt2Error;
+
+    fn new_cache(&self) -> Result<Self::Cache, Self::Error> {
+        Ok(Gpt2Cache::new(true, &self.config))
+    }
+
+    fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Self::Cache) -> Result<Tensor<T>, Self::Error> {
         let hidden_states = self.transformer.forward(input_ids, start_pos, cache).context("transformer forward")?;
-        let logits = self.lm_head.forward(&hidden_states)
+        let wte_weight = &self.transformer.wte.weight;
+        let logits = lumen_nn::functional::linear(&hidden_states, &wte_weight, None)
             .map_err(Gpt2Error::Nn)
             .context("lm head forward")?;
         Ok(logits)
+    }
+}
+
+impl<T: FloatDType> PretrainedModel<T> for Gpt2ForCausalLM<T> {
+    type Error = Gpt2Error;
+    fn from_pretrained(path: impl Into<PathBuf>) -> Result<Self, Self::Error> {
+        let path: PathBuf = path.into();
+
+        // load config.json!
+        let config: Gpt2Config = {
+            let config_path = path.join("config.json");
+            let content = std::fs::read_to_string(config_path)?;
+            let config = serde_json::from_str(&content)?;
+            config
+        };
+
+        // load model.safetensors!
+        let tensors = lumen_io::safetensors::load_file(path.join("model.safetensors"))?.tensors;
+
+        const TRANSPOSE_LAYERS: [&'static str; 3] = [
+            "c_attn.weight", 
+            "c_proj.weight", 
+            "c_fc.weight"
+        ];
+
+        let mut new_tensors = HashMap::new();
+        for (name, mut tensor) in tensors {
+            if TRANSPOSE_LAYERS.iter().any(|&layer| name.ends_with(layer)) {
+                tensor = tensor.transpose_last()?.contiguous()?;
+            }
+            new_tensors.insert(format!("transformer.{name}"), tensor);
+        }
+
+        let _guard = MetaInitGuard::new();
+        let mut model = Self::init_default(&config)?;
+        model.load_named_states(&new_tensors, true)?;
+        
+        Ok(model)
     }
 }
 
@@ -52,7 +98,7 @@ pub struct Gpt2Model<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Gpt2Model<T> {
     type Config = Gpt2Config;
-    type Error = Gpt2CtxError;
+    type Error = Gpt2Error;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let embed_init = init.unwrap_or_else(default_init_linear);
@@ -115,7 +161,7 @@ pub struct Gpt2Block<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Gpt2Block<T> {
     type Config = Gpt2Config;
-    type Error = Gpt2CtxError;
+    type Error = Gpt2Error;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let ln_1 = Gpt2LayerNorm::init(config, init).context("ln 1 init")?;
@@ -155,7 +201,7 @@ pub struct Gpt2MLP<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Gpt2MLP<T> {
     type Config = Gpt2Config;
-    type Error = Gpt2CtxError;
+    type Error = Gpt2Error;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let intermediate_size = 4 * config.n_embd;
@@ -194,7 +240,7 @@ pub struct Gpt2Attention<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Gpt2Attention<T> {
     type Config = Gpt2Config;
-    type Error = Gpt2CtxError;
+    type Error = Gpt2Error;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let head_dim = config.n_embd / config.n_head;
@@ -261,7 +307,7 @@ impl<T: FloatDType> Gpt2Attention<T> {
                 causal_mask
             };
             let mask = mask.broadcast_as(attn_weights.shape())?;
-            mask.if_else(<T as FloatDType>::min_value(), attn_weights)?
+            mask.if_else(T::MIN_VALUE, attn_weights)?
         } else {
             attn_weights
         }; // (batch_size, num_attn_heads, seq_len, total_seq)
@@ -304,7 +350,7 @@ pub struct Gpt2LayerNorm<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for Gpt2LayerNorm<T> {
     type Config = Gpt2Config;
-    type Error = Gpt2CtxError;
+    type Error = Gpt2Error;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let size = config.n_embd;
@@ -391,7 +437,7 @@ impl<T: FloatDType> Gpt2Cache<T> {
 mod test {
     use lumen_core::Tensor;
     use lumen_nn::{init::Init, Module, ModuleInit};
-    use crate::gpt2::{Gpt2Cache, Gpt2Config, Gpt2Result};
+    use crate::{gpt2::{Gpt2Cache, Gpt2Config, Gpt2Result}, ForCausalLM};
 
     use super::Gpt2ForCausalLM;
 

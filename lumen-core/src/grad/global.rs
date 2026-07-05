@@ -1,5 +1,12 @@
 use std::cell::Cell;
 
+#[macro_export]
+macro_rules! no_grad {
+    () => {
+        let _guard = lumen_core::NoGradGuard::new();
+    };
+}
+
 thread_local! {
     static GRAD_ENABLED: Cell<bool> = Cell::new(true);
 }

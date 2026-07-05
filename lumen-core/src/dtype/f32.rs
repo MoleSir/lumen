@@ -67,13 +67,14 @@ impl NumDType for f32 {
         }
         Ok(Storage::new(vec))
     }
+
+    #[inline]
+    fn sign(self) -> Self {
+        self.signum()
+    }
 }
 
 impl FloatDType for f32 {
-    fn min_value() -> Self {    
-        f32::MIN
-    }
-    
     #[inline]
     fn sqr(self) -> Self {
         self * self
@@ -107,7 +108,7 @@ impl FloatDType for f32 {
     /// 0.5 * x * (1 + erf(x / sqrt(2)))
     fn gelu_erf(self) -> Self {
         const FRAC_1_SQRT_2: f32 = std::f32::consts::FRAC_1_SQRT_2; // 0.70710678
-        0.5 * self * (1.0 + (self * FRAC_1_SQRT_2).erf())
+        0.5 * self * (1.0 + libm::erff(self * FRAC_1_SQRT_2))
     }
 
     #[inline]

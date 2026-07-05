@@ -1,7 +1,7 @@
-use std::{fs::File, io::{Read, Seek, SeekFrom}, path::{Path, PathBuf}};
+use std::{convert::Infallible, fs::File, io::{Read, Seek, SeekFrom}, path::{Path, PathBuf}};
 use flate2::bufread::GzDecoder;
 use lumen_core::Tensor;
-use crate::{transform::{Map, MapDataset}, utils, Batcher, DataLoader, Dataset, VecDataset};
+use crate::{transform::{Map, MapDataset}, utils, Batcher, DataLoader, Dataset, common::VecDataset};
 
 // CVDF mirror of http://yann.lecun.com/exdb/mnist/
 const URL: &str = "https://storage.googleapis.com/cvdf-datasets/mnist/";
@@ -56,8 +56,9 @@ pub struct MnistDataset {
 
 impl Dataset for MnistDataset {
     type Item = MnistItem;
+    type Error = Infallible;
 
-    fn get(&self, index: usize) -> Option<MnistItem> {
+    fn get(&self, index: usize) -> Result<Option<MnistItem>, Self::Error> {
         self.dataset.get(index)
     }
 
@@ -185,8 +186,9 @@ pub struct MnistBatcher;
 
 impl Batcher for MnistBatcher {
     type Item = MnistItem;
-    type Output = MnistResult<MnistBatch>;
- 
+    type Output = MnistBatch;
+    type Error = MnistError;
+
     fn batch(&self, items: Vec<MnistItem>) -> MnistResult<MnistBatch> {
         let batch_size = items.len();
         

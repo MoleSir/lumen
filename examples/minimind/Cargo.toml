@@ -1,0 +1,39 @@
+[package]
+name = "minimind"
+version = "0.1.0"
+edition = "2024"
+
+
+[[bin]]
+name = "pretrain"
+path = "./bin/pretrain/pretrain.rs"
+
+
+[[bin]]
+name = "ppo_per_seq"
+path = "./bin/rl/ppo_per_seq.rs"
+
+
+[[bin]]
+name = "ppo_per_token"
+path = "./bin/rl/ppo_per_token.rs"
+
+
+
+[[bin]]
+name = "dpo"
+path = "./bin/rl/dpo.rs"
+
+
+[dependencies]
+lumen-core = { path = "../../lumen-core"  }
+lumen-dataset = { path = "../../lumen-dataset" }
+lumen-nn = { path = "../../lumen-nn" }
+lumen-transformer = { path = "../../lumen-transformer" }
+
+serde = { version = "1.0", features = ["derive"] } 
+serde_json = "1.0"
+anyhow = "1.0"
+tokenizers = "0.22"
+derive_builder = "0.20.2"
+rand = "0.10.0"

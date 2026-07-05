@@ -1,4 +1,8 @@
-use lumen_core::{FloatDType, GradStore, Tensor};
+use std::collections::HashMap;
+
+use lumen_core::{DynTensor, FloatDType, GradStore, NumDType, Tensor};
+use crate::{NnError, NnResult};
+
 use super::Optimizer;
 
 #[derive(Clone, Debug)]
@@ -37,23 +41,23 @@ pub struct Momentum<T: FloatDType> {
 impl<T: FloatDType> Momentum<T> {
     pub fn new(params: impl Into<Vec<Tensor<T>>>, config: MomentumConfig<T>) -> lumen_core::Result<Self> {
         let params: Vec<_> = params.into();
-        let mut sgd_params = vec![];
+        let mut m_params = vec![];
         for param in params.into_iter() {
             let velocity = Tensor::zeros_like(&param)?; 
-            sgd_params.push(MomentumParam {
+            m_params.push(MomentumParam {
                 param,
                 velocity,
             });
         }
 
-        Ok(Self { params: sgd_params, config })
+        Ok(Self { params: m_params, config })
     }
 }
 
-impl<T: FloatDType> Optimizer<T> for Momentum<T> {
-    type Error = lumen_core::Error;
+impl<T: FloatDType> Optimizer for Momentum<T> {
+    type Scalar = T;
 
-    fn step(&mut self, grads: &GradStore<T>) -> Result<(), Self::Error> {
+    fn step(&mut self, grads: &GradStore<T>) -> NnResult<()> {
         let _guard = lumen_core::NoGradGuard::new();
 
         let lr = self.config.lr;
@@ -69,18 +73,22 @@ impl<T: FloatDType> Optimizer<T> for Momentum<T> {
             if let Some(g) = grads.get(&param.param) {
                 let mut d_p = g.clone();
                 
+                // 权重衰减
+                // 在梯度上直接加上 L2 正则化的导数。
                 if weight_decay != zero {
                     d_p.add_(weight_decay * &param.param)?; 
                 }
-
+                
+                // momentum: 保留多少历史 v
+                // dampening: 保留多少当前梯度
                 // v = v * momentum + d_p * (1 - dampening)                
                 if momentum != zero {
                     if dampening != zero {
                         let scale = one - dampening;
-                        // d_p = d_p * (1 - dampening)
                         d_p.mul_(scale)?; 
                     }
-                    
+
+                    // 融合历史速度 + 当前梯度更新新的 v
                     // v = v * momentum + d_p
                     param.velocity.mul_(momentum)?;
                     param.velocity.add_(&d_p)?;
@@ -96,6 +104,32 @@ impl<T: FloatDType> Optimizer<T> for Momentum<T> {
             }
         }
 
+        Ok(())
+    }
+
+    fn get_lr(&self) -> f64 {
+        <T as NumDType>::to_f64(self.config.lr)
+    }
+
+    fn set_lr(&mut self, lr: f64) {
+        self.config.lr = T::from_f64(lr);
+    }
+
+    fn named_states(&self) -> HashMap<String, Tensor<Self::Scalar>> {
+        self.params.iter()
+            .enumerate()
+            .map(|(i, param)| (format!("{}", i), param.velocity.clone()))
+            .collect()
+    }
+
+    fn load_named_states(&mut self, states: &HashMap<String, DynTensor>) -> NnResult<()> {
+        for (i, param) in self.params.iter().enumerate() {
+            let velocity = &param.velocity;
+            let key: String = format!("{}", i);
+            let src = states.get(&key).ok_or_else(|| NnError::ParamNotFound(key.clone(), "load_named_states"))?;
+            let src = src.as_tensor::<T>()?;
+            velocity.copy_(&src)?;
+        }
         Ok(())
     }
 }

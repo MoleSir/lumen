@@ -1,10 +1,11 @@
 use std::collections::HashMap;
-use lumen_core::{FloatDType, IntTensor, Tensor, D};
+use lumen_core::{FloatDType, IndexOp, IntTensor, Tensor, D};
 use lumen_macros::Module;
 use lumen_nn::{init::Init, Embedding, Linear, ModuleInit, Parameter};
 use thiserrorctx::Context;
-use super::{DeepSeekConfig, DeepSeekCtxError, DeepSeekError, DeepSeekResult};
+use crate::ForCausalLM;
 
+use super::{DeepSeekConfig, DeepSeekError, DeepSeekResult};
 
 // ========================================================================= //
 //                For Causal LM
@@ -14,11 +15,14 @@ use super::{DeepSeekConfig, DeepSeekCtxError, DeepSeekError, DeepSeekResult};
 pub struct DeepSeekForCausalLM<T: FloatDType> {
     pub model: DeepSeekModel<T>,
     pub lm_head: Linear<T>, 
+
+    #[module(skip)]
+    pub config: DeepSeekConfig,
 }
 
 impl<T: FloatDType> ModuleInit<T> for DeepSeekForCausalLM<T> {
     type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+    type Error = DeepSeekError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let model = DeepSeekModel::init(config, init).context("init llama model")?;
@@ -26,12 +30,19 @@ impl<T: FloatDType> ModuleInit<T> for DeepSeekForCausalLM<T> {
             .map_err(DeepSeekError::Nn)
             .context("init lm head")?;
         
-        Ok(Self { model, lm_head })
+        Ok(Self { model, lm_head, config: config.clone() })
     }
 }
 
-impl<T: FloatDType> DeepSeekForCausalLM<T> {
-    pub fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut DeepSeekCache<T>) -> DeepSeekResult<Tensor<T>> {
+impl<T: FloatDType> ForCausalLM<T> for DeepSeekForCausalLM<T> {
+    type Cache = DeepSeekCache<T>;
+    type Error = DeepSeekError;
+
+    fn new_cache(&self) -> Result<Self::Cache, Self::Error> {
+        DeepSeekCache::new(true, &self.config)
+    }
+
+    fn forward(&self, input_ids: impl Into<IntTensor>, start_pos: usize, cache: &mut Self::Cache) -> Result<Tensor<T>, Self::Error> {
         // (batch_size, seq_len) => (batch_size, seq_len, hidden_size)
         let hidden_states = self.model.forward(input_ids, start_pos, cache).context("model forward")?;
         // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, vocab_size)
@@ -55,7 +66,7 @@ pub struct DeepSeekModel<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for DeepSeekModel<T> {
     type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+    type Error = DeepSeekError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let embed_init = init.unwrap_or_else(default_init_linear);
@@ -108,7 +119,7 @@ pub struct DeepSeekLayer<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for DeepSeekLayer<T> {
     type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+    type Error = DeepSeekError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let self_attn = DeepSeekAttention::init(config, init).context("init attention")?;
@@ -157,7 +168,7 @@ pub struct DeepSeekMoE<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for DeepSeekMoE<T> {
     type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+    type Error = DeepSeekError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let gate_init = init.unwrap_or_else(default_init_linear);
@@ -194,6 +205,7 @@ impl<T: FloatDType> ModuleInit<T> for DeepSeekMoE<T> {
 impl<T: FloatDType> DeepSeekMoE<T> {
     #[allow(unused)]
     pub fn forward(&self, x: &Tensor<T>) -> DeepSeekResult<Tensor<T>> {
+        let (batch_size, seq_len, hidden_size) = x.dims3()?;
         // 1. Shared Experts Path
         // (batch_size, seq_len, hidden_size) => (batch_size, seq_len, shared_expert_intermediate_size)
         let shared_output = self.shared_experts.forward(x)?;
@@ -203,10 +215,74 @@ impl<T: FloatDType> DeepSeekMoE<T> {
         let router_logits = self.gate.forward(x)?; 
         // (batch_size, seq_len, num_routed_experts) => (batch_size, seq_len, num_routed_experts)
         // for each token, get `num_routed_experts` prob to each expert
-        let routing_weights = lumen_nn::functional::softmax(&router_logits, D::Minus1)?;
+        let routing_probs = lumen_nn::functional::softmax(&router_logits, D::Minus1)?;
 
         // 3. Top-K Selection
-        unimplemented!()
+        // (batch_size, seq_len, num_routed_experts) => (batch_size, seq_len, k)
+        let (topk_vals, topk_idx) = routing_probs.topk(self.num_experts_per_tok, D::Minus1)?;
+        // (batch_size * seq_len, hidden_size)
+        let x_flat = x.reshape((batch_size * seq_len, hidden_size))?;
+        // (batch_size * seq_len, k)
+        let topk_vals = topk_vals.reshape((batch_size * seq_len, self.num_experts_per_tok))?;
+        let topk_idx = topk_idx.reshape((batch_size * seq_len, self.num_experts_per_tok))?;
+
+        // (batch_size * seq_len, hidden_size)
+        let mut output = x_flat.zeros_like()?;
+
+        // Dispatch to experts
+        for i in 0..self.num_experts_per_tok {
+            // (batch_size * seq_len, )
+            let expert_idx = topk_idx.index((.., i))?; 
+            // (batch_size * seq_len, 1)
+            let expert_weight = topk_vals.index((.., i))?.unsqueeze(D::Minus1)?; 
+
+            for e in 0..self.num_routed_experts {
+                // (batch_size * seq_len, )
+                let mask = expert_idx.eq(e as u32)?; 
+                if mask.true_count()? == 0 {
+                    continue
+                }
+
+                // (n_select_token, hidden_size)
+                let selected = x_flat.index(&mask)?;
+                // (n_select_token, hidden_size)
+                let out = self.experts[e].forward(&selected)?;
+                // (n_select_token, hidden_size) += (n_select_token, hidden_size)
+                output.index(&mask)?.add_(
+                    // (n_select_token, 1) * (n_select_token, hidden_size) -> (n_select_token, hidden_size)
+                    expert_weight.index(&mask)?.broadcast_mul(&out)?
+                )?;
+            }
+
+        }
+
+        // // Dispatch to experts
+        // let mut tokens_out = vec![]; 
+        // for i in 0..batch_size * seq_len {
+        //     let token = x_flat.index(i)?;  // (hidden_size,)
+        //     let token_topk_vals = topk_vals.index(i)?.to_vec()?; // (k,)
+        //     let token_topk_idx = topk_idx.index(i)?.to_vec()?; // (k,)
+
+        //     let mut token_out = token.zeros_like()?;
+        //     // ecah token use k experts
+        //     for j in 0..self.num_experts_per_tok {
+        //         // (hidden_size,) -> (hidden_size,)
+        //         let e_inedx = token_topk_idx[j];
+        //         let expert_out = self.experts[e_inedx as usize].forward(&token)?;
+        //         token_out = token_out + expert_out;
+        //         tokens_out.push(token_out.clone());
+        //     }
+        // }
+        // // [(hidden_size,); batch_size * seq_len] => (batch_size * seq_len, hidden_size)
+        // let mut output = Tensor::stack(&tokens_out, 0)?;
+
+        // (batch_size * seq_len, hidden_size)
+        output = output + self.shared_experts.forward(&x_flat)?;
+        
+        // (batch_size * seq_len, hidden_size) -> ()
+        output = output.reshape((batch_size, seq_len, hidden_size))?;
+
+        Ok(output)
     }
 }
 
@@ -233,9 +309,9 @@ impl<T: FloatDType> DeepSeekMlp<T> {
 
     pub fn forward(&self, x: &Tensor<T>) -> DeepSeekResult<Tensor<T>> {
         let up = self.up_proj.forward(x)?;
-        let gate = self.gate_proj.forward(x)?;
-        let up_gate = (up * gate).silu()?;
-        let out = self.down_proj.forward(&up_gate)?;
+        let gate = self.gate_proj.forward(x)?.silu()?;
+        let hidden = up * gate;
+        let out = self.down_proj.forward(&hidden)?;
         Ok(out)
     }
 }
@@ -263,7 +339,7 @@ pub struct DeepSeekAttention<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for DeepSeekAttention<T> {
     type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+    type Error = DeepSeekError;
 
     fn init(config: &DeepSeekConfig, init: Option<Init<T>>) -> DeepSeekResult<Self> {
         // TODO: check 
@@ -392,7 +468,7 @@ impl<T: FloatDType> DeepSeekAttention<T> {
 
             // (seq_len, total_seq_len) => (batch_size, num_attn_heads, seq_len, total_seq_len)
             let mask = mask.broadcast_as(attn_weight.shape())?;
-            mask.if_else(<T as FloatDType>::min_value(), attn_weight)?
+            mask.if_else(T::MIN_VALUE, attn_weight)?
         } else {
             attn_weight
         }; // (batch_size, num_attn_heads, seq_len, total_seq_len)
@@ -480,7 +556,7 @@ pub struct DeepSeekRMSNorm<T: FloatDType> {
 
 impl<T: FloatDType> ModuleInit<T> for DeepSeekRMSNorm<T> {
     type Config = DeepSeekConfig;
-    type Error = DeepSeekCtxError;
+    type Error = DeepSeekError;
 
     fn init(config: &DeepSeekConfig, init: Option<Init<T>>) -> DeepSeekResult<Self> {
         let init = init.unwrap_or(Init::ones());

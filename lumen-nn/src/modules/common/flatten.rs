@@ -1,7 +1,7 @@
 
 use lumen_core::{FloatDType, Tensor, D};
 use lumen_macros::Module;
-use crate::{ModuleForward, NnCtxError, NnResult};
+use crate::{ModuleForward, NnError, NnResult};
 
 #[derive(Module)]
 #[module(display = "display")]
@@ -32,7 +32,7 @@ impl Flatten {
 }
 
 impl<T: FloatDType> ModuleForward<T> for Flatten {
-    type Error = NnCtxError;
+    type Error = NnError;
     type Input = Tensor<T>;
     type Output = Tensor<T>;
 

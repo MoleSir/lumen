@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use rand::seq::SliceRandom;
-use crate::{Dataset, DatasetError, DatasetResult};
+use crate::Dataset;
 
 pub struct SubsetDataset<D> 
 where 
@@ -30,13 +30,13 @@ impl<D: Dataset> SubsetDataset<D> {
     /// * `dataset` - The original dataset to select from.
     /// * `indices` - A slice of indices to select from the dataset.
     ///   These indices must be within the bounds of the dataset.
-    pub fn from_indices(dataset: impl Into<Arc<D>>, indices: Vec<usize>) -> DatasetResult<Self> {
+    pub fn from_indices(dataset: impl Into<Arc<D>>, indices: Vec<usize>) -> SubsetDatasetResult<Self> {
         let dataset = dataset.into();
         
         // check index
         let size = dataset.len();
         if let Some(&idx) = indices.iter().find(|&i| *i >= size) {
-            Err(DatasetError::IndexOutOfRangeWhenSelectDataset(idx, size, "from indices"))?;
+            Err(SubsetDatasetError::IndexOutOfRangeWhenSelectDataset(idx, size, "from indices"))?;
         }
 
         Ok(Self::new(dataset, indices))
@@ -71,12 +71,12 @@ impl<D: Dataset> SubsetDataset<D> {
     ///
     /// * `start` - The start of the range.
     /// * `end` - The end of the range (exclusive).
-    pub fn slice(&self, start: usize, end: usize) -> DatasetResult<Self> {
+    pub fn slice(&self, start: usize, end: usize) -> SubsetDatasetResult<Self> {
         if start >= self.len() {
-            Err(DatasetError::IndexOutOfRangeWhenSelectDataset(start, self.len(), "slice"))?;
+            Err(SubsetDatasetError::IndexOutOfRangeWhenSelectDataset(start, self.len(), "slice"))?;
         }
         if end >= self.len() {
-            Err(DatasetError::IndexOutOfRangeWhenSelectDataset(end, self.len(), "slice"))?;
+            Err(SubsetDatasetError::IndexOutOfRangeWhenSelectDataset(end, self.len(), "slice"))?;
         }
         Ok(Self::new(self.wrapped.clone(), self.indices[start..end].to_vec()))
     }
@@ -94,9 +94,9 @@ impl<D: Dataset> SubsetDataset<D> {
     /// ## Returns
     ///
     /// A vector of `SubsetDataset` instances, each containing a subset of the indices.
-    pub fn split(&self, num: usize) -> DatasetResult<Vec<Self>> {
+    pub fn split(&self, num: usize) -> SubsetDatasetResult<Vec<Self>> {
         if num == 0 {
-            Err(DatasetError::NumSplitZeroWhenSelectDataset)?;
+            Err(SubsetDatasetError::NumSplitZeroWhenSelectDataset)?;
         }
         
         let n = self.indices.len();
@@ -121,10 +121,14 @@ impl<D: Dataset> SubsetDataset<D> {
 
 impl<D: Dataset> Dataset for SubsetDataset<D> {
     type Item = D::Item;
+    type Error = D::Error;
 
-    fn get(&self, index: usize) -> Option<Self::Item> {
-        let index = self.indices.get(index)?;
-        self.wrapped.get(*index)
+    fn get(&self, index: usize) -> Result<Option<Self::Item>, Self::Error> {
+        let index = match self.indices.get(index) {
+            Some(index) => index.clone(),
+            None => return Ok(None),
+        };
+        self.wrapped.get(index)
     }
 
     fn len(&self) -> usize {
@@ -154,3 +158,13 @@ fn iota(size: usize) -> Vec<usize> {
     (0..size).collect()
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum SubsetDatasetError {
+    #[error("Index out of bounds for wrapped dataset size: {0} >= {1} when {2}")]
+    IndexOutOfRangeWhenSelectDataset(usize, usize, &'static str),
+
+    #[error("Use 0 to split dataset")]
+    NumSplitZeroWhenSelectDataset,
+}
+
+pub type SubsetDatasetResult<T> = std::result::Result<T, SubsetDatasetError>;

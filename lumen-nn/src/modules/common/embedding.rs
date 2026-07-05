@@ -1,13 +1,13 @@
 use lumen_core::{FloatDType, IntTensor, Tensor};
 use lumen_macros::Module;
 use crate::{functional as F, ModuleForward};
-use crate::{init::Init, NnCtxError, NnResult};
+use crate::{init::Init, NnError, NnResult};
 use crate::{ModuleInit, Parameter};
 
 /// A simple lookup table that stores embeddings of a fixed dictionary and size.
-#[derive(Module)]
+#[derive(Module, Clone)]
 pub struct Embedding<T: FloatDType> {
-    pub embeddings: Parameter<T>,
+    pub weight: Parameter<T>,
 
     #[module(skip)]
     pub num_embeddings: usize,
@@ -23,17 +23,17 @@ pub struct EmbeddingConfig {
 
 impl<T: FloatDType> ModuleInit<T> for Embedding<T> {
     type Config = EmbeddingConfig;
-    type Error = NnCtxError;
+    type Error = NnError;
 
     fn init(config: &Self::Config, init: Option<Init<T>>) -> Result<Self, Self::Error> {
         let init = init.unwrap_or(Init::standard_normal());
-        let embeddings = init.init_param((config.num_embeddings, config.embedding_size))?;
-        Ok(Self { embeddings, num_embeddings: config.num_embeddings, embedding_size: config.embedding_size })
+        let weight = init.init_param((config.num_embeddings, config.embedding_size))?;
+        Ok(Self { weight, num_embeddings: config.num_embeddings, embedding_size: config.embedding_size })
     }
 }
 
 impl<T: FloatDType> ModuleForward<T> for Embedding<T> {
-    type Error = NnCtxError;
+    type Error = NnError;
     type Input = IntTensor;
     type Output = Tensor<T>;
     
@@ -49,6 +49,6 @@ impl<T: FloatDType> Embedding<T> {
     }
 
     pub fn forward(&self, indexes: impl Into<IntTensor>) -> NnResult<Tensor<T>> {
-        F::embedding(&self.embeddings, indexes)
+        F::embedding(&self.weight, indexes)
     }
 }

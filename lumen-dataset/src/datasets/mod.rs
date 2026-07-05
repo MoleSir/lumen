@@ -1,3 +1,4 @@
 pub mod vision;
-pub mod common;
+pub mod tabular;
 pub mod nlp;
+pub mod common;

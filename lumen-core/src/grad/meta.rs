@@ -1,14 +1,14 @@
 use std::sync::RwLock;
 
 use crate::{FloatDType, IntTensor, Tensor, WithDType};
-use crate::grad::{BinaryOp, Op, ReduceOp, UnaryOp};
+use crate::ops::{BinaryOp, Op, ReduceOp, UnaryOp};
 
 pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
+    fn requires_grad(&self) -> bool;
     fn on_binary_op(lhs: &Tensor<T>, rhs: &Tensor<T>, op: BinaryOp) -> Self;
     fn on_binary_scalar_rhs_op(lhs: &Tensor<T>, rhs: T, op: BinaryOp) -> Self;
     fn on_binary_scalar_lhs_op(lhs: T, rhs: &Tensor<T>, op: BinaryOp) -> Self;
     fn on_unray_op(t: &Tensor<T>, op: UnaryOp<T>) -> Self; 
-    fn on_pow_op(t: &Tensor<T>, e: T) -> Self;
     fn on_broadcast_op(t: &Tensor<T>) -> Self;
     fn on_reduce_op(t: &Tensor<T>, dims: &[usize], op: ReduceOp) -> Self;
     fn on_matmul_op(lhs: &Tensor<T>, rhs: &Tensor<T>) -> Self;
@@ -24,6 +24,8 @@ pub trait AutogradMetaT<T: WithDType>: Default + Send + Sync {
     fn on_index_add_op(init: &Tensor<T>, indexes: &IntTensor, src: &Tensor<T>, dim: usize) -> Self;
     fn on_scatter_add_op(init: &Tensor<T>, indexes: &IntTensor, src: &Tensor<T>, dim: usize) -> Self;
     fn on_gather_op(src: &Tensor<T>, indexes: &IntTensor, dim: usize) -> Self;
+    fn on_rms_norm_op(input: &Tensor<T>, weight: &Tensor<T>, eps: T) -> Self;
+    fn on_softmax_op(input: &Tensor<T>, dim: usize) -> Self;
 }
 
 pub struct AutogradInfo<T: FloatDType> {
@@ -61,10 +63,6 @@ impl<T: FloatDType> AutogradInfo<T>  {
         self.requires_grad() && self.op.is_none()
     }
 
-    pub fn requires_grad(&self) -> bool {
-        self.requires_grad.read().unwrap().clone()
-    }
-
     pub fn set_requires_grad(&self, mode: bool) {
         *self.requires_grad.write().unwrap() = mode;
     }
@@ -77,6 +75,11 @@ impl<T: FloatDType> Default for AutogradInfo<T> {
 } 
 
 impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
+    fn requires_grad(&self) -> bool {
+        self.requires_grad.read().unwrap().clone()
+
+    }
+
     fn on_binary_op(lhs: &Tensor<T>, rhs: &Tensor<T>, op: BinaryOp) -> Self {
         if crate::is_grad_enabled() && (lhs.requires_grad() || rhs.requires_grad()) {
             Self::var_from_op(Op::Binary(lhs.clone(), rhs.clone(), op))
@@ -104,14 +107,6 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
     fn on_unray_op(t: &Tensor<T>, op: UnaryOp<T>) -> Self {
         if crate::is_grad_enabled() && t.requires_grad() {
             Self::var_from_op(Op::Unary(t.clone(), op))
-        } else {
-            Self::val()
-        }
-    }
-
-    fn on_pow_op(t: &Tensor<T>, e: T) -> Self {
-        if crate::is_grad_enabled() && t.requires_grad() {
-            Self::var_from_op(Op::Pow(t.clone(), e))
         } else {
             Self::val()
         }
@@ -258,6 +253,22 @@ impl<T: FloatDType> AutogradMetaT<T> for AutogradInfo<T> {
             Self::val()
         }
     }
+
+    fn on_rms_norm_op(input: &Tensor<T>, weight: &Tensor<T>, eps: T) -> Self {
+        if crate::is_grad_enabled() && (input.requires_grad() || weight.requires_grad()) {
+            Self::var_from_op(Op::RmsNorm(input.clone(), weight.clone(), eps))
+        } else {
+            Self::val()
+        }
+    }
+
+    fn on_softmax_op(input: &Tensor<T>, dim: usize) -> Self {
+        if crate::is_grad_enabled() && input.requires_grad() {
+            Self::var_from_op(Op::Softmax(input.clone(), dim))
+        } else {
+            Self::val()
+        }
+    }
 }
 
 #[derive(Default)]
@@ -265,6 +276,11 @@ pub struct NoAutograd;
 
 #[allow(unused)]
 impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
+    #[inline]
+    fn requires_grad(&self) -> bool {
+        false
+    }
+
     #[inline]
     fn on_binary_op(_: &Tensor<T>, _: &Tensor<T>, _: BinaryOp) -> Self {
         NoAutograd
@@ -287,11 +303,6 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
 
     #[inline]
     fn on_broadcast_op(_: &Tensor<T>) -> Self {
-        NoAutograd
-    }
-
-    #[inline]
-    fn on_pow_op(t: &Tensor<T>, e: T) -> Self {
         NoAutograd
     }
 
@@ -362,6 +373,16 @@ impl<T: WithDType> AutogradMetaT<T> for NoAutograd {
 
     #[inline]
     fn on_gather_op(src: &Tensor<T>, indexes: &IntTensor, dim: usize) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_rms_norm_op(input: &Tensor<T>, weight: &Tensor<T>, eps: T) -> Self {
+        NoAutograd
+    }
+
+    #[inline]
+    fn on_softmax_op(input: &Tensor<T>, dim: usize) -> Self {
         NoAutograd
     }
 }

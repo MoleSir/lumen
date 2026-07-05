@@ -1,6 +1,6 @@
 use crate::{DynTensor, IntTensor, Result, Storage, Tensor};
 
-use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, UnsignedIntDType, WithDType};
+use super::{DType, IntCategory, IntDType, NoAutograd, NumDType, WithDType};
 
 impl WithDType for u8 {
     const DTYPE: DType = DType::U8;
@@ -58,6 +58,11 @@ impl NumDType for u8 {
         let vec: Vec<_> = (start..end).collect();
         Ok(Storage::new(vec))
     }
+
+    #[inline]
+    fn sign(self) -> Self {
+        1
+    }
 }
 
 impl IntDType for u8 {
@@ -65,5 +70,3 @@ impl IntDType for u8 {
         IntTensor::U8(tensor)
     }
 }
-
-impl UnsignedIntDType for u8 {}

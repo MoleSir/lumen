@@ -1,8 +1,8 @@
 use lumen_core::{FloatDType, Tensor};
 use crate::Module;
-use crate::{NnResult, NnCtxError, ModuleForward};
+use crate::{NnResult, NnError, ModuleForward};
 
-#[derive(Module)]
+#[derive(Module, Clone)]
 pub struct Sigmoid;
 
 impl Sigmoid {
@@ -16,7 +16,7 @@ impl Sigmoid {
 }
 
 impl<T: FloatDType> ModuleForward<T> for Sigmoid {
-    type Error = NnCtxError;
+    type Error = NnError;
     type Input = Tensor<T>;
     type Output = Tensor<T>;
 

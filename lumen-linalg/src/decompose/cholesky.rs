@@ -1,0 +1,166 @@
+use lumen_core::{FloatDType, Tensor, Result};
+use crate::{LinalgError, LinalgResult};
+use crate::view::prelude::*;
+
+/// Result of Cholesky decomposition of a positive definite matrix
+///
+/// Given a symmetric positive definite matrix `A` of size `n x n`, the Cholesky
+/// decomposition factorizes it as:
+/// ```text
+/// A = L * Lᵀ
+/// ```
+/// where `L` is a lower triangular matrix.
+pub struct CholeskyResult<T: FloatDType> {
+    /// Lower triangular matrix `L` from the decomposition
+    pub l: Tensor<T>,
+}
+
+impl<T: FloatDType> CholeskyResult<T> {
+    /// Reconstruct the original matrix from its Cholesky decomposition
+    ///
+    /// Computes:
+    /// ```text
+    /// A ≈ L * Lᵀ
+    /// ```
+    /// # Notes
+    /// - The reconstruction may be approximate due to floating point arithmetic.
+    pub fn reconstruct(&self) -> Result<Tensor<T>> {
+        self.l.matmul(&self.l.transpose_last()?)
+    }
+}
+
+/// Computes the Cholesky decomposition of a matrix `A`.
+///
+/// # Description
+/// Cholesky decomposition factorizes a symmetric positive-definite matrix `A`
+/// into a lower triangular matrix `L` such that `A = L * L^T`.
+///
+/// This implementation only computes the lower triangular factor `L`.
+/// The upper triangular factor can be obtained as `L^T`.
+///
+/// # Parameters
+/// - `arr`: The input matrix `A` to decompose. Must be symmetric and positive-definite.
+///
+/// # Returns
+/// - `L`: where `L` is a lower triangular matrix such that `A = L * L^T`.
+///
+/// # Notes
+/// - Input matrix `A` must be square (`n x n`). Non-square matrices are invalid.
+/// - Symmetry of `A` is assumed; this implementation does not explicitly check symmetry.
+/// - The decomposition fails immediately if a non-positive pivot is encountered.
+/// - This function is useful for solving linear systems `A x = y` when `A` is symmetric
+///   and positive-definite, and for generating random samples with a multivariate
+///   normal distribution.
+///
+/// # Example
+/// ```rust
+/// # use lumen_core::Tensor;
+/// let a = Tensor::new(&[
+///     [4.0, 12.0, -16.0],
+///     [12.0, 37.0, -43.0],
+///     [-16.0, -43.0, 98.0],
+/// ]).unwrap();
+/// let l = lumen_linalg::cholesky(&a).unwrap();
+/// // Now a ≈ L * L^T
+/// ```
+pub fn cholesky<T: FloatDType>(mat: &Tensor<T>) -> LinalgResult<CholeskyResult<T>> {
+    let (n, _) = mat.dims2()?;
+    let l = Tensor::<T>::zeros(mat.shape())?;
+
+    {
+        matrix_view!(mat);
+        matrix_view_mut!(l);
+
+        for i in 0..n {
+            // diag
+            let mut sum = T::zero();
+            for k in 0..i {
+                sum = sum + l.g(i, k) * l.g(i, k);
+            }
+            let diag = mat.g(i, i) - sum;
+            if diag <= T::zero() {
+                return Err(LinalgError::ExpectPositiveDefiniteMatrix { op: "cholesky" })?;
+            }
+            l.s(i, i, diag.sqrt());
+    
+            // below diag
+            for j in i+1..n {
+                let mut sum = T::zero();
+                for k in 0..i {
+                    sum = sum + l.g(j, k) * l.g(i, k);
+                }
+                l.s(j, i, (mat.g(j, i) - sum) / l.g(i, i));
+            }
+        }
+    
+    }
+
+    Ok(CholeskyResult {l})
+}
+
+#[cfg(test)]
+mod test {
+    use lumen_core::Tensor;
+
+    #[test]
+    fn test_cholesky_simple() {
+        let a = Tensor::new(&[
+            [4., 12., -16.],
+            [12., 37., -43.],
+            [-16., -43., 98.],
+        ]).unwrap();
+
+        let result = crate::cholesky(&a).unwrap();
+        // println!("{}", l);
+
+        let a_rec = result.reconstruct().unwrap();
+        assert!(a_rec.allclose(&a, 1e-6, 1e-6).unwrap());
+    }
+
+    #[test]
+    fn test_cholesky_identity() {
+        let a = Tensor::<f64>::eye(4).unwrap();
+        let result = crate::cholesky(&a).unwrap();
+        // println!("{}", l);
+        let rec = result.reconstruct().unwrap();
+        assert!(rec.allclose(&a, 1e-6, 1e-6).unwrap());
+    }
+
+    #[test]
+    fn test_cholesky_random_pos_def() {
+        let b = Tensor::new(&[
+            [1., 2., 3.],
+            [4., 5., 6.],
+            [7., 8., 10.],
+        ]).unwrap();
+        let a = b.matmul(&b.transpose_last().unwrap()).unwrap();
+
+        let result = crate::cholesky(&a).unwrap();
+        // println!("{}", l);
+        let a_rec = result.reconstruct().unwrap();
+        assert!(a_rec.allclose(&a, 1e-6, 1e-6).unwrap());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_cholesky_non_pos_def() {
+        let a = Tensor::new(&[
+            [1., 2.],
+            [2., 1.],
+        ]).unwrap();
+
+        crate::cholesky(&a).unwrap();
+    }
+
+    #[test]
+    fn test_cholesky_high_dim() {
+        let a = Tensor::<f64>::randn(0., 1., (10, 10)).unwrap();
+        // h = a @ a.T
+        let h = a.matmul(&a.transpose_last().unwrap()).unwrap();
+        
+        let result = crate::cholesky(&h).unwrap();
+        // println!("{}", l);
+        let h_rec = result.reconstruct().unwrap();
+        assert!(h_rec.allclose(&h, 1e-6, 1e-6).unwrap());
+    }
+}
