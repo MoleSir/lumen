@@ -7,9 +7,11 @@ use crate::Sampler;
 
 pub mod llama;
 pub mod gpt2;
-pub mod deepseek;
 pub mod qwen2;
 pub mod common;
+pub mod deepseek;
+pub mod deepseekv2;
+pub mod deepseekv3;
 
 pub trait PretrainedModel<T: FloatDType> : Sized {
     type Error;
